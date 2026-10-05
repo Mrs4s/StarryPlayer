@@ -592,6 +592,8 @@ struct AboutHeader: View {
     @Environment(\.theme) private var theme
     @State private var shown = false
 
+    static let repository = URL(string: "https://github.com/Mrs4s/StarryPlayer")!
+
     static var version: String {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"

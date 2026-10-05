@@ -565,6 +565,9 @@ struct SettingsCatalog {
         [
             SettingsGroup("aboutHeader", entries: [
                 SettingsEntry("about", "Starry Player", keywords: "版本 关于 version", layout: .custom) { AboutHeader() },
+                SettingsEntry("repository", "GitHub 仓库", detail: "github.com/Mrs4s/StarryPlayer", keywords: "github 源代码 源码 开源 仓库 反馈 issue") {
+                    SettingsButton(title: "在浏览器中打开", systemName: "safari") { NSWorkspace.shared.open(AboutHeader.repository) }
+                },
             ]),
             SettingsGroup("reset", title: "重置", entries: [
                 SettingsEntry("resetAll", "恢复默认设置", detail: "所有设置回到初始状态，不影响账号、播放队列和歌词时间调整", keywords: "重置 reset") {
