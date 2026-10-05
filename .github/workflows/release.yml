@@ -1,0 +1,75 @@
+# Pushing a v<version> tag (scripts/bump-version.sh) builds the arm64 and x86_64 DMGs with
+# scripts/package.sh and publishes them as the tag's GitHub release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    # The Xcode 27 image (preview) is arm64; the x86_64 build is cross-compiled on it.
+    runs-on: xcode-27
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against project.yml
+        run: |
+          version=$(sed -n 's/^ *MARKETING_VERSION: "\(.*\)"$/\1/p' project.yml)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version in project.yml; tag releases with scripts/bump-version.sh"
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Package
+        run: scripts/package.sh ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: build/dist/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dmg-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l dist
+          # A re-run replaces the DMGs of a release that is already there.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.dmg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.dmg --verify-tag \
+              --title "Starry Player ${GITHUB_REF_NAME#v}" --generate-notes \
+              --notes "安装包为 ad-hoc 签名，未经公证：第一次打开时在 Finder 里右键 App 选“打开”，或到 系统设置 › 隐私与安全性 里点“仍要打开”。Apple 芯片下载 arm64，Intel 下载 x86_64。"
+          fi

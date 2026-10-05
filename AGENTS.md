@@ -18,7 +18,7 @@ Use macOS with Xcode, Swift 6, XcodeGen, and Node.js. Install supporting tools w
 - `scripts/test.sh`: build bundled plugins, then run StarryKit tests; append `--filter LyricsCoreTests` to narrow execution.
 - `xcodebuild -project StarryPlayer.xcodeproj -scheme StarryPlayer -destination 'platform=macOS' test`: run application tests after bootstrapping.
 - In a plugin directory, run `npm ci`, then `npm run build` and `npm run check`; Jellyfin and Subsonic also provide `npm test`.
-- `scripts/package.sh`: produce architecture-specific Release ZIP/DMG packages.
+- `scripts/package.sh [arm64|x86_64]`: produce architecture-specific Release ZIP/DMG packages (both architectures when no argument is given).
 
 ## Coding Style & Naming Conventions
 
@@ -27,6 +27,12 @@ Match surrounding code: Swift uses four-space indentation, UpperCamelCase types/
 ## Testing Guidelines
 
 Swift tests use Swift Testing (`@Suite`, `@Test`, `#expect`), with `*Tests.swift` files and descriptive behavior-based function names. Plugin tests use Node's test runner and `*.test.ts` files. Add regression coverage for behavior changes; no minimum coverage percentage is configured. Local-library tests require Python 3 and ffmpeg. Network tests are opt-in via `LYRICS_LIVE=1` or `PLUGINS_LIVE=1`.
+
+## CI & Releases
+
+- `.github/workflows/ci.yml` runs on pull requests and on manual dispatch (not on pushes): plugin build/check/test on Ubuntu, then StarryKit and app tests on the `xcode-27` runner (Homebrew `ffmpeg-full`, since the plain `ffmpeg` formula lacks libvorbis).
+- The version is `MARKETING_VERSION` in `project.yml`, and the build number is `CURRENT_PROJECT_VERSION`. Release with `scripts/bump-version.sh patch|minor|major|<x.y.z> [--push]`: it writes the version, bumps the build number, commits `chore: release vX.Y.Z`, and tags `vX.Y.Z`. Without `--push`, it prints the push command instead.
+- Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds `scripts/package.sh arm64` and `scripts/package.sh x86_64` in parallel and publishes `StarryPlayer-<version>-arm64.dmg` and `StarryPlayer-<version>-x86_64.dmg` to the tag's GitHub release. The build fails if the tag does not match `MARKETING_VERSION`.
 
 ## Configuration & Generated Files
 

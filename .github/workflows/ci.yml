@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+jobs:
+  plugins:
+    name: Plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: plugins/*/package-lock.json
+
+      - name: Build
+        run: scripts/build-plugins.sh
+
+      - name: Check and test
+        run: |
+          for project in plugins/*/; do
+            [ -f "$project/package.json" ] || continue
+            echo "::group::$project"
+            (
+              cd "$project"
+              [ -d node_modules ] || npm ci --no-audit --no-fund --loglevel=error
+              npm run check
+              npm test --if-present
+            )
+            echo "::endgroup::"
+          done
+
+  swift:
+    name: StarryKit and app tests
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+
+      # The Vorbis / Opus tests need ffmpeg with libvorbis, which only ffmpeg-full (keg-only) has.
+      - name: Install tools
+        run: |
+          brew install xcodegen ffmpeg-full
+          echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
+
+      - name: StarryKit tests
+        run: scripts/test.sh
+
+      - name: App tests
+        run: |
+          scripts/bootstrap.sh
+          xcodebuild -project StarryPlayer.xcodeproj -scheme StarryPlayer -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData test
