@@ -75,3 +75,7 @@ open StarryPlayer.xcodeproj
 ## 声明
 
 本项目与音乐平台没有任何关联，各平台内容的版权归其所有者所有。
+
+## 许可证
+
+本项目采用 [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 许可证。
