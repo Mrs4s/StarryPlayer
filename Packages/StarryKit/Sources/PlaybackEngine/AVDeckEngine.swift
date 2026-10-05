@@ -177,6 +177,25 @@ public final class AVDeckEngine: PlaybackEngine {
 
     public func spectrumSnapshot() -> SpectrumAnalyzer.Snapshot { active.processing?.spectrum.snapshot() ?? .silent }
 
+    /// `spectrumSnapshot()` for what is heard `lead` seconds from now, not the block the tap saw
+    /// last (which plays later; `SpectrumAnalyzer.snapshot(at:)`): the latest block's until the
+    /// analyses being kept reach the item's clock. `bands: false` leaves the bands out.
+    public func audibleSnapshot(lead: TimeInterval = 0, bands: Bool = true) -> SpectrumAnalyzer.Snapshot {
+        let deck = active
+        guard let spectrum = deck.processing?.spectrum else { return .silent }
+        return spectrum.snapshot(at: deck.rawTime + lead, includesBands: bands) ?? spectrum.snapshot()
+    }
+
+    /// The spectrum of what is heard `lead` seconds from now, unsmoothed, each band the loudest
+    /// since `after` (the previous call's `time`), and the item time it is for. The tap analyses
+    /// audio before it plays (`SpectrumAnalyzer.bands(at:after:)`); this lines it up with the
+    /// item's clock, the one the lyrics follow.
+    public func audibleSpectrum(lead: TimeInterval = 0, after: TimeInterval? = nil) -> (bands: [Float], time: TimeInterval) {
+        let deck = active
+        let time = deck.rawTime + lead
+        return (deck.processing?.spectrum.bands(at: time, after: after) ?? [], time)
+    }
+
     /// The playing item's audio as decoded: sample rate, channels, the source bit depth of a
     /// lossless file (FLAC / ALAC flags, or PCM bits) and the track's estimated data rate.
     /// Nil before an item has loaded its tracks.

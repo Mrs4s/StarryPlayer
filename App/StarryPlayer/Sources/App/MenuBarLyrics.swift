@@ -238,11 +238,11 @@ final class MenuBarLyricsController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openNowPlaying() {
-        showMainWindow()
+        MainWindow.show()
         model?.player.showNowPlaying = true
     }
 
-    @objc private func openMainWindow() { showMainWindow() }
+    @objc private func openMainWindow() { MainWindow.show() }
 
     @objc private func openSettings() {
         NSApp.activate()
@@ -251,20 +251,6 @@ final class MenuBarLyricsController: NSObject, NSMenuDelegate {
 
     @objc private func hideLyrics() { model?.showsMenuBarLyrics = false }
     @objc private func quit() { NSApp.terminate(nil) }
-
-    private func showMainWindow() {
-        NSApp.activate()
-        let window = NSApp.windows.first { window in
-            window.identifier != SettingsWindowController.identifier && window.canBecomeMain && !(window is NSPanel)
-                && (window.isVisible || window.isMiniaturized)
-        }
-        if let window {
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
-        }
-    }
 }
 
 private struct MenuBarNowPlayingHeader: View {

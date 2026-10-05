@@ -152,6 +152,12 @@ enum Motion {
     /// Closing is quicker and does not overshoot: the pages are what the user went back to.
     static let searchOpen = Animation.spring(response: 0.38, dampingFraction: 0.84)
     static let searchClose = Animation.spring(response: 0.26, dampingFraction: 1)
+    /// The notch player dropping open out of the notch (a little overshoot), and drawing back
+    /// into it without one.
+    static let notchOpen = Animation.spring(response: 0.42, dampingFraction: 0.78)
+    static let notchClose = Animation.spring(response: 0.36, dampingFraction: 1)
+    /// The closed island widening and narrowing with the line being sung.
+    static let notchResize = Animation.spring(response: 0.4, dampingFraction: 0.88)
     static let searchResize = Animation.spring(response: 0.3, dampingFraction: 0.9)
     static let hint = Spring(response: 0.6, dampingRatio: 0.9)
     static let switcherOpen = Animation.spring(response: 0.34, dampingFraction: 0.82)

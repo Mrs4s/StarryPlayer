@@ -36,7 +36,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .general: "启动方式与键盘快捷键"
+        case .general: "启动方式、刘海播放器与键盘快捷键"
         case .appearance: "颜色、主题与窗口布局"
         case .playback: "音质、输出设备、切歌与唱歌"
         case .nowPlaying: "歌词的样子与背景效果"

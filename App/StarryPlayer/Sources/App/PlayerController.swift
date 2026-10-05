@@ -102,10 +102,11 @@ final class PlayerController {
     }
 
     /// The spectrum's bands (40 Hz…16 kHz, log-spaced, 0…1) for the equalizer's graph; empty
-    /// while nothing plays. The simulated clock shapes a moving one from the same pulse as
-    /// `energies()`.
+    /// while nothing plays. Like `energies()`, it is of what is heard as the frame shows
+    /// (`AVDeckEngine.audibleSnapshot`). The simulated clock shapes a moving one from the same
+    /// pulse as `energies()`.
     func spectrumBands() -> [Float] {
-        if usingEngine { return engine.spectrumSnapshot().bands }
+        if usingEngine { return engine.audibleSnapshot(lead: Self.displayLead).bands }
         guard isPlaying else { return [] }
         let beat = Float(max(0, sin(currentTime * 2 * .pi * 2)))
         let t = Float(currentTime)
@@ -118,9 +119,22 @@ final class PlayerController {
         }
     }
 
+    /// About how long a frame drawn from the spectrum takes to show.
+    static let displayLead: TimeInterval = 0.025
+
+    /// The spectrum of what is heard `lead` seconds from now, for bars that move with the sound
+    /// (`AVDeckEngine.audibleSpectrum`): unsmoothed, each band the loudest since `after` (the
+    /// previous call's `time`). The simulated clock gives `spectrumBands()`.
+    func audibleSpectrum(lead: TimeInterval, after: TimeInterval?) -> (bands: [Float], time: TimeInterval) {
+        if usingEngine { return engine.audibleSpectrum(lead: lead, after: after) }
+        return (spectrumBands(), currentTime)
+    }
+
+    /// Low, mid and high energy and the overall level of what is heard as the frame shows, for
+    /// the Now Playing backdrop and the heart's beat.
     func energies() -> SIMD4<Float> {
         if usingEngine {
-            let s = engine.spectrumSnapshot()
+            let s = engine.audibleSnapshot(lead: Self.displayLead, bands: false)
             return SIMD4(s.low, s.mid, s.high, s.overall)
         }
         guard isPlaying else { return SIMD4(repeating: 0) }

@@ -66,10 +66,25 @@ struct SettingsCatalog {
             SettingsGroup("launch", title: "启动", entries: [
                 toggle("restorePlayback", "启动时恢复上次播放", "打开应用时回到上次听的歌和进度，不会自动开始播放", \.restorePlayback, keywords: "队列 进度 继续"),
             ]),
+            SettingsGroup("notch", title: "刘海", entries: notch),
             SettingsGroup("shortcuts", title: "快捷键", entries: [
                 SettingsEntry("shortcuts", "键盘快捷键", keywords: "快捷键 键盘 shortcut 空格", layout: .block) { ShortcutGrid() },
             ]),
         ]
+    }
+
+    private var notch: [SettingsEntry] {
+        var entries = [
+            toggle("notch", "刘海播放器", "播放时在屏幕顶部的刘海两侧显示封面和律动，指针移上去展开播放控制；没有刘海的屏幕显示在菜单栏中间", \.notch.enabled, keywords: "灵动岛 notch dynamic island 迷你播放器 菜单栏 顶部"),
+        ]
+        if settings.notch.enabled {
+            entries += [
+                toggle("notchLyrics", "显示歌词", "在刘海右侧（没有刘海的屏幕在中间）显示正在唱的那一句，会盖住那里的菜单栏图标", \.notch.showsLyrics, keywords: "刘海 灵动岛 歌词 菜单栏"),
+                toggle("notchHover", "悬停展开", "指针停在刘海上就展开；关闭后点按才展开", \.notch.expandsOnHover, keywords: "刘海 灵动岛 悬停 点按 点击"),
+                toggle("notchNotchedOnly", "只在有刘海的屏幕上显示", "没有刘海的 Mac 和外接显示器上不显示", \.notch.notchedScreensOnly, keywords: "刘海 灵动岛 外接显示器 屏幕"),
+            ]
+        }
+        return entries
     }
 
     private var appearance: [SettingsGroup] {

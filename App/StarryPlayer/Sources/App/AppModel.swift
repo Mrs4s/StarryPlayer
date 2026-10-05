@@ -104,10 +104,13 @@ final class AppModel {
         sidebarMode = settings.settings.sidebarMode
         adoptLyricPlugins()
         wirePlayer()
-        // Core Audio's device list is read after the first frame, not in front of it; so is
-        // the menu bar item put up.
+        // Core Audio's device list is read after the first frame, not in front of it; so are
+        // the menu bar item and the notch player put up.
         Task { watchOutputDevices() }
-        Task { applyMenuBarLyrics() }
+        Task {
+            applyMenuBarLyrics()
+            applyNotch()
+        }
         launch.prepare?(self)
         updatePreferredColorScheme()
         updatePlayerBarStyle()
@@ -924,6 +927,7 @@ final class AppModel {
                 self.applyOutputDevice()
                 self.applySongCacheSettings()
                 self.applyMenuBarLyrics()
+                self.applyNotch()
                 self.applySourceSettings()
                 self.applyPluginPreferences()
                 self.observeSettings()
@@ -948,6 +952,12 @@ final class AppModel {
 
     private func applyMenuBarLyrics() {
         menuBarLyrics.apply(enabled: showsMenuBarLyrics, options: settings.settings.menuBarLyrics)
+    }
+
+    @ObservationIgnored private(set) lazy var notch = NotchController(model: self)
+
+    private func applyNotch() {
+        notch.apply(settings.settings.notch)
     }
 
     /// Songs kept after they were heard; nil without `keepsData`.
