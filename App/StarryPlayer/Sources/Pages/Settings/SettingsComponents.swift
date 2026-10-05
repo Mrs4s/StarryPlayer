@@ -44,7 +44,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .account: "登录的账号与听歌记录"
         case .storage: "缓存与本地数据"
         case .plugins: "第三方音源与歌词源"
-        case .about: "版本信息"
+        case .about: "版本信息与更新"
         }
     }
 }

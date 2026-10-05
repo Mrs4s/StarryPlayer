@@ -592,7 +592,7 @@ struct AboutHeader: View {
     @Environment(\.theme) private var theme
     @State private var shown = false
 
-    static let repository = URL(string: "https://github.com/Mrs4s/StarryPlayer")!
+    static let repository = URL(string: "https://github.com/\(ReleaseFeed.repository)")!
 
     static var version: String {
         let info = Bundle.main.infoDictionary
@@ -616,5 +616,55 @@ struct AboutHeader: View {
         }
         .padding(18)
         .onAppear { shown = true }
+    }
+}
+
+struct UpdateCheckControl: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let updates = model.updates
+        HStack(spacing: 12) {
+            status(updates)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(theme.onSurfaceVariant)
+                .lineLimit(1)
+            if case .available(let release) = updates.status {
+                SettingsButton(title: "查看更新", systemName: "arrow.down.circle", role: .prominent) { model.presentUpdate(release) }
+            } else {
+                SettingsButton(title: "检查更新", systemName: "arrow.clockwise") {
+                    Task {
+                        if case .available(let release) = await updates.check() { model.presentUpdate(release) }
+                    }
+                }
+                .disabled(updates.status == .checking)
+            }
+        }
+        .animation(Motion.reveal, value: updates.status)
+    }
+
+    @ViewBuilder
+    private func status(_ updates: UpdateCenter) -> some View {
+        switch updates.status {
+        case .checking:
+            ProgressView().controlSize(.small)
+        case .upToDate:
+            Label("已是最新版本", systemImage: "checkmark").foregroundStyle(theme.accent)
+        case .available(let release):
+            Text("新版本 \(release.version) 可用").foregroundStyle(theme.accent)
+        case .failed:
+            Text("检查失败，请稍后再试")
+        case .idle:
+            if let last = updates.lastChecked { Text("上次检查：\(Self.relative(last))") }
+        }
+    }
+
+    private static func relative(_ date: Date) -> String {
+        guard Date().timeIntervalSince(date) >= 60 else { return "刚刚" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }

@@ -19,6 +19,7 @@ struct AppSettingsTests {
             settings.menuBarLyrics.enabled = true
             settings.menuBarLyrics.perSyllable = false
             settings.menuBarLyrics.maxWidth = 220
+            settings.checksForUpdates = false
             #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
         }
     }
@@ -33,6 +34,7 @@ struct AppSettingsTests {
         #expect(saved.outputDevice == nil)
         #expect(saved.menuBarLyrics == AppSettings.MenuBarLyrics())
         #expect(saved.menuBarLyrics.enabled == false)
+        #expect(saved.checksForUpdates)
         let partial = try decode(#"{"menuBarLyrics": {"enabled": true}}"#)
         #expect(partial.menuBarLyrics.enabled)
         #expect(partial.menuBarLyrics.perSyllable)

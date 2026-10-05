@@ -58,6 +58,9 @@ final class AppModel {
     private let loginWindow = AuxiliaryWindowController(identifier: AppModel.loginWindowIdentifier)
     static let loginWindowIdentifier = "starry.login"
     let search = SearchModel()
+    let updates = UpdateCenter()
+    let updateWindow = AuxiliaryWindowController(identifier: AppModel.updateWindowIdentifier)
+    static let updateWindowIdentifier = "starry.update"
     var toast: String?
     private var toastTask: Task<Void, Never>?
 
@@ -113,6 +116,13 @@ final class AppModel {
         Task { await search.prepare() }
         restorePlayback()
         startLocalLibrary()
+        if keepsData {
+            updates.startAutomaticChecks { [weak self] in
+                self?.settings.settings.checksForUpdates == true
+            } found: { [weak self] release in
+                self?.presentUpdate(release)
+            }
+        }
     }
 
     var browsingSourceID: SourceID { registry.currentSourceID }

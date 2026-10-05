@@ -569,6 +569,12 @@ struct SettingsCatalog {
                     SettingsButton(title: "在浏览器中打开", systemName: "safari") { NSWorkspace.shared.open(AboutHeader.repository) }
                 },
             ]),
+            SettingsGroup("updates", title: "更新", footer: "新版本发布在 GitHub；连不上 GitHub 时改从 jsDelivr 镜像获取版本号。", entries: [
+                SettingsEntry("checkUpdates", "检查更新", detail: "当前版本 \(AboutHeader.version)", keywords: "更新 升级 新版本 版本 update upgrade") {
+                    UpdateCheckControl()
+                },
+                toggle("checksForUpdates", "自动检查更新", "启动后每天检查一次，有新版本时提醒", \.checksForUpdates, keywords: "更新 升级 自动 新版本 update"),
+            ]),
             SettingsGroup("reset", title: "重置", entries: [
                 SettingsEntry("resetAll", "恢复默认设置", detail: "所有设置回到初始状态，不影响账号、播放队列和歌词时间调整", keywords: "重置 reset") {
                     ResetSettingsButton()

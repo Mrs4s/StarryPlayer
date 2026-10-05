@@ -26,6 +26,9 @@ struct StarryPlayerApp: App {
         // the whole view tree to refresh and delay Now Playing transitions.
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") { model.checkForUpdates() }
+            }
             CommandMenu("播放") {
                 Button("播放/暂停") { model.player.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])

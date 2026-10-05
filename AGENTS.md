@@ -33,6 +33,7 @@ Swift tests use Swift Testing (`@Suite`, `@Test`, `#expect`), with `*Tests.swift
 - `.github/workflows/ci.yml` runs on pull requests and on manual dispatch (not on pushes): plugin build/check/test on Ubuntu, then StarryKit and app tests on the `xcode-27` runner (Homebrew `ffmpeg-full`, since the plain `ffmpeg` formula lacks libvorbis).
 - The version is `MARKETING_VERSION` in `project.yml`, and the build number is `CURRENT_PROJECT_VERSION`. Release with `scripts/bump-version.sh patch|minor|major|<x.y.z> [--push]`: it writes the version, bumps the build number, commits `chore: release vX.Y.Z`, and tags `vX.Y.Z`. Without `--push`, it prints the push command instead.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds `scripts/package.sh arm64` and `scripts/package.sh x86_64` in parallel and publishes `StarryPlayer-<version>-arm64.dmg` and `StarryPlayer-<version>-x86_64.dmg` to the tag's GitHub release. The build fails if the tag does not match `MARKETING_VERSION`.
+- The app's update check (`App/StarryPlayer/Sources/App/Updates.swift`) reads GitHub's latest release and, when GitHub is unreachable, the latest tag's version through jsDelivr (its `project.yml` `MARKETING_VERSION: "x.y.z"` line). It picks the DMG by the `-arm64.dmg` / `-x86_64.dmg` suffix, so keep that line format and the asset names when changing packaging.
 
 ## Configuration & Generated Files
 
