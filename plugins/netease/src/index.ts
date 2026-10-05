@@ -28,10 +28,10 @@ const plugin: Plugin = {
         {
           key: 'realIP',
           title: '海外模式',
-          detail: '在中国大陆以外使用时保持开启，避免歌曲因地区限制无法播放',
+          detail: '在中国大陆以外使用时开启，避免歌曲因地区限制无法播放',
           keywords: 'real ip 地区 海外 版权 网络',
           type: 'toggle',
-          default: true,
+          default: false,
         },
         {
           key: 'proxy',

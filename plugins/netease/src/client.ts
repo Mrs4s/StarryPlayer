@@ -134,7 +134,7 @@ const RETRIES = 3;
 let realIP: string | undefined;
 
 function currentRealIP(): string | undefined {
-  if (starry.settings.realIP === false) {
+  if (starry.settings.realIP !== true) {
     realIP = undefined;
   } else if (!realIP) {
     realIP = `${REAL_IP_PREFIXES[randomInt(REAL_IP_PREFIXES.length)]}.${randomInt(256)}.${1 + randomInt(254)}`;
