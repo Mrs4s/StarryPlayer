@@ -1,0 +1,16 @@
+{
+  "name": "starry-plugin-qqmusic-lyrics",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QQ音乐歌词 for Starry Player, built to one file: build/plugins/qqmusic-lyrics.js (minified; scripts/build-plugins.sh builds it into the app)",
+  "scripts": {
+    "build": "npm run bundle -- --minify",
+    "watch": "npm run bundle -- --watch",
+    "bundle": "esbuild src/index.ts --bundle --format=cjs --platform=neutral --target=safari17 --charset=utf8 --legal-comments=none --banner:js=\"// QQ音乐歌词 for Starry Player. Built from plugins/qqmusic-lyrics (scripts/build-plugins.sh); edit the sources there.\" --outfile=../../build/plugins/qqmusic-lyrics.js",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

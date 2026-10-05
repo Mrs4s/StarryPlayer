@@ -1,0 +1,35 @@
+# Xcode (project is generated from project.yml, or a project.local.yml of your own)
+project.local.yml
+*.xcodeproj
+*.xcworkspace
+!Packages/**/*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+dist/
+.build/
+*.xcresult
+temp/
+
+# Instruments recordings
+trace/
+*.trace
+*.trace.zip
+
+# SwiftPM
+Packages/StarryKit/.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Plugin projects (built into build/plugins and the app by scripts/build-plugins.sh)
+node_modules/
+
+# Notes and tools of your own, kept beside the code
+/internal/

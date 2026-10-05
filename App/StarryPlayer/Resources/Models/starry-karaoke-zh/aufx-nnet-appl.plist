@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BatchSize</key>
+	<integer>1</integer>
+	<key>BlockSize</key>
+	<integer>4096</integer>
+	<key>ComputeEngineName</key>
+	<string>CPU</string>
+	<key>InputName</key>
+	<string>audio</string>
+	<key>LookaheadSize</key>
+	<integer>16384</integer>
+	<key>ModelNetPath</key>
+	<string>vi-nnet.mil</string>
+	<key>ModelNetPathBase</key>
+	<string></string>
+	<key>NeuralNetImplementationType</key>
+	<string>MIL2BNNS</string>
+	<key>NumberOfInputChannels</key>
+	<integer>2</integer>
+	<key>NumberOfOutputChannels</key>
+	<integer>2</integer>
+	<key>OutputName</key>
+	<string>target_1</string>
+	<key>SampleRate</key>
+	<integer>44100</integer>
+	<key>StarryResidualCorrelation</key>
+	<real>0.10000000000000001</real>
+	<key>StarryResidualDecibels</key>
+	<real>-13.199999999999999</real>
+	<key>StreamingMode</key>
+	<integer>1</integer>
+	<key>TaskID</key>
+	<string>starry-karaoke-zh</string>
+	<key>TaskIteration</key>
+	<integer>1106</integer>
+</dict>
+</plist>

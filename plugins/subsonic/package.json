@@ -1,0 +1,17 @@
+{
+  "name": "starry-plugin-subsonic",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Subsonic / OpenSubsonic for Starry Player, built to one file: build/plugins/subsonic.js (minified; scripts/build-plugins.sh builds it into the app)",
+  "scripts": {
+    "build": "npm run bundle -- --minify",
+    "watch": "npm run bundle -- --watch",
+    "bundle": "esbuild src/index.ts --bundle --format=cjs --platform=neutral --target=safari17 --charset=utf8 --legal-comments=none --banner:js=\"// Subsonic for Starry Player. Built from plugins/subsonic (scripts/build-plugins.sh); edit the sources there.\" --outfile=../../build/plugins/subsonic.js",
+    "check": "tsc --noEmit",
+    "test": "esbuild test/units.test.ts --bundle --platform=node --format=esm --outfile=.test/units.test.mjs --log-level=warning && esbuild ../common/test/common.test.ts --bundle --platform=node --format=esm --outfile=.test/common.test.mjs --log-level=warning && node --test .test/units.test.mjs .test/common.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

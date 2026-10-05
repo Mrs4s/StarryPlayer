@@ -1,0 +1,151 @@
+# XcodeGen spec. Regenerate the Xcode project with `scripts/bootstrap.sh` (or `xcodegen generate`).
+name: StarryPlayer
+options:
+  bundleIdPrefix: moe.mrs4s
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+packages:
+  StarryKit:
+    path: Packages/StarryKit
+targets:
+  StarryPlayer:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/StarryPlayer/Sources
+      - path: App/StarryPlayer/Resources
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+          - "Models"
+      # Copy the model directory intact: the MIL references weights by relative path.
+      - path: App/StarryPlayer/Resources/Models
+        type: folder
+        buildPhase: resources
+    # The plugins the app comes with, built from their projects in plugins/ (minified) into
+    # Resources/builtin on every build. Needs Node.js; the phase reads the plugin projects and
+    # installs their npm packages, so this target's script phases run unsandboxed.
+    preBuildScripts:
+      - name: Build Plugins
+        script: '"$SRCROOT/scripts/build-plugins.sh" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/builtin"'
+        basedOnDependencyAnalysis: false
+    dependencies:
+      - package: StarryKit
+        product: StarryCore
+      - package: StarryKit
+        product: MusicSources
+      - package: StarryKit
+        product: PlaybackEngine
+      - package: StarryKit
+        product: AudioProcessing
+      - package: StarryKit
+        product: LyricsCore
+      - package: StarryKit
+        product: LyricsProviders
+      - package: StarryKit
+        product: PluginHost
+      - package: StarryKit
+        product: LyricsSync
+      - package: StarryKit
+        product: LyricsUI
+      - package: StarryKit
+        product: Backdrop
+      - package: StarryKit
+        product: Library
+      - package: StarryKit
+        product: LocalLibrary
+    settings:
+      base:
+        PRODUCT_NAME: StarryPlayer
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        PRODUCT_BUNDLE_IDENTIFIER: moe.mrs4s.starry-player
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_EMIT_LOC_STRINGS: YES
+        CODE_SIGN_ENTITLEMENTS: App/StarryPlayer/Resources/StarryPlayer.entitlements
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
+    info:
+      path: App/StarryPlayer/Resources/Info.plist
+      properties:
+        CFBundleName: StarryPlayer
+        CFBundleDisplayName: Starry Player
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleIconName: AppIcon
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        LSApplicationCategoryType: public.app-category.music
+        NSHumanReadableCopyright: "© 2026 mrs4s"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Starry Player 需要访问本地网络，才能连接你在局域网里的音乐服务器（如 Jellyfin）。
+        CFBundleURLTypes:
+          - CFBundleURLName: moe.mrs4s.starry-player.orpheus
+            CFBundleURLSchemes: [orpheus]
+        # Audio files open with the app (Open With), without taking over from the system's player.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: 音频
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.audio]
+        # Songs dragged within the app (onto a sidebar playlist, to another place in a playlist).
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: moe.mrs4s.starry-player.tracks
+            UTTypeDescription: Starry Player 歌曲
+            UTTypeConformsTo: [public.data]
+        NSSupportsAutomaticGraphicsSwitching: true
+        NSHighResolutionCapable: true
+    entitlements:
+      path: App/StarryPlayer/Resources/StarryPlayer.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-only: true
+        # Plugins run in JavaScriptCore, which only compiles JavaScript with this.
+        com.apple.security.cs.allow-jit: true
+    scheme:
+      testTargets: [StarryPlayerTests]
+      gatherCoverageData: false
+  StarryPlayerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: App/StarryPlayer/Tests
+    dependencies:
+      - target: StarryPlayer
+      - package: StarryKit
+        product: StarryCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/StarryPlayer.app/Contents/MacOS/StarryPlayer
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  StarryPlayer:
+    build:
+      targets:
+        StarryPlayer: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [StarryPlayerTests]
+    profile:
+      config: Release
+    archive:
+      config: Release
