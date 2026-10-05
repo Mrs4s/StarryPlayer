@@ -41,7 +41,6 @@ Starry Player 使用 Swift 原生开发，针对 macOS 深度优化。以下为�
 | **Starry Player** | M5 Max（40 核 GPU） | **约 +2 ~ 4 W** ¹ |
 | 网易云音乐 | M5 Max（40 核 GPU） | 约 +2 ~ 3 W |
 | Apple Music | M5 Max（40 核 GPU） | 约 +5 W |
-| Web 技术实现 | M5 Max（40 核 GPU） | 约 +15 ~ 25 W |
 
 ¹ M5 Max 的外围部件(比如更多统一内存)功耗更高，因此增量高于 M4。
 
@@ -52,11 +51,8 @@ Starry Player 使用 Swift 原生开发，针对 macOS 深度优化。以下为�
 | **Starry Player** | M5 Max（18 核 CPU） | 0.5% | 
 | Apple Music | M5 Max（18 核 CPU）| 1% |
 | 网易云音乐 | M5 Max（18 核 CPU）| 2% |
-| Web 技术实现 | M5 Max（18 核 CPU）| 5% |
 
 ¹ 根据歌词换行频率不同, 不同歌曲可能会有波动
-
-同样开满特效，功耗只有 Web 实现的几分之一，离电使用也不必关掉特效。
 
 ## 安装
 
