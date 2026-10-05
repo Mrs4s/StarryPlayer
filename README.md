@@ -11,6 +11,13 @@
 
 </div>
 
+## 截图
+
+<p align="center">
+  <img src="screenshots/screen-1.webp" width="800" alt="首页">
+  <img src="screenshots/screen-2.webp" width="800" alt="歌词页">
+</p>
+
 ## 特性
 
 - 🎤 **逐字歌词**：随演唱逐字点亮，带翻译和注音，歌词自动匹配，也能放到菜单栏
