@@ -212,6 +212,11 @@ final class MenuBarLyricsController: NSObject, NSMenuDelegate {
         menu.addItem(item("打开播放页", symbol: "music.note.list", enabled: hasTrack, action: #selector(openNowPlaying)))
         menu.addItem(item("打开 Starry", symbol: "macwindow", enabled: true, action: #selector(openMainWindow)))
         menu.addItem(.separator())
+        menu.addItem(item(model.showsDesktopLyrics ? "隐藏桌面歌词" : "显示桌面歌词", symbol: "quote.bubble", enabled: true, action: #selector(toggleDesktopLyrics)))
+        if model.showsDesktopLyrics {
+            menu.addItem(item(model.desktopLyricsLocked ? "解锁桌面歌词" : "锁定桌面歌词", symbol: model.desktopLyricsLocked ? "lock.open" : "lock", enabled: true, action: #selector(toggleDesktopLyricsLock)))
+        }
+        menu.addItem(.separator())
         menu.addItem(item("菜单栏歌词设置…", symbol: "gearshape", enabled: true, action: #selector(openSettings)))
         menu.addItem(item("隐藏菜单栏歌词", symbol: "eye.slash", enabled: true, action: #selector(hideLyrics)))
         menu.addItem(.separator())
@@ -250,6 +255,8 @@ final class MenuBarLyricsController: NSObject, NSMenuDelegate {
     }
 
     @objc private func hideLyrics() { model?.showsMenuBarLyrics = false }
+    @objc private func toggleDesktopLyrics() { model?.showsDesktopLyrics.toggle() }
+    @objc private func toggleDesktopLyricsLock() { model?.desktopLyricsLocked.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 

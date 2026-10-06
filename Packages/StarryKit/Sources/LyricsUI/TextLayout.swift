@@ -176,8 +176,10 @@ struct LineTextLayout {
     /// Renders one row into a bitmap (row coordinates, y down), with `color` fill and optional
     /// horizontal / vertical padding so glow and overhanging glyphs are not clipped. `colorSpace`
     /// should be the window's: Core Animation keeps a converted copy of an image in any other
-    /// space (always of a device RGB one), which doubles the memory of every line.
-    static func renderRow(_ row: Row, width: CGFloat, color: CGColor, scale: CGFloat, colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!, padding: CGFloat = 0) -> CGImage? {
+    /// space (always of a device RGB one), which doubles the memory of every line. With
+    /// `outline`, the row's outline is drawn instead of its glyphs (`padding` should cover
+    /// `outline.extent`).
+    static func renderRow(_ row: Row, width: CGFloat, color: CGColor, scale: CGFloat, colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!, padding: CGFloat = 0, outline: TextOutline? = nil) -> CGImage? {
         let pixelWidth = Int(ceil((width + padding * 2) * scale))
         let pixelHeight = Int(ceil((row.height + padding * 2) * scale))
         guard pixelWidth > 0, pixelHeight > 0, pixelWidth < 16384, pixelHeight < 4096 else { return nil }
@@ -192,13 +194,58 @@ struct LineTextLayout {
         ctx.setFillColor(color)
         // Core Graphics is y-up; place the baseline above the bitmap's bottom.
         let baseline = row.descent + padding
-        for fragment in row.fragments {
-            for cluster in fragment.clusters {
-                let positions = cluster.positions.map { CGPoint(x: $0.x + padding, y: baseline) }
-                CTFontDrawGlyphs(cluster.font, cluster.glyphs, positions, cluster.glyphs.count, ctx)
+        let draw = {
+            for fragment in row.fragments {
+                for cluster in fragment.clusters {
+                    let positions = cluster.positions.map { CGPoint(x: $0.x + padding, y: baseline) }
+                    CTFontDrawGlyphs(cluster.font, cluster.glyphs, positions, cluster.glyphs.count, ctx)
+                }
             }
         }
+        if let outline { outline.draw(in: ctx, scale: scale, draw) } else { draw() }
         return ctx.makeImage()
+    }
+
+    /// Draws `line`'s glyphs with the context's text drawing mode and colours, its origin at
+    /// `origin` (`CTLineDraw` takes its colours from the string instead).
+    static func drawGlyphs(of line: CTLine, at origin: CGPoint, in ctx: CGContext) {
+        // Glyph positions are in text space: the text position would move them again.
+        ctx.textPosition = .zero
+        for run in (CTLineGetGlyphRuns(line) as? [CTRun]) ?? [] {
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            let font = attributes[kCTFontAttributeName as String] as! CTFont
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+            CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
+            CTFontDrawGlyphs(font, glyphs, positions.map { CGPoint(x: $0.x + origin.x, y: $0.y + origin.y) }, count, ctx)
+        }
+    }
+}
+
+struct TextOutline: Equatable {
+    var color: CGColor
+    var width: CGFloat
+    var shadowColor: CGColor
+    var shadowRadius: CGFloat
+
+    var extent: CGFloat { ceil(width + shadowRadius * 1.5 + 1) }
+
+    // Shadows ignore the context's scale, so scale their geometry explicitly.
+    func draw(in ctx: CGContext, scale: CGFloat, _ body: () -> Void) {
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -width / 2 * scale), blur: shadowRadius * scale, color: shadowColor)
+        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        ctx.setTextDrawingMode(.fillStroke)
+        ctx.setFillColor(color)
+        ctx.setStrokeColor(color)
+        ctx.setLineWidth(width * 2)
+        ctx.setLineJoin(.round)
+        body()
+        ctx.endTransparencyLayer()
+        ctx.restoreGState()
     }
 }
 

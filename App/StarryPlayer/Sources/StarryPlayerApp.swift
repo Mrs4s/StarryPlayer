@@ -59,6 +59,9 @@ struct StarryPlayerApp: App {
                     .keyboardShortcut("2", modifiers: .command)
                 Button("播放页：播放队列") { model.showNowPlaying(.queue) }
                     .keyboardShortcut("3", modifiers: .command)
+                Divider()
+                Button("桌面歌词开/关") { model.showsDesktopLyrics.toggle() }
+                Button("锁定/解锁桌面歌词") { model.desktopLyricsLocked.toggle() }
             }
             CommandGroup(before: .sidebar) {
                 Button("切换侧栏") { model.toggleSidebar() }

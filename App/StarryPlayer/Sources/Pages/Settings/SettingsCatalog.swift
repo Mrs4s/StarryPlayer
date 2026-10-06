@@ -319,6 +319,7 @@ struct SettingsCatalog {
         }
         groups += [
             SettingsGroup("menuBar", title: "菜单栏", entries: menuBarLyrics),
+            SettingsGroup("desktopLyrics", title: "桌面歌词", entries: desktopLyrics),
             SettingsGroup("lyricSources", title: "来源", entries: sources),
             SettingsGroup("lyricLookup", title: "查找方式", advanced: true, entries: lookup),
         ]
@@ -339,6 +340,31 @@ struct SettingsCatalog {
                 },
             ]
         }
+        return entries
+    }
+
+    private var desktopLyrics: [SettingsEntry] {
+        var entries = [
+            SettingsEntry("desktopLyrics", "桌面歌词", detail: "在所有窗口之上显示正在唱的那一句；指针移到歌词上出现控制按钮，拖动可移动位置", keywords: "桌面 悬浮 置顶 浮窗 卡拉ok desktop overlay") {
+                SettingsSwitch(isOn: Binding { model.showsDesktopLyrics } set: { model.showsDesktopLyrics = $0 })
+            },
+        ]
+        guard settings.desktopLyrics.enabled else { return entries }
+        entries += [
+            SettingsEntry("desktopLyricsLocked", "锁定", detail: "点击会穿过歌词，落到下面的窗口；在程序坞图标的菜单或“播放”菜单中解锁", keywords: "桌面歌词 锁定 解锁 穿透 位置 拖动") {
+                SettingsSwitch(isOn: Binding { model.desktopLyricsLocked } set: { model.desktopLyricsLocked = $0 })
+            },
+            toggle("desktopLyricsPerSyllable", "逐字点亮", "随演唱一个字一个字亮起；关闭后整句一起显示，更省电", \.desktopLyrics.perSyllable, keywords: "桌面歌词 逐字 卡拉ok 动画 省电 性能"),
+            toggle("desktopLyricsTranslation", "显示翻译", "歌词带翻译时，显示在下面一行", \.desktopLyrics.showTranslation, keywords: "桌面歌词 翻译 双语 第二行"),
+            menu("desktopLyricsPalette", "颜色", "唱过部分的颜色", \.desktopLyrics.palette, [
+                (.cover, "跟随封面"), (.white, "白色"), (.blue, "蓝色"), (.green, "绿色"), (.pink, "粉色"), (.gold, "金色"),
+            ], keywords: "桌面歌词 颜色 配色 主题 封面"),
+            menu("desktopLyricsBackground", "背景", nil, \.desktopLyrics.background, [(.transparent, "透明"), (.card, "半透明卡片")], keywords: "桌面歌词 背景 卡片 底色"),
+            slider("desktopLyricsFontSize", "字号", nil, \.desktopLyrics.fontSize, 18...64, step: 1, format: { "\(Int($0)) pt" }, keywords: "桌面歌词 字体 大小 字号"),
+            slider("desktopLyricsWidth", "宽度", "更长的歌词随演唱滚动", \.desktopLyrics.width, 480...1600, step: 20, format: { "\(Int($0)) pt" }, keywords: "桌面歌词 宽度 长度"),
+            toggle("desktopLyricsHidesWhenPaused", "暂停时隐藏", "暂停或没有在播放时收起，开始播放后再出现", \.desktopLyrics.hidesWhenPaused, keywords: "桌面歌词 暂停 隐藏 自动"),
+            toggle("desktopLyricsHidesFromCapture", "截屏和录屏时隐藏", "多数截屏、录屏和屏幕共享里看不到，你自己照常看得到；部分录屏软件仍可能录到", \.desktopLyrics.hidesFromCapture, keywords: "桌面歌词 截图 截屏 录屏 共享屏幕 会议 隐私"),
+        ]
         return entries
     }
 

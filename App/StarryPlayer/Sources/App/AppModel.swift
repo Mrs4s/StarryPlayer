@@ -109,6 +109,7 @@ final class AppModel {
         Task { watchOutputDevices() }
         Task {
             applyMenuBarLyrics()
+            applyDesktopLyrics()
             applyNotch()
         }
         launch.prepare?(self)
@@ -927,6 +928,7 @@ final class AppModel {
                 self.applyOutputDevice()
                 self.applySongCacheSettings()
                 self.applyMenuBarLyrics()
+                self.applyDesktopLyrics()
                 self.applyNotch()
                 self.applySourceSettings()
                 self.applyPluginPreferences()
@@ -952,6 +954,28 @@ final class AppModel {
 
     private func applyMenuBarLyrics() {
         menuBarLyrics.apply(enabled: showsMenuBarLyrics, options: settings.settings.menuBarLyrics)
+    }
+
+    @ObservationIgnored private(set) lazy var desktopLyrics = DesktopLyricsController(model: self)
+
+    var showsDesktopLyrics: Bool {
+        get { settings.settings.desktopLyrics.enabled }
+        set {
+            settings.settings.desktopLyrics.enabled = newValue
+            applyDesktopLyrics()
+        }
+    }
+
+    var desktopLyricsLocked: Bool {
+        get { settings.settings.desktopLyrics.locked }
+        set {
+            settings.settings.desktopLyrics.locked = newValue
+            applyDesktopLyrics()
+        }
+    }
+
+    private func applyDesktopLyrics() {
+        desktopLyrics.apply(settings.settings.desktopLyrics)
     }
 
     @ObservationIgnored private(set) lazy var notch = NotchController(model: self)

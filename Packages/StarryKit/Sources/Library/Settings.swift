@@ -139,6 +139,40 @@ public struct AppSettings: Codable, Sendable, Equatable {
         }
     }
 
+    public struct DesktopLyrics: Codable, Sendable, Equatable {
+        public enum Palette: String, Codable, Sendable, CaseIterable { case cover, white, blue, green, pink, gold }
+        public enum Background: String, Codable, Sendable, CaseIterable { case transparent, card }
+
+        public var enabled = false
+        public var locked = false
+        public var perSyllable = true
+        public var showTranslation = true
+        public var fontSize: Double = 30
+        public var width: Double = 900
+        public var palette: Palette = .cover
+        public var background: Background = .transparent
+        public var hidesWhenPaused = false
+        public var hidesFromCapture = false
+        public init() {}
+
+        private enum CodingKeys: String, CodingKey { case enabled, locked, perSyllable, showTranslation, fontSize, width, palette, background, hidesWhenPaused, hidesFromCapture }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = DesktopLyrics()
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+            locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? d.locked
+            perSyllable = try c.decodeIfPresent(Bool.self, forKey: .perSyllable) ?? d.perSyllable
+            showTranslation = try c.decodeIfPresent(Bool.self, forKey: .showTranslation) ?? d.showTranslation
+            fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? d.fontSize
+            width = try c.decodeIfPresent(Double.self, forKey: .width) ?? d.width
+            palette = (try? c.decodeIfPresent(Palette.self, forKey: .palette)) ?? d.palette
+            background = (try? c.decodeIfPresent(Background.self, forKey: .background)) ?? d.background
+            hidesWhenPaused = try c.decodeIfPresent(Bool.self, forKey: .hidesWhenPaused) ?? d.hidesWhenPaused
+            hidesFromCapture = try c.decodeIfPresent(Bool.self, forKey: .hidesFromCapture) ?? d.hidesFromCapture
+        }
+    }
+
     /// The player in the notch: the song beside it while it plays, the controls when the pointer
     /// rests on it. A screen without a notch gets an island in the middle of its menu bar.
     public struct Notch: Codable, Sendable, Equatable {
@@ -250,6 +284,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var lyrics = Lyrics()
     public var background = Background()
     public var menuBarLyrics = MenuBarLyrics()
+    public var desktopLyrics = DesktopLyrics()
     public var notch = Notch()
     /// Look for a newer release on launch and once a day, and say when there is one.
     public var checksForUpdates = true
@@ -266,7 +301,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     // Tolerant decoding so settings saved by older builds keep working when fields are added.
     private enum CodingKeys: String, CodingKey {
-        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, lyrics, background, menuBarLyrics, notch, checksForUpdates
+        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, lyrics, background, menuBarLyrics, desktopLyrics, notch, checksForUpdates
     }
 
     public init(from decoder: any Decoder) throws {
@@ -304,6 +339,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         lyrics = (try? c.decodeIfPresent(Lyrics.self, forKey: .lyrics)) ?? d.lyrics
         background = (try? c.decodeIfPresent(Background.self, forKey: .background)) ?? d.background
         menuBarLyrics = (try? c.decodeIfPresent(MenuBarLyrics.self, forKey: .menuBarLyrics)) ?? d.menuBarLyrics
+        desktopLyrics = (try? c.decodeIfPresent(DesktopLyrics.self, forKey: .desktopLyrics)) ?? d.desktopLyrics
         notch = (try? c.decodeIfPresent(Notch.self, forKey: .notch)) ?? d.notch
         checksForUpdates = try c.decodeIfPresent(Bool.self, forKey: .checksForUpdates) ?? d.checksForUpdates
     }

@@ -223,9 +223,9 @@ public final class MenuBarLyricsView: NSView {
         switch item {
         case .line(let index):
             guard let document = content.document, index < document.lines.count else { break }
-            slot.configure(line: Self.singleRow(document.lines[index]), font: font, perSyllable: perSyllable, maxWidth: maxTextWidth, height: height, scale: scale, colorSpace: space, color: labelColor)
+            slot.configure(line: Self.singleRow(document.lines[index]), font: font, perSyllable: perSyllable, maxWidth: maxTextWidth, height: height, scale: scale, colorSpace: space, style: .init(color: labelColor))
         case .idle:
-            slot.configure(title: content.title, artist: content.artist, font: font, maxWidth: maxTextWidth, height: height, scale: scale, colorSpace: space, color: labelColor)
+            slot.configure(title: content.title, artist: content.artist, font: font, maxWidth: maxTextWidth, height: height, scale: scale, colorSpace: space, style: .init(color: labelColor))
         }
         return slot
     }
@@ -333,6 +333,15 @@ final class MenuBarSlotLayer: NoAnimationLayer {
     static let fadeWidth: CGFloat = 12
     static let imagePadding: CGFloat = 2
 
+    struct Style: Equatable {
+        var color: CGColor
+        /// The part not sung yet; nil uses `color` at `unsungOpacity`.
+        var unsungColor: CGColor?
+        var outline: TextOutline?
+        /// Points the baseline sits off the middle (−1 matches `NSStatusBarButton`'s).
+        var baselineShift: CGFloat = -1
+    }
+
     private(set) var text = ""
     private(set) var textWidth: CGFloat = 0
     private(set) var visibleWidth: CGFloat = 0
@@ -347,6 +356,8 @@ final class MenuBarSlotLayer: NoAnimationLayer {
     let progress = NoAnimationLayer()
     private let fill = NoAnimationLayer()
     private let edgeGradient = NoAnimationGradientLayer()
+    let outline = NoAnimationLayer()
+    private(set) var outlineInset: CGFloat = 0
     private let fadeMask = NoAnimationLayer()
     let leftCover = NoAnimationLayer()
     let rightCover = NoAnimationLayer()
@@ -365,20 +376,23 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         edgeGradient.startPoint = CGPoint(x: 0, y: 0.5)
         edgeGradient.endPoint = CGPoint(x: 1, y: 0.5)
         progress.addSublayer(edgeGradient)
+        outline.anchorPoint = .zero
+        outline.contentsGravity = .resize
         addSublayer(line)
     }
 
     override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { nil }
 
-    func configure(line lyric: LyricLine, font: NSFont, perSyllable: Bool, maxWidth: CGFloat, height: CGFloat, scale: CGFloat, colorSpace: CGColorSpace, color: CGColor) {
+    func configure(line lyric: LyricLine, font: NSFont, perSyllable: Bool, maxWidth: CGFloat, height: CGFloat, scale: CGFloat, colorSpace: CGColorSpace, style: Style) {
         text = lyric.text.trimmingCharacters(in: .whitespaces)
         let layout = LineTextLayout.layout(line: lyric, font: font, width: 100_000, leading: nil, alignment: .left, perSyllable: true)
         guard let row = layout.rows.first, let image = LineTextLayout.renderRow(row, width: row.width, color: CGColor(gray: 1, alpha: 1), scale: scale, colorSpace: colorSpace, padding: Self.imagePadding) else { return }
+        let outlineImage = style.outline.flatMap { LineTextLayout.renderRow(row, width: row.width, color: $0.color, scale: scale, colorSpace: colorSpace, padding: $0.extent, outline: $0) }
         feather = (font.pointSize * 30 / 48).rounded()
         textWidth = row.width
         visibleWidth = min(row.width, maxWidth)
-        place(image: image, ascent: row.ascent, descent: row.descent, height: height, scale: scale)
+        place(image: image, outline: outlineImage, ascent: row.ascent, descent: row.descent, height: height, scale: scale, baselineShift: style.baselineShift)
 
         let timed = perSyllable && lyric.hasSyllableTiming
         let finalEdge = row.fragments.map(\.inkMaxX).max() ?? row.width
@@ -395,8 +409,7 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         } else {
             edgeTrack = .constant(finalEdge)
         }
-        setColor(color)
-        unsung.opacity = timed ? Self.unsungOpacity : 1
+        setColor(style.color, unsung: style.unsungColor)
 
         // Long lines scroll so the lit part stays in view: the reading point follows the edge
         // (a steady sweep over the line's time when it has no syllable timing).
@@ -413,7 +426,7 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         installFades(overflow: overflow, height: height)
     }
 
-    func configure(title: String, artist: String, font: NSFont, maxWidth: CGFloat, height: CGFloat, scale: CGFloat, colorSpace: CGColorSpace, color: CGColor) {
+    func configure(title: String, artist: String, font: NSFont, maxWidth: CGFloat, height: CGFloat, scale: CGFloat, colorSpace: CGColorSpace, style: Style) {
         text = artist.isEmpty ? title : "\(title) - \(artist)"
         guard !title.isEmpty else { return }
         let attributed = NSMutableAttributedString(string: title, attributes: [
@@ -435,31 +448,39 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         let width = CGFloat(CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading)) - CGFloat(CTLineGetTrailingWhitespaceWidth(ctLine))
         ascent = max(ascent, font.ascender)
         descent = max(descent, -font.descender)
-        let padding = Self.imagePadding
-        let pixelWidth = Int(ceil((width + padding * 2) * scale))
-        let pixelHeight = Int(ceil((ascent + descent + padding * 2) * scale))
-        guard pixelWidth > 0, pixelHeight > 0, pixelWidth < 16384,
-              let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
-        context.scaleBy(x: scale, y: scale)
-        context.setAllowsFontSubpixelPositioning(true)
-        context.setShouldSubpixelPositionFonts(true)
-        context.textPosition = CGPoint(x: padding, y: descent + padding)
-        CTLineDraw(ctLine, context)
-        guard let image = context.makeImage() else { return }
+        func render(padding: CGFloat, draw: (CGContext) -> Void) -> CGImage? {
+            let pixelWidth = Int(ceil((width + padding * 2) * scale))
+            let pixelHeight = Int(ceil((ascent + descent + padding * 2) * scale))
+            guard pixelWidth > 0, pixelHeight > 0, pixelWidth < 16384,
+                  let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
+            context.scaleBy(x: scale, y: scale)
+            context.setAllowsFontSubpixelPositioning(true)
+            context.setShouldSubpixelPositionFonts(true)
+            context.textPosition = CGPoint(x: padding, y: descent + padding)
+            draw(context)
+            return context.makeImage()
+        }
+        guard let image = render(padding: Self.imagePadding, draw: { CTLineDraw(ctLine, $0) }) else { return }
+        let outlineImage = style.outline.flatMap { outline in
+            render(padding: outline.extent) { context in
+                outline.draw(in: context, scale: scale) {
+                    LineTextLayout.drawGlyphs(of: ctLine, at: CGPoint(x: outline.extent, y: descent + outline.extent), in: context)
+                }
+            }
+        }
         textWidth = width
         visibleWidth = min(width, maxWidth)
-        place(image: image, ascent: ascent, descent: descent, height: height, scale: scale)
+        place(image: image, outline: outlineImage, ascent: ascent, descent: descent, height: height, scale: scale, baselineShift: style.baselineShift)
         edgeTrack = .constant(width)
-        unsung.opacity = 1
-        setColor(color)
+        setColor(style.color, unsung: style.unsungColor)
     }
 
-    private func place(image: CGImage, ascent: CGFloat, descent: CGFloat, height: CGFloat, scale: CGFloat) {
+    private func place(image: CGImage, outline outlineImage: CGImage?, ascent: CGFloat, descent: CGFloat, height: CGFloat, scale: CGFloat, baselineShift: CGFloat) {
         let padding = Self.imagePadding
         let size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
         line.bounds = CGRect(origin: .zero, size: size)
-        // Match NSStatusBarButton's baseline and round to whole pixels to avoid blurred text.
-        let baseline = ((height - ceil(ascent + descent)) / 2).rounded(.down) - 1 + ascent
+        // Centre the text, shifted for the status bar's baseline, on whole pixels so it stays sharp.
+        let baseline = ((height - ceil(ascent + descent)) / 2).rounded(.down) + baselineShift + ascent
         let top = ((baseline - (size.height - descent - padding)) * scale).rounded() / scale
         line.position = CGPoint(x: -padding, y: top)
         glyphs.frame = line.bounds
@@ -471,12 +492,24 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         fill.frame = CGRect(x: 0, y: 0, width: length - feather, height: size.height)
         edgeGradient.frame = CGRect(x: length - feather, y: 0, width: feather, height: size.height)
         progress.position = CGPoint(x: padding, y: 0)
+        if let outlineImage {
+            // Its padding is a whole number of points larger, so it stays on the same pixels.
+            outlineInset = (CGFloat(outlineImage.height) / scale - size.height) / 2
+            outline.bounds = CGRect(x: 0, y: 0, width: CGFloat(outlineImage.width) / scale, height: CGFloat(outlineImage.height) / scale)
+            outline.position = CGPoint(x: line.position.x - outlineInset, y: top - outlineInset)
+            outline.contents = outlineImage
+            outline.contentsScale = scale
+            insertSublayer(outline, below: line)
+        }
     }
 
     private func installFades(overflow: CGFloat, height: CGFloat) {
         let fade = Self.fadeWidth
         let width = visibleWidth
-        fadeMask.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        // Tall enough for the outline's shadow above and below the row.
+        let reach = outline.superlayer != nil ? outlineInset : 0
+        let height = height + reach * 2
+        fadeMask.frame = CGRect(x: 0, y: -reach, width: width, height: height)
         let middle = NoAnimationLayer()
         middle.backgroundColor = CGColor(gray: 0, alpha: 1)
         middle.frame = CGRect(x: fade, y: 0, width: max(width - fade * 2, 0), height: height)
@@ -499,8 +532,10 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         rightCoverTrack = scrollTrack.clamped(offset: overflow - fade, factor: 1 / fade, range: 0...1)
     }
 
-    func setColor(_ color: CGColor) {
-        unsung.backgroundColor = color
+    func setColor(_ color: CGColor, unsung unsungColor: CGColor? = nil) {
+        let timed = isTimed
+        unsung.backgroundColor = timed ? unsungColor ?? color : color
+        unsung.opacity = timed && unsungColor == nil ? Self.unsungOpacity : 1
         fill.backgroundColor = color
         edgeGradient.colors = [color, color.copy(alpha: 0) ?? CGColor.clear]
     }
@@ -513,6 +548,10 @@ final class MenuBarSlotLayer: NoAnimationLayer {
         }
         let y = line.position.y
         scrollTrack.play(on: line, keyPath: "position", at: t, rate: rate, now: now) { NSValue(point: CGPoint(x: -padding - $0, y: y)) }
+        if outline.superlayer != nil {
+            let inset = outlineInset
+            scrollTrack.play(on: outline, keyPath: "position", at: t, rate: rate, now: now) { NSValue(point: CGPoint(x: -padding - inset - $0, y: y - inset)) }
+        }
         if mask != nil {
             leftCoverTrack.play(on: leftCover, keyPath: "opacity", at: t, rate: rate, now: now) { Float($0) }
             rightCoverTrack.play(on: rightCover, keyPath: "opacity", at: t, rate: rate, now: now) { Float($0) }

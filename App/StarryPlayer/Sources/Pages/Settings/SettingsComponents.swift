@@ -40,7 +40,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance: "颜色、主题与窗口布局"
         case .playback: "音质、输出设备、切歌与唱歌"
         case .nowPlaying: "歌词的样子与背景效果"
-        case .lyrics: "歌词来源与菜单栏歌词"
+        case .lyrics: "歌词来源、菜单栏与桌面歌词"
         case .account: "登录的账号与听歌记录"
         case .storage: "缓存与本地数据"
         case .plugins: "第三方音源与歌词源"

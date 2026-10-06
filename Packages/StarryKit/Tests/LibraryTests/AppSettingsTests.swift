@@ -41,6 +41,25 @@ struct AppSettingsTests {
         #expect(partial.menuBarLyrics.maxWidth == 300)
     }
 
+    @Test func desktopLyricsRoundTripAndFillGaps() throws {
+        var settings = AppSettings()
+        settings.desktopLyrics.enabled = true
+        settings.desktopLyrics.locked = true
+        settings.desktopLyrics.palette = .gold
+        settings.desktopLyrics.background = .card
+        settings.desktopLyrics.fontSize = 42
+        settings.desktopLyrics.hidesFromCapture = true
+        #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
+
+        let old = try decode(#"{"sidebarCollapsed": true}"#)
+        #expect(old.desktopLyrics == AppSettings.DesktopLyrics())
+        let partial = try decode(#"{"desktopLyrics": {"enabled": true, "palette": "neon"}}"#)
+        var expected = AppSettings.DesktopLyrics()
+        expected.enabled = true
+        #expect(partial.desktopLyrics == expected)
+        #expect(try decode(#"{"desktopLyrics": 3}"#).desktopLyrics == AppSettings.DesktopLyrics())
+    }
+
     /// Song transitions: both switches off by default, and the `mode` older builds saved (never
     /// user-settable) is dropped. Crossfade takes over from gapless, except between songs of one album.
     @Test func transitionSwitches() throws {
