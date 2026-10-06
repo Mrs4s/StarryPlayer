@@ -82,6 +82,8 @@ final class CommentFeed {
 /// to avoid offset shifts from nested lazy stacks.
 struct CommentThreadView: View {
     var feed: CommentFeed
+    /// Disable in a hosted table row: all comments appear together, so the table handles paging.
+    var autoLoadsMore = true
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     @State private var shown = false
@@ -130,7 +132,7 @@ struct CommentThreadView: View {
                 .staggeredReveal(shown, index: feed.hot.count + 2 + index)
                 .onAppear {
                     if !shown { shown = true }
-                    guard comment.id == feed.latest.last?.id, let source else { return }
+                    guard autoLoadsMore, comment.id == feed.latest.last?.id, let source else { return }
                     Task { await feed.loadMore(from: source) }
                 }
         }

@@ -47,3 +47,51 @@ private struct ScrollWheelModifier: ViewModifier {
         monitor = nil
     }
 }
+
+extension View {
+    /// Avoid per-frame hover updates as rows pass under a stationary pointer.
+    func pausesHitTestingWhileScrolling() -> some View {
+        modifier(ScrollHitTestPause())
+    }
+}
+
+private struct ScrollHitTestPause: ViewModifier {
+    @State private var activity = ScrollActivity()
+
+    func body(content: Content) -> some View {
+        content
+            .allowsHitTesting(!activity.isScrolling)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { activity.moved(to: $0) }
+    }
+}
+
+@MainActor @Observable
+final class ScrollActivity {
+    let settle: TimeInterval
+    private(set) var isScrolling = false
+    @ObservationIgnored private var offset: CGFloat?
+    @ObservationIgnored private var lastMove: TimeInterval = 0
+
+    init(settle: TimeInterval = 0.05) {
+        self.settle = settle
+    }
+
+    func moved(to newOffset: CGFloat) {
+        defer { offset = newOffset }
+        guard let offset, offset != newOffset else { return }
+        lastMove = ProcessInfo.processInfo.systemUptime
+        // Keep hit testing available during drag autoscroll.
+        guard !isScrolling, NSEvent.pressedMouseButtons == 0 else { return }
+        isScrolling = true
+        Task { [weak self] in
+            while let self {
+                let idle = ProcessInfo.processInfo.systemUptime - lastMove
+                guard idle < settle else {
+                    isScrolling = false
+                    return
+                }
+                try? await Task.sleep(for: .seconds(settle - idle))
+            }
+        }
+    }
+}

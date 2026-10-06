@@ -85,6 +85,7 @@ struct DetailPageScroll<Tab: RawRepresentable & Hashable, Hero: View, Bar: View,
                     let fade = (Double(min(max(offset / max(fadeDistance, 1), 0), 1)) * 60).rounded() / 60
                     if backdrop.fade != fade { backdrop.fade = fade }
                 }
+                .pausesHitTestingWhileScrolling()
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scroll.viewport = $0 }
             .environment(\.pinnedTopInset, Metrics.detailTabBarHeight)
@@ -157,6 +158,7 @@ struct DetailTabBar<Tab: Hashable, Accessory: View>: View {
     var items: [PageTabs<Tab>.Item]
     var accessory: Accessory
     @Environment(\.theme) private var theme
+    @Environment(\.detailBarPinned) private var pinnedOverride
     @State private var pinned = false
 
     init(tab: Binding<Tab>, items: [PageTabs<Tab>.Item], @ViewBuilder accessory: () -> Accessory) {
@@ -166,6 +168,7 @@ struct DetailTabBar<Tab: Hashable, Accessory: View>: View {
     }
 
     var body: some View {
+        let isPinned = pinnedOverride ?? pinned
         HStack(spacing: 16) {
             PageTabs(items: items, selection: $tab)
             Spacer(minLength: 0)
@@ -175,11 +178,11 @@ struct DetailTabBar<Tab: Hashable, Accessory: View>: View {
         .frame(height: Metrics.detailTabBarHeight)
         .background {
             theme.surface
-                .opacity(pinned ? 1 : 0)
+                .opacity(isPinned ? 1 : 0)
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(theme.outlineVariant)
                         .frame(height: 1)
-                        .padding(.horizontal, pinned ? 0 : Metrics.pagePadding)
+                        .padding(.horizontal, isPinned ? 0 : Metrics.pagePadding)
                 }
         }
         .animation(Motion.tab, value: tab)

@@ -20,6 +20,8 @@ final class TrackListLocator {
     private(set) var veiled = false
     @ObservationIgnored weak var scrollView: NSScrollView?
     @ObservationIgnored var rowTops: [Int: CGFloat] = [:]
+    /// Maps a song position to its row origin in document coordinates.
+    @ObservationIgnored var exactRowOrigin: ((Int) -> CGFloat?)?
     @ObservationIgnored private var run: Task<Void, Never>?
 
     static let glide = 8
@@ -50,6 +52,22 @@ final class TrackListLocator {
                 await Self.nextFrame()
                 guard !Task.isCancelled, case .loaded(let now)? = list.place(of: track.id) else { return }
                 position = now
+            }
+            if let exactRowOrigin {
+                guard let scrollView, let (goal, far) = exactGoal(of: position, among: matches, origin: exactRowOrigin, in: scrollView, topInset: topInset) else { return }
+                if far {
+                    withAnimation(animated ? .easeIn(duration: 0.12) : nil) { veiled = true }
+                    if animated { try? await Task.sleep(for: .milliseconds(120)) }
+                    let now = scrollView.contentView.bounds.origin.y
+                    let glide = CGFloat(Self.glide) * Metrics.songRowHeight
+                    Self.scroll(scrollView, to: animated ? goal + (goal > now ? -glide : glide) : goal, animated: false)
+                    await Self.nextFrame()
+                    guard !Task.isCancelled else { return }
+                }
+                located = (track.id, CACurrentMediaTime())
+                if veiled { withAnimation(animated ? .easeOut(duration: 0.3) : nil) { veiled = false } }
+                Self.scroll(scrollView, to: goal, animated: animated)
+                return
             }
             guard let scrollView, await rowsLaidOut() else { return }
             let clip = scrollView.contentView
@@ -99,6 +117,19 @@ final class TrackListLocator {
         let middle = (topInset + clip.bounds.height - insets.bottom) / 2
         let highest = (scrollView.documentView?.frame.height ?? 0) + insets.bottom - clip.bounds.height
         return (min(max(center - middle, -insets.top), max(highest, -insets.top)), abs(target - nearest.1))
+    }
+
+    private func exactGoal(of position: Int, among matches: [Int]?, origin: (Int) -> CGFloat?, in scrollView: NSScrollView, topInset: CGFloat) -> (origin: CGFloat, far: Bool)? {
+        if let matches, Self.offset(of: position, in: matches) == nil { return nil }
+        guard let top = origin(position) else { return nil }
+        let clip = scrollView.contentView
+        let insets = clip.contentInsets
+        let center = top + Metrics.songRowHeight / 2
+        let middle = (topInset + clip.bounds.height - insets.bottom) / 2
+        let highest = (scrollView.documentView?.frame.height ?? 0) + insets.bottom - clip.bounds.height
+        let goal = min(max(center - middle, -insets.top), max(highest, -insets.top))
+        let glide = CGFloat(Self.glide) * Metrics.songRowHeight
+        return (goal, abs(goal - clip.bounds.origin.y) > max(clip.bounds.height * 1.5, glide * 1.5))
     }
 
     private static func scroll(_ scrollView: NSScrollView, to y: CGFloat, animated: Bool) {

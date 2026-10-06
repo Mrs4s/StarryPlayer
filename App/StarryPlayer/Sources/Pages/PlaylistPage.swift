@@ -11,6 +11,8 @@ struct PlaylistPage: View {
     var playlist: Playlist
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
+    @Environment(\.isPageActive) private var pageActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var state: Loadable<PlaylistDetail> = .idle
     @State private var list: TrackListLoader?
     @State private var tab: Tab = .songs
@@ -40,42 +42,40 @@ struct PlaylistPage: View {
     private var hasComments: Bool { model.commentSource(playlist.source) != nil }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop) {
-            hero
-        } bar: { tab in
-            DetailTabBar(tab: tab, items: tabItems) {
-                HStack(spacing: 0) {
-                    if tab.wrappedValue == .songs {
-                        LocatePlayingButton(list: list, locator: locator, context: context, query: query, clearSearch: clearSearch)
-                    }
-                    DetailTabSearch(text: tab.wrappedValue == .songs ? $filter : nil, placeholder: "搜索歌单内歌曲")
-                }
-            }
-            .reveal(appeared, delay: 0.26, distance: 6)
-            .padding(.bottom, tab.wrappedValue == .songs && showsList ? TrackListRows.gapAbove : 0)
-        } rows: {
-            tabRows
-        }
-        .task(id: playlist.id) { await load() }
-        .settled(filter, into: $query)
-        .task(id: filter.isEmpty ? nil : list.map(ObjectIdentifier.init)) { await list?.loadRemaining() }
-        .task(id: shown.artwork?.sized(Self.coverPixels)) { await backdrop.tint(from: shown.artwork ?? playlist.artwork, pixels: Self.coverPixels) }
-        .onAppear { appeared = true }
-        .onChange(of: model.playlistChange) { _, change in follow(change) }
-        .confirmationDialog("删除歌单「\(shown.name)」？", isPresented: $confirmingDelete) {
-            Button("删除", role: .destructive) {
-                Task {
-                    do {
-                        try await model.deletePlaylist(shown)
-                    } catch {
-                        model.showToast(ErrorText.describe(error))
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero), bar: AnyView(bar), barBottomPadding: tab == .songs && showsList ? TrackListRows.gapAbove : 0, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .task(id: playlist.id) { await load() }
+            .settled(filter, into: $query)
+            .task(id: filter.isEmpty ? nil : list.map(ObjectIdentifier.init)) { await list?.loadRemaining() }
+            .task(id: shown.artwork?.sized(Self.coverPixels)) { await backdrop.tint(from: shown.artwork ?? playlist.artwork, pixels: Self.coverPixels) }
+            .onAppear { appeared = true }
+            .onChange(of: model.playlistChange) { _, change in follow(change) }
+            .confirmationDialog("删除歌单「\(shown.name)」？", isPresented: $confirmingDelete) {
+                Button("删除", role: .destructive) {
+                    Task {
+                        do {
+                            try await model.deletePlaylist(shown)
+                        } catch {
+                            model.showToast(ErrorText.describe(error))
+                        }
                     }
                 }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后不能恢复，歌单里的歌曲本身不受影响。")
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("删除后不能恢复，歌单里的歌曲本身不受影响。")
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: $tab, items: tabItems) {
+            HStack(spacing: 0) {
+                if tab == .songs {
+                    LocatePlayingButton(list: list, locator: locator, context: context, query: query, clearSearch: clearSearch)
+                }
+                DetailTabSearch(text: tab == .songs ? $filter : nil, placeholder: "搜索歌单内歌曲")
+            }
         }
+        .reveal(appeared, delay: 0.26, distance: 6)
     }
 
     private var hero: some View {
@@ -276,43 +276,59 @@ struct PlaylistPage: View {
         return items
     }
 
-    /// The selected tab as rows of the page's lazy stack (several views, not one container).
-    @ViewBuilder private var tabRows: some View {
+    private var tableRows: [DetailTableRow] {
         switch tab {
-        case .songs: songRows
-        case .comments: CommentThreadView(feed: comments)
+        case .songs:
+            return songRows
+        case .comments:
+            let feed = comments
+            let model = model
+            return [.hosted("comments", nearEnd: {
+                guard let source = model.commentSource(feed.source) else { return }
+                Task { await feed.loadMore(from: source) }
+            }) {
+                VStack(alignment: .leading, spacing: 0) { CommentThreadView(feed: feed, autoLoadsMore: false) }
+            }]
         }
     }
 
-    @ViewBuilder private var songRows: some View {
+    private var songRows: [DetailTableRow] {
         switch state {
         case .idle, .loading:
-            TrackSkeleton(count: min(max(shown.trackCount, 6), 10), artwork: true)
+            return [.hosted("skeleton") { TrackSkeleton(count: min(max(shown.trackCount, 6), 10), artwork: true) }]
         case .failed(let message):
-            VStack(spacing: 14) {
-                StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-                PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
-            }
-            .frame(maxWidth: .infinity, minHeight: 280)
-        case .loaded:
-            if let list {
-                let matches = list.matches(query)
-                if matches?.isEmpty ?? list.tracks.isEmpty, list.isComplete {
-                    if list.tracks.isEmpty {
-                        StateView(systemName: "music.note.list", title: "歌单里还没有歌曲", detail: model.canRemoveSongs(from: shown) || model.canEdit(shown) ? "在歌曲上右键选“加入歌单”，或把歌曲拖到侧栏的这个歌单上" : nil)
-                    } else {
-                        StateView(systemName: "magnifyingglass", title: "没有匹配的歌曲")
-                    }
-                } else {
-                    TrackListRows(list: list, matches: matches, context: context,
-                                  onRemove: model.canRemoveSongs(from: shown) ? { remove($0) } : nil,
-                                  onMove: model.canReorder(shown) ? { move(from: $0, to: $1) } : nil,
-                                  locator: locator)
+            return [.hosted("failed") {
+                VStack(spacing: 14) {
+                    StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
+                    PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
                 }
+                .frame(maxWidth: .infinity, minHeight: 280)
+            }]
+        case .loaded:
+            guard let list else { return [] }
+            let matches = list.matches(query)
+            var rows: [DetailTableRow] = []
+            if matches?.isEmpty ?? list.tracks.isEmpty, list.isComplete {
+                if list.tracks.isEmpty {
+                    rows.append(.hosted("empty") {
+                        StateView(systemName: "music.note.list", title: "歌单里还没有歌曲", detail: model.canRemoveSongs(from: shown) || model.canEdit(shown) ? "在歌曲上右键选“加入歌单”，或把歌曲拖到侧栏的这个歌单上" : nil)
+                    })
+                } else {
+                    rows.append(.hosted("no-matches") { StateView(systemName: "magnifyingglass", title: "没有匹配的歌曲") })
+                }
+            } else {
+                var onRemove: (@MainActor (Track) -> Void)?
+                if model.canRemoveSongs(from: shown) { onRemove = { remove($0) } }
+                var onMove: (@MainActor (Int, Int) -> Void)?
+                if model.canReorder(shown) { onMove = { move(from: $0, to: $1) } }
+                rows.append(DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(list: list, matches: matches, query: query, context: context, onRemove: onRemove, onMove: onMove, locator: locator, animatesEdits: pageActive && !reduceMotion))))
+            }
+            rows.append(.hosted("end") {
                 TrackListEnd(list: list) {
                     if query.isEmpty, !list.tracks.isEmpty { footer(list) }
                 }
-            }
+            })
+            return rows
         }
     }
 

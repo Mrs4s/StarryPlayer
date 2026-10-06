@@ -44,29 +44,27 @@ struct LikedPage: View {
     private var count: Int { list?.totalCount ?? 0 }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop) {
-            hero
-        } bar: { tab in
-            DetailTabBar(tab: tab, items: [.init(value: .songs, title: "歌曲", count: count > 0 ? count : nil)]) {
-                HStack(spacing: 0) {
-                    LocatePlayingButton(list: list, locator: locator, context: context, query: query, clearSearch: clearSearch)
-                    DetailTabSearch(text: available ? $filter : nil, placeholder: "搜索喜欢的歌曲")
-                }
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero), bar: AnyView(bar), barBottomPadding: showsList ? TrackListRows.gapAbove : 0, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .task(id: loadKey) {
+                list = nil
+                state = .idle
+                if loadKey != nil { await load() }
             }
-            .reveal(appeared, delay: 0.26, distance: 6)
-            .padding(.bottom, showsList ? TrackListRows.gapAbove : 0)
-        } rows: {
-            rows
+            .settled(filter, into: $query)
+            .task(id: filter.isEmpty ? nil : list.map(ObjectIdentifier.init)) { await list?.loadRemaining() }
+            .onChange(of: model.likeChange) { _, change in follow(change) }
+            .onAppear { appeared = true }
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: $tab, items: [.init(value: .songs, title: "歌曲", count: count > 0 ? count : nil)]) {
+            HStack(spacing: 0) {
+                LocatePlayingButton(list: list, locator: locator, context: context, query: query, clearSearch: clearSearch)
+                DetailTabSearch(text: available ? $filter : nil, placeholder: "搜索喜欢的歌曲")
+            }
         }
-        .task(id: loadKey) {
-            list = nil
-            state = .idle
-            if loadKey != nil { await load() }
-        }
-        .settled(filter, into: $query)
-        .task(id: filter.isEmpty ? nil : list.map(ObjectIdentifier.init)) { await list?.loadRemaining() }
-        .onChange(of: model.likeChange) { _, change in follow(change) }
-        .onAppear { appeared = true }
+        .reveal(appeared, delay: 0.26, distance: 6)
     }
 
     private var hero: some View {
@@ -191,40 +189,42 @@ struct LikedPage: View {
         .disabled(list?.tracks.isEmpty != false)
     }
 
-    @ViewBuilder private var rows: some View {
+    private var tableRows: [DetailTableRow] {
         if !model.hasLibrary {
-            SourceLacks(feature: "喜欢的音乐", systemName: "heart")
+            return [.hosted("lacks") { SourceLacks(feature: "喜欢的音乐", systemName: "heart") }]
         } else if !available {
-            LoginPrompt()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 36)
-        } else {
-            switch state {
-            case .idle, .loading:
-                TrackSkeleton(count: 10, artwork: true)
-            case .failed(let message):
+            return [.hosted("login") { LoginPrompt().frame(maxWidth: .infinity).padding(.top, 36) }]
+        }
+        switch state {
+        case .idle, .loading:
+            return [.hosted("skeleton") { TrackSkeleton(count: 10, artwork: true) }]
+        case .failed(let message):
+            return [.hosted("failed") {
                 VStack(spacing: 14) {
                     StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
                     PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
-            case .loaded:
-                if let list {
-                    let matches = list.matches(query)
-                    if matches?.isEmpty ?? list.tracks.isEmpty, list.isComplete {
-                        if list.tracks.isEmpty {
-                            StateView(systemName: "heart", title: "还没有喜欢的歌曲", detail: "点击歌曲旁的心形图标收藏")
-                        } else {
-                            StateView(systemName: "magnifyingglass", title: "没有匹配的歌曲")
-                        }
-                    } else {
-                        TrackListRows(list: list, matches: matches, context: context, locator: locator)
-                    }
-                    TrackListEnd(list: list) {
-                        if query.isEmpty, !list.tracks.isEmpty { footer(list) }
-                    }
+            }]
+        case .loaded:
+            guard let list else { return [] }
+            let matches = list.matches(query)
+            var rows: [DetailTableRow] = []
+            if matches?.isEmpty ?? list.tracks.isEmpty, list.isComplete {
+                if list.tracks.isEmpty {
+                    rows.append(.hosted("empty") { StateView(systemName: "heart", title: "还没有喜欢的歌曲", detail: "点击歌曲旁的心形图标收藏") })
+                } else {
+                    rows.append(.hosted("no-matches") { StateView(systemName: "magnifyingglass", title: "没有匹配的歌曲") })
                 }
+            } else {
+                rows.append(DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(list: list, matches: matches, query: query, context: context, locator: locator, animatesEdits: pageActive && !reduceMotion))))
             }
+            rows.append(.hosted("end") {
+                TrackListEnd(list: list) {
+                    if query.isEmpty, !list.tracks.isEmpty { footer(list) }
+                }
+            })
+            return rows
         }
     }
 

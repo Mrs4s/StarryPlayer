@@ -507,6 +507,7 @@ struct PageScroll<Content: View>: View {
                 .frame(maxWidth: maxWidth)
                 .frame(maxWidth: .infinity)
                 .coordinateSpace(.pageContent)
+                .pausesHitTestingWhileScrolling()
         }
         .scrollIndicators(.automatic)
     }
