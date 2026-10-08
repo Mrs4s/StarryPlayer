@@ -2,6 +2,7 @@ import AppKit
 import AudioProcessing
 import StarryCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NowPlayingEqualizerButton: View {
     var tint: Color
@@ -45,6 +46,8 @@ struct EqualizerDialog: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
     @State private var arrived = false
+    /// The parametric band being edited (its slot).
+    @State private var selectedBand: Int?
     @Namespace private var presetPill
 
     static let size = CGSize(width: 640, height: 462)
@@ -113,26 +116,110 @@ struct EqualizerDialog: View {
     }
 
     private var content: some View {
-        let player = model.player
-        let equalizer = player.equalizer
+        let equalizer = model.player.equalizer
+        let parametric = equalizer.mode == .parametric
         return VStack(alignment: .leading, spacing: 0) {
             header(equalizer)
                 .modifier(DialogRise(index: 0, arrived: arrived, reduceMotion: reduceMotion))
-            presets(equalizer)
-                .padding(.top, 20)
-                .modifier(DialogRise(index: 1, arrived: arrived, reduceMotion: reduceMotion))
-            EqualizerGraph(gains: equalizer.gains, isEnabled: equalizer.isEnabled, tint: tint, spectrumLive: player.isPlaying, spectrum: { [player] in player.spectrumBands() }) { band, gain in
-                player.setEqualizerGain(gain, band: band)
+            Group {
+                if parametric { parametricBody(equalizer) } else { graphicBody(equalizer) }
             }
-            .frame(height: 236)
-            .padding(.top, 16)
-            .modifier(DialogRise(index: 2, arrived: arrived, reduceMotion: reduceMotion))
+            .transition(.opacity)
             footer(equalizer)
                 .padding(.top, 14)
-                .modifier(DialogRise(index: 3, arrived: arrived, reduceMotion: reduceMotion))
+                .modifier(DialogRise(index: parametric ? 4 : 3, arrived: arrived, reduceMotion: reduceMotion))
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
+    }
+
+    @ViewBuilder
+    private func graphicBody(_ equalizer: EqualizerSettings) -> some View {
+        let player = model.player
+        presets(equalizer)
+            .padding(.top, 20)
+            .modifier(DialogRise(index: 1, arrived: arrived, reduceMotion: reduceMotion))
+        EqualizerGraph(gains: equalizer.gains, isEnabled: equalizer.isEnabled, tint: tint, spectrumLive: player.isPlaying, spectrum: { [player] in player.spectrumBands() }) { band, gain in
+            player.setEqualizerGain(gain, band: band)
+        }
+        .frame(height: 236)
+        .padding(.top, 16)
+        .modifier(DialogRise(index: 2, arrived: arrived, reduceMotion: reduceMotion))
+    }
+
+    /// The same height as the ten bands' presets and graph: a row of bands, the graph, and the
+    /// selected band's values.
+    @ViewBuilder
+    private func parametricBody(_ equalizer: EqualizerSettings) -> some View {
+        let player = model.player
+        let selected = selectedBand.flatMap { equalizer.band(slot: $0) }
+        ParametricBandStrip(equalizer: equalizer, selection: selected?.slot, tint: tint, select: { selectedBand = $0 }, add: addBand, menu: transferMenu)
+            .frame(height: 30)
+            .padding(.top, 20)
+            .modifier(DialogRise(index: 1, arrived: arrived, reduceMotion: reduceMotion))
+        ParametricEqualizerGraph(
+            bands: equalizer.bands, isEnabled: equalizer.isEnabled, tint: tint, selection: selected?.slot,
+            spectrumLive: player.isPlaying, spectrum: { [player] in player.spectrumBands() },
+            onSelect: { selectedBand = $0 },
+            onChange: { band in player.updateEqualizerBand(slot: band.slot) { $0 = band } },
+            onAdd: { player.addEqualizerBand($0) },
+            onRemove: { player.removeEqualizerBand(slot: $0) }
+        )
+        .frame(height: 236)
+        .padding(.top, 12)
+        .modifier(DialogRise(index: 2, arrived: arrived, reduceMotion: reduceMotion))
+        ParametricBandInspector(band: selected, hasBands: !equalizer.bands.isEmpty, isEnabled: equalizer.isEnabled, tint: tint) { change in
+            if let slot = selected?.slot { player.updateEqualizerBand(slot: slot, change) }
+        } remove: {
+            if let slot = selected?.slot {
+                selectedBand = nil
+                player.removeEqualizerBand(slot: slot)
+            }
+        }
+        .frame(height: 30)
+        .padding(.top, 10)
+        .modifier(DialogRise(index: 3, arrived: arrived, reduceMotion: reduceMotion))
+    }
+
+    /// A 0 dB peak (Q 1) in the widest gap between the bands, selected.
+    private func addBand() {
+        let player = model.player
+        let edges = ParametricEqualizer.displayRange
+        let positions = ([edges.lowerBound, edges.upperBound] + player.equalizer.bands.map(\.frequency)).map { log2(min(max($0, edges.lowerBound), edges.upperBound)) }.sorted()
+        var gap = (start: positions[0], width: 0.0)
+        for (low, high) in zip(positions, positions.dropFirst()) where high - low > gap.width { gap = (low, high - low) }
+        let frequency = ParametricEqualizer.rounded(frequency: pow(2, gap.start + gap.width / 2))
+        if let slot = player.addEqualizerBand(ParametricBand(slot: 0, frequency: frequency)) {
+            selectedBand = slot
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    @PopMenuBuilder
+    private func transferMenu() -> [PopMenuItem] {
+        let player = model.player
+        let equalizer = player.equalizer
+        PopMenuItem.button("从文件导入…", systemImage: "doc.badge.plus") {
+            EqualizerTransfer.importFile(into: model) { selectedBand = nil }
+        }
+        PopMenuItem.button("从剪贴板导入", systemImage: "doc.on.clipboard", disabled: NSPasteboard.general.string(forType: .string) == nil) {
+            EqualizerTransfer.importClipboard(into: model) { selectedBand = nil }
+        }
+        PopMenuItem.divider
+        PopMenuItem.button("拷贝设置", systemImage: "doc.on.doc", disabled: equalizer.bands.isEmpty) {
+            EqualizerTransfer.copy(from: model)
+        }
+        PopMenuItem.button("导出为文件…", systemImage: "square.and.arrow.up", disabled: equalizer.bands.isEmpty) {
+            EqualizerTransfer.exportFile(from: model)
+        }
+        PopMenuItem.divider
+        PopMenuItem.button("用十段曲线替换", systemImage: "slider.vertical.3", disabled: equalizer.gains.allSatisfy { $0 == 0 }) {
+            selectedBand = nil
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                player.updateEqualizer { $0.useGraphicCurve() }
+            }
+        }
     }
 
     private func header(_ equalizer: EqualizerSettings) -> some View {
@@ -158,6 +245,11 @@ struct EqualizerDialog: View {
                     .contentTransition(.interpolate)
             }
             Spacer(minLength: 12)
+            EqualizerModePicker(mode: equalizer.mode, tint: tint) { mode in
+                selectedBand = nil
+                withAnimation(.easeInOut(duration: 0.22)) { model.player.setEqualizerMode(mode) }
+            }
+            .padding(.trailing, 4)
             EqualizerSwitch(isOn: on, tint: tint) {
                 model.player.setEqualizerEnabled(!on)
             }
@@ -185,7 +277,8 @@ struct EqualizerDialog: View {
         if unprocessed == .spatialMix { return "\(model.player.spatialMixName)由系统渲染，均衡器暂不生效" }
         if unprocessed == .unsupportedSource { return "这首歌的音源无法处理，均衡器暂不生效" }
         var parts = [equalizer.presetName]
-        if equalizer.preamp != 0 { parts.append("前级 \(Self.decibels(equalizer.preamp))") }
+        if equalizer.mode == .parametric { parts.append(equalizer.bands.isEmpty ? "没有频段" : "\(equalizer.bands.count) 个频段") }
+        if equalizer.activePreamp != 0 { parts.append("前级 \(Self.decibels(equalizer.activePreamp))") }
         if !equalizer.clipGuard { parts.append("防削波已关") }
         return parts.joined(separator: " · ")
     }
@@ -214,37 +307,468 @@ struct EqualizerDialog: View {
 
     private func footer(_ equalizer: EqualizerSettings) -> some View {
         let player = model.player
+        let preamp = equalizer.activePreamp
+        let parametric = equalizer.mode == .parametric
         return HStack(spacing: 12) {
             Text("前级")
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(tint.opacity(0.7))
-            PreampSlider(value: equalizer.preamp, tint: tint) { value in
+            PreampSlider(value: preamp, tint: tint) { value in
                 player.updateEqualizer {
                     $0.setPreamp(value)
                     $0.isEnabled = true
                 }
             }
             .frame(width: 196)
-            Text(Self.decibels(equalizer.preamp))
+            Text(Self.decibels(preamp))
                 .font(.system(size: 12, weight: .semibold))
                 .monospacedDigit()
-                .foregroundStyle(tint.opacity(equalizer.preamp == 0 ? 0.5 : 0.9))
-                .contentTransition(.numericText(value: equalizer.preamp))
+                .foregroundStyle(tint.opacity(preamp == 0 ? 0.5 : 0.9))
+                .contentTransition(.numericText(value: preamp))
                 .frame(width: 58, alignment: .leading)
             Spacer(minLength: 8)
+            FooterChip(title: "自动", systemImage: "wand.and.stars", active: false, tint: tint) {
+                player.updateEqualizer {
+                    $0.setPreamp(-($0.peakGain * 10).rounded(.up) / 10)
+                    $0.isEnabled = true
+                }
+            }
+            .help("把前级设为曲线最高点的负值，提升的频段不会削波")
             FooterChip(title: "防削波", systemImage: equalizer.clipGuard ? "checkmark.shield.fill" : "shield", active: equalizer.clipGuard, tint: tint) {
                 player.updateEqualizer { $0.clipGuard.toggle() }
             }
             .help("提升增益时压住峰值，避免破音")
             FooterChip(title: "重置", systemImage: "arrow.counterclockwise", active: false, tint: tint) {
+                selectedBand = nil
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                     player.updateEqualizer { $0.reset() }
                 }
             }
-            .disabled(equalizer.isFlat && equalizer.presetID == EqualizerPreset.flat.id)
-            .help("回到平直，前级归零（自定义的曲线会保留）")
+            .disabled(parametric ? equalizer.bands.isEmpty && preamp == 0 : equalizer.isFlat && equalizer.presetID == EqualizerPreset.flat.id)
+            .help(parametric ? "删除所有频段，前级归零（十段均衡不受影响）" : "回到平直，前级归零（自定义的曲线会保留）")
         }
         .frame(height: 32)
+    }
+}
+
+/// 十段 | 参数, with the picked one in a pill that slides across.
+private struct EqualizerModePicker: View {
+    var mode: EqualizerMode
+    var tint: Color
+    var onChange: (EqualizerMode) -> Void
+    @Namespace private var pill
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach([(EqualizerMode.graphic, "十段"), (.parametric, "参数")], id: \.0) { value, title in
+                let selected = mode == value
+                Button { if !selected { onChange(value) } } label: {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selected ? Color.black.opacity(0.8) : tint.opacity(0.72))
+                        .padding(.horizontal, 12)
+                        .frame(height: 24)
+                        .background {
+                            if selected {
+                                Capsule().fill(tint.opacity(0.92))
+                                    .matchedGeometryEffect(id: "pill", in: pill)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(NowPlayingPressStyle())
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(tint.opacity(0.08)))
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: mode)
+        .help("十段：预设和滑块；参数：自由添加频段，可导入 AutoEQ")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("均衡器模式")
+    }
+}
+
+/// The parametric bands by frequency to pick from, a button to add one, and import / export.
+private struct ParametricBandStrip: View {
+    var equalizer: EqualizerSettings
+    var selection: Int?
+    var tint: Color
+    var select: (Int) -> Void
+    var add: () -> Void
+    var menu: () -> [PopMenuItem]
+
+    var body: some View {
+        let bands = equalizer.bands.sorted { $0.frequency < $1.frequency }
+        HStack(spacing: 8) {
+            if bands.isEmpty {
+                Text("双击曲线添加频段，或导入 AutoEQ、Equalizer APO 的设置")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(tint.opacity(0.5))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(bands) { band in
+                                ParametricBandChip(band: band, selected: band.slot == selection, enabled: equalizer.isEnabled, tint: tint) { select(band.slot) }
+                                    .id(band.slot)
+                            }
+                        }
+                    }
+                    .onChange(of: selection) { _, slot in
+                        guard let slot else { return }
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(slot, anchor: .center) }
+                    }
+                }
+            }
+            Button(action: add) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(tint)
+            }
+            .buttonStyle(NowPlayingCircleButtonStyle(tint: tint, size: 30))
+            .disabled(bands.count >= ParametricEqualizer.maxBands)
+            .help(bands.count >= ParametricEqualizer.maxBands ? "最多 \(ParametricEqualizer.maxBands) 个频段" : "添加频段")
+            PopMenu(items: menu) { open in
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("导入/导出")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(tint.opacity(open ? 1 : 0.8))
+                .padding(.horizontal, 11)
+                .frame(height: 30)
+                .background(Capsule().fill(tint.opacity(open ? 0.18 : 0.08)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(NowPlayingPressStyle())
+            .fixedSize()
+            .help("Equalizer APO 格式（AutoEQ 的 ParametricEQ.txt、Room EQ Wizard 的滤波器设置）")
+        }
+    }
+}
+
+private struct ParametricBandChip: View {
+    var band: ParametricBand
+    var selected: Bool
+    var enabled: Bool
+    var tint: Color
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let lit = selected && enabled
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text("\(band.slot + 1)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(lit ? tint : Color.black.opacity(0.75))
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(lit ? Color.black.opacity(0.7) : tint.opacity(band.isOn && enabled ? 0.9 : 0.35)))
+                Text(Self.shortFrequency(band.frequency))
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(lit ? Color.black.opacity(0.8) : tint.opacity(hovering || selected ? 0.95 : 0.72))
+            }
+            .padding(.leading, 7)
+            .padding(.trailing, 10)
+            .frame(height: 30)
+            .background(Capsule().fill(selected ? tint.opacity(enabled ? 0.92 : 0.3) : tint.opacity(hovering ? 0.12 : 0.06)))
+            .opacity(band.isOn ? 1 : 0.55)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(NowPlayingPressStyle())
+        .onHover { hovering = $0 }
+        .animation(Motion.hover, value: hovering)
+        .help("\(band.filter.name) \(ParametricEqualizer.frequencyText(band.frequency))\(band.isOn ? "" : "（已停用）")")
+        .accessibilityLabel("第 \(band.slot + 1) 段，\(band.filter.name)，\(ParametricEqualizer.frequencyText(band.frequency))")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// "62.5", "250", "2.2k", "12k".
+    static func shortFrequency(_ frequency: Double) -> String {
+        if frequency >= 1000 {
+            let text = String(format: "%.1f", frequency / 1000)
+            return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "k"
+        }
+        return frequency < 100 && frequency.rounded() != frequency ? String(format: "%.1f", frequency) : String(format: "%.0f", frequency)
+    }
+}
+
+/// The selected band's type, frequency, gain and Q, to type or scroll, with buttons to turn
+/// it off and remove it.
+private struct ParametricBandInspector: View {
+    var band: ParametricBand?
+    /// Whether there is any band to pick (the hint says how otherwise; the row above says how to add one).
+    var hasBands: Bool
+    var isEnabled: Bool
+    var tint: Color
+    var change: ((inout ParametricBand) -> Void) -> Void
+    var remove: () -> Void
+
+    var body: some View {
+        if let band {
+            HStack(spacing: 8) {
+                Text("\(band.slot + 1)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(band.isOn && isEnabled ? Color.black.opacity(0.78) : tint.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(band.isOn && isEnabled ? tint : tint.opacity(0.16)))
+                PopMenu(placement: .above) {
+                    for filter in ParametricFilter.allCases {
+                        PopMenuItem.option(filter.name, selected: filter == band.filter) { change { $0.filter = filter } }
+                    }
+                } label: { open in
+                    HStack(spacing: 4) {
+                        Text(band.filter.name)
+                            .font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(tint.opacity(0.95))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(Capsule().fill(tint.opacity(open ? 0.18 : 0.08)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(NowPlayingPressStyle())
+                .fixedSize()
+                .help("滤波器类型")
+                EqualizerValueField(title: "频率", text: ParametricEqualizer.frequencyText(band.frequency), draft: String(format: "%g", band.frequency), tint: tint, width: 112, parse: ParametricEqualizer.frequency(from:)) { value in
+                    change { $0.frequency = value }
+                } step: { steps in
+                    change { $0.frequency = ParametricEqualizer.rounded(frequency: $0.frequency * pow(2, steps / 24)) }
+                }
+                if band.filter.hasGain {
+                    EqualizerValueField(title: "增益", text: ParametricEqualizer.gainText(band.gain), draft: String(format: "%g", band.gain), tint: tint, width: 100, parse: ParametricEqualizer.gain(from:)) { value in
+                        change { $0.gain = (value * 10).rounded() / 10 }
+                    } step: { steps in
+                        change { $0.gain = (($0.gain + steps * 0.1) * 10).rounded() / 10 }
+                    }
+                }
+                EqualizerValueField(title: "Q", text: ParametricEqualizer.qText(band.q), draft: ParametricEqualizer.qText(band.q), tint: tint, width: 78, parse: ParametricEqualizer.q(from:)) { value in
+                    change { $0.q = value }
+                } step: { steps in
+                    change { $0.q = ($0.q * pow(1.06, steps) * 100).rounded() / 100 }
+                }
+                Spacer(minLength: 0)
+                Button {
+                    change { $0.isOn.toggle() }
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(tint.opacity(band.isOn ? 1 : 0.5))
+                }
+                .buttonStyle(NowPlayingCircleButtonStyle(tint: tint, size: 28, isActive: !band.isOn))
+                .help(band.isOn ? "停用此频段" : "启用此频段")
+                .accessibilityLabel(band.isOn ? "停用此频段" : "启用此频段")
+                Button(action: remove) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(tint)
+                }
+                .buttonStyle(NowPlayingCircleButtonStyle(tint: tint, size: 28))
+                .help("删除频段（Delete）")
+                .accessibilityLabel("删除频段")
+            }
+            // Another band's fields start over (an edit in progress stays with its band).
+            .id(band.slot)
+        } else if hasBands {
+            Text("点选圆点或上方的频段来编辑 · 双击曲线空白处添加 · 在圆点上滚动调 Q")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(tint.opacity(0.45))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// A value to click and type (Return or a click elsewhere applies it, Esc leaves it), or scroll
+/// over to step.
+private struct EqualizerValueField: View {
+    var title: String
+    var text: String
+    /// What editing starts from.
+    var draft: String
+    var tint: Color
+    var width: CGFloat
+    var parse: (String) -> Double?
+    var onCommit: (Double) -> Void
+    /// Scroll steps, up positive.
+    var step: (Double) -> Void
+    @State private var editing = false
+    @State private var value = ""
+    @State private var hovering = false
+    @State private var scrollCarry: CGFloat = 0
+    @State private var clickMonitor: Any?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(tint.opacity(0.55))
+            if editing {
+                TextField("", text: $value)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onExitCommand { editing = false }
+                    .onAppear { focused = true }
+                    .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            } else {
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(tint.opacity(0.95))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(width: width, height: 28, alignment: .leading)
+        .background(Capsule().fill(tint.opacity(editing ? 0.16 : (hovering ? 0.12 : 0.07))))
+        .overlay(Capsule().strokeBorder(tint.opacity(editing ? 0.4 : 0), lineWidth: 1))
+        .contentShape(Capsule())
+        .onTapGesture { begin() }
+        .onHover { hovering = $0 }
+        .onScrollWheel { event in
+            if let steps = EqualizerScroll.steps(event, carry: &scrollCarry) { step(steps) }
+        }
+        .animation(Motion.hover, value: hovering)
+        .onChange(of: editing) { _, isEditing in watchClicks(isEditing) }
+        .onDisappear { watchClicks(false) }
+        .help("点按输入，或在上面滚动调整")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(text)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: step(1)
+            case .decrement: step(-1)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func begin() {
+        guard !editing else { return }
+        value = draft
+        editing = true
+    }
+
+    private func commit() {
+        guard editing else { return }
+        editing = false
+        // Untouched, it stays as it was (the draft may be rounded) and the equalizer stays off.
+        guard value != draft, let number = parse(value) else { return }
+        onCommit(number)
+    }
+
+    private func watchClicks(_ on: Bool) {
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
+        guard on else { return }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            if !hovering { commit() }
+            return event
+        }
+    }
+}
+
+/// Equalizer APO text in and out of the parametric equalizer: AutoEQ's `ParametricEQ.txt`,
+/// Room EQ Wizard's filter settings.
+@MainActor
+enum EqualizerTransfer {
+    static func importFile(into model: AppModel, done: @escaping @MainActor () -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.plainText]
+        panel.prompt = "导入"
+        panel.message = "选择 Equalizer APO 格式的设置，如 AutoEQ 的 ParametricEQ.txt"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                guard let text = [String.Encoding.utf8, .utf16, .isoLatin1].lazy.compactMap({ try? String(contentsOf: url, encoding: $0) }).first else {
+                    model.showToast("读不了这个文件")
+                    return
+                }
+                if apply(text, name: name(of: url), to: model) { done() }
+            }
+        }
+    }
+
+    static func importClipboard(into model: AppModel, done: @escaping @MainActor () -> Void) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        if apply(text, name: "", to: model) { done() }
+    }
+
+    static func copy(from model: AppModel) {
+        let equalizer = model.player.equalizer
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(EqualizerAPOText.text(preamp: equalizer.parametricPreamp, bands: equalizer.bands), forType: .string)
+        model.showToast("已拷贝，可粘贴到 Equalizer APO 的配置里")
+    }
+
+    static func exportFile(from model: AppModel) {
+        let equalizer = model.player.equalizer
+        let text = EqualizerAPOText.text(preamp: equalizer.parametricPreamp, bands: equalizer.bands)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "\(equalizer.parametricName.isEmpty ? "Starry Player" : equalizer.parametricName) ParametricEQ.txt"
+        panel.prompt = "导出"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    try text.write(to: url, atomically: true, encoding: .utf8)
+                    model.showToast("已导出")
+                } catch {
+                    model.showToast("导出失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Whether anything was imported (it then replaces the parametric bands).
+    private static func apply(_ text: String, name: String, to model: AppModel) -> Bool {
+        let profile = EqualizerAPOText.parse(text)
+        guard !profile.bands.isEmpty else {
+            model.showToast("没有找到可用的滤波器（需要 Equalizer APO 格式的 Filter 行）")
+            return false
+        }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            model.player.importEqualizer(profile, name: name)
+        }
+        model.showToast(summary(profile))
+        return true
+    }
+
+    /// AutoEQ names its files "<headphones> ParametricEQ.txt".
+    static func name(of url: URL) -> String {
+        var name = url.deletingPathExtension().lastPathComponent
+        if name.hasSuffix("ParametricEQ") { name.removeLast("ParametricEQ".count) }
+        return name.trimmingCharacters(in: .whitespaces)
+    }
+
+    static func summary(_ profile: EqualizerAPOText.Profile) -> String {
+        var text = "已导入 \(profile.bands.count) 个频段"
+        if profile.droppedFilters > 0 { text += "，超出 \(ParametricEqualizer.maxBands) 段的 \(profile.droppedFilters) 个没有导入" }
+        if !profile.skippedCommands.isEmpty { text += "，忽略了 \(profile.skippedCommands.joined(separator: "、"))" }
+        let range = EqualizerBands.preampRange
+        if !range.contains(profile.preamp) {
+            text += "；前级 \(EqualizerDialog.decibels(profile.preamp)) 超出范围，按 \(EqualizerDialog.decibels(min(max(profile.preamp, range.lowerBound), range.upperBound))) 处理"
+        }
+        return text
     }
 }
 
@@ -356,6 +880,7 @@ private struct FooterChip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(NowPlayingPressStyle())
+        .fixedSize()
         .opacity(isEnabled ? 1 : 0.4)
         .onHover { hovering = $0 }
         .animation(Motion.hover, value: hovering)

@@ -527,6 +527,42 @@ final class PlayerController {
         }
     }
 
+    func setEqualizerMode(_ mode: EqualizerMode) {
+        updateEqualizer {
+            $0.setMode(mode)
+            $0.isEnabled = true
+        }
+    }
+
+    func updateEqualizerBand(slot: Int, _ change: (inout ParametricBand) -> Void) {
+        updateEqualizer {
+            $0.updateBand(slot: slot, change)
+            $0.isEnabled = true
+        }
+    }
+
+    /// The slot the band went into; nil when all are taken.
+    @discardableResult
+    func addEqualizerBand(_ band: ParametricBand) -> Int? {
+        var slot: Int?
+        updateEqualizer {
+            slot = $0.addBand(band)
+            $0.isEnabled = true
+        }
+        return slot
+    }
+
+    func removeEqualizerBand(slot: Int) {
+        updateEqualizer { $0.removeBand(slot: slot) }
+    }
+
+    func importEqualizer(_ profile: EqualizerAPOText.Profile, name: String) {
+        updateEqualizer {
+            $0.setParametric(profile, name: name)
+            $0.isEnabled = true
+        }
+    }
+
     func cycleRepeat() {
         if isEndless {
             endlessRepeatsOne.toggle()

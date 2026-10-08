@@ -142,10 +142,13 @@ struct SettingsCatalog {
             SettingsGroup("transition", title: "切歌", footer: "只在一首歌自然播完时生效；手动切歌仍然直接切换。", entries: transitionEntries),
             SettingsGroup("loudness", title: "音量均衡", footer: "按歌曲里的 ReplayGain 信息调整音量，让不同的歌听起来一样响；没有这项信息的歌音量不变。", entries: loudnessEntries),
             SettingsGroup("equalizer", title: "均衡器", entries: [
-                SettingsEntry("equalizer", "均衡器", detail: "十段均衡，在播放页底栏音量旁的按钮里调整各频段", keywords: "eq 音效 低音 高音 频段 增益") {
+                SettingsEntry("equalizer", "均衡器", detail: "十段或参数均衡，在播放页底栏音量旁的按钮里调整各频段", keywords: "eq 音效 低音 高音 频段 增益") {
                     SettingsSwitch(isOn: Binding { player.equalizer.isEnabled } set: { player.setEqualizerEnabled($0) })
                 },
-                SettingsEntry("equalizerPreset", "预设", detail: "选一个预设也会打开均衡器", keywords: "eq 流行 摇滚 古典 爵士 电子 人声 低音增强") {
+                SettingsEntry("equalizerMode", "模式", detail: "参数均衡可以自由添加频段，也能导入 AutoEQ、Equalizer APO 的耳机校正设置", keywords: "eq peq 参数均衡 autoeq equalizer apo 耳机 校正 滤波器") {
+                    SettingsMenu(selection: Binding { player.equalizer.mode } set: { player.setEqualizerMode($0) }, options: [(EqualizerMode.graphic, "十段"), (.parametric, "参数")])
+                },
+                SettingsEntry("equalizerPreset", "预设", detail: "十段均衡的预设，选一个也会切到十段并打开均衡器", keywords: "eq 流行 摇滚 古典 爵士 电子 人声 低音增强") {
                     SettingsMenu(selection: Binding { player.equalizer.presetID } set: { player.selectEqualizerPreset($0) }, options: EqualizerPreset.all.map { ($0.id, $0.name) } + [(EqualizerPreset.customID, "自定义")])
                 },
             ]),

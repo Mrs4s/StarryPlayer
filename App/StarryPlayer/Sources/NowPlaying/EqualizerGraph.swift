@@ -63,7 +63,8 @@ private struct EqualizerGraphRepresentable: NSViewRepresentable {
     }
 }
 
-private struct BandMotion {
+/// A value that springs to its target (the knobs and curve of both equalizer graphs).
+struct BandMotion {
     var value = 0.0
     var velocity = 0.0
     var target = 0.0
@@ -203,7 +204,7 @@ final class EqualizerGraphView: NSView {
     }
 
     /// SwiftUI hands over a new colour object on every update.
-    private static func sameColor(_ a: NSColor, _ b: NSColor) -> Bool {
+    static func sameColor(_ a: NSColor, _ b: NSColor) -> Bool {
         guard let a = a.usingColorSpace(.sRGB), let b = b.usingColorSpace(.sRGB) else { return a == b }
         return abs(a.redComponent - b.redComponent) < 0.002 && abs(a.greenComponent - b.greenComponent) < 0.002
             && abs(a.blueComponent - b.blueComponent) < 0.002 && abs(a.alphaComponent - b.alphaComponent) < 0.002
