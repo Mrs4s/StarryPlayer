@@ -291,18 +291,14 @@ struct AccountSwitcherPanel: View {
         if sources.count == 1, let id = sources.first {
             ActionRow(symbol: "plus", title: "添加账号…") { model.addAccount(from: id) }
         } else {
-            Menu {
-                ForEach(sources, id: \.key) { id in
-                    Button { model.addAccount(from: id) } label: {
-                        Label(model.displayName(of: id), systemImage: model.sourceSymbol(of: id))
-                    }
+            PopMenu(placement: .beside) {
+                for id in sources {
+                    PopMenuItem.button(model.displayName(of: id), systemImage: model.sourceSymbol(of: id)) { model.addAccount(from: id) }
                 }
             } label: {
                 ActionRowLabel(symbol: "plus", title: "添加账号", trailing: "chevron.right")
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
+            .buttonStyle(SwitcherPressStyle())
         }
     }
 
@@ -772,6 +768,8 @@ final class AccountSwitcherEvents {
     }
 
     private func handle(_ event: NSEvent) -> Bool {
+        // Its 添加账号 menu takes the clicks and Esc while it is open.
+        if PopMenuController.isAnyOpen { return false }
         if event.type == .keyDown {
             guard event.keyCode == 53 else { return false }
             if let editor = (event.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView, editor.hasMarkedText() { return false }

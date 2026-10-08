@@ -36,3 +36,26 @@ struct AddToPlaylistMenu: View {
         }
     }
 }
+
+extension PopMenuItem {
+    /// `AddToPlaylistMenu` as a submenu of a `PopMenu`; nothing where it would show nothing.
+    @MainActor
+    static func addToPlaylist(_ tracks: [Track], model: AppModel, systemImage: String? = nil, excluding: String? = nil) -> PopMenuItem {
+        guard let source = tracks.first?.id.source, let editing = model.playlistEditing(of: source), editing.canAdd else { return .empty }
+        return .submenu("加入歌单", systemImage: systemImage) {
+            if !model.isLibraryOpen(source) {
+                PopMenuItem.button("登录\(model.displayName(of: source))后加入…", systemImage: "person.crop.circle") { model.requestLogin(source) }
+            } else {
+                if editing.canCreate {
+                    PopMenuItem.button("新建歌单…", systemImage: "plus") {
+                        model.presentPlaylistEditor(PlaylistEditorRequest(source: source, purpose: .create(adding: tracks)))
+                    }
+                    PopMenuItem.divider
+                }
+                for playlist in model.playlistsToAdd(of: source).filter({ $0.id != excluding }) {
+                    PopMenuItem.button(playlist.name, systemImage: "music.note.list") { model.add(tracks, to: playlist) }
+                }
+            }
+        }
+    }
+}

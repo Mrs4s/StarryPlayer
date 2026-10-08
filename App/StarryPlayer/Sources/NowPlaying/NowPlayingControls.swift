@@ -185,58 +185,58 @@ struct NowPlayingMoreMenu: View {
     var track: Track
     var tint: Color
     var k: CGFloat
+    @Binding var isOpen: Bool
     var onOpenSettings: () -> Void
     var onSearchLyrics: () -> Void
     var onEqualizer: () -> Void
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let player = model.player
-        Menu {
-            if track.album?.isLinkable == true {
-                Button("查看专辑", systemImage: "square.stack") { model.showAlbum(of: track) }
-            }
-            ForEach(track.artists.filter(\.isLinkable)) { artist in
-                Button("查看歌手：\(artist.name)", systemImage: "music.mic") { model.showArtist(artist, of: track) }
-            }
-            AddToPlaylistMenu(tracks: [track], systemImage: "text.badge.plus")
-            Divider()
-            Button("拷贝歌曲名", systemImage: "doc.on.doc") {
-                copy("\(track.title) - \(track.artistText)", toast: "已拷贝歌曲名")
-            }
-            if let lyrics = player.lyrics, !lyrics.isEmpty {
-                Button("拷贝歌词", systemImage: "text.quote") {
-                    copy(lyrics.lines.map(\.text).joined(separator: "\n"), toast: "歌词已拷贝")
-                }
-            }
-            Button("搜索歌词…", systemImage: "magnifyingglass", action: onSearchLyrics)
-            Button("打开歌词文件…", systemImage: "doc.text") { model.openLyricsFile(for: track) }
-            Divider()
-            Section("这首歌") {
-                Text("来源：\(model.displayName(of: track.id.source))")
-                if let tier = model.availableTiers(of: track).last {
-                    Text("最高音质：\(tier.name)")
-                }
-                if let format = player.lyrics?.format {
-                    Text("歌词：\([player.lyricsOrigin?.displayName, format.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · "))")
-                }
-            }
-            Divider()
-            Button("均衡器…", systemImage: "slider.vertical.3", action: onEqualizer)
-            Button("播放页设置…", systemImage: "gearshape", action: onOpenSettings)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 14 * k, weight: .bold))
+        // Above the button: the page is what the menu should open into, not the screen below.
+        PopMenu(placement: .above, isPresented: $isOpen) {
+            items
+        } label: { open in
+            PopMenuEllipsis(isOpen: open, size: 14 * k, weight: .bold)
                 .foregroundStyle(tint)
-                .frame(width: 34 * k, height: 34 * k)
-                .background(Circle().fill(tint.opacity(0.14)))
-                .contentShape(Circle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
+        .buttonStyle(NowPlayingCircleButtonStyle(tint: tint, size: 34 * k, isActive: isOpen))
         .fixedSize()
         .help("更多")
+    }
+
+    @PopMenuBuilder
+    private var items: [PopMenuItem] {
+        let player = model.player
+        if track.album?.isLinkable == true {
+            PopMenuItem.button("查看专辑", systemImage: "square.stack") { model.showAlbum(of: track) }
+        }
+        for artist in track.artists.filter(\.isLinkable) {
+            PopMenuItem.button("查看歌手：\(artist.name)", systemImage: "music.mic") { model.showArtist(artist, of: track) }
+        }
+        PopMenuItem.addToPlaylist([track], model: model, systemImage: "text.badge.plus")
+        PopMenuItem.divider
+        PopMenuItem.button("拷贝歌曲名", systemImage: "doc.on.doc") {
+            copy("\(track.title) - \(track.artistText)", toast: "已拷贝歌曲名")
+        }
+        if let lyrics = player.lyrics, !lyrics.isEmpty {
+            PopMenuItem.button("拷贝歌词", systemImage: "text.quote") {
+                copy(lyrics.lines.map(\.text).joined(separator: "\n"), toast: "歌词已拷贝")
+            }
+        }
+        PopMenuItem.button("搜索歌词…", systemImage: "magnifyingglass", action: onSearchLyrics)
+        PopMenuItem.button("打开歌词文件…", systemImage: "doc.text") { model.openLyricsFile(for: track) }
+        PopMenuItem.divider
+        PopMenuItem.header("这首歌")
+        PopMenuItem.info("来源", model.displayName(of: track.id.source))
+        if let tier = model.availableTiers(of: track).last {
+            PopMenuItem.info("最高音质", tier.name)
+        }
+        if let format = player.lyrics?.format {
+            PopMenuItem.info("歌词", [player.lyricsOrigin?.displayName, format.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · "))
+        }
+        PopMenuItem.divider
+        PopMenuItem.button("均衡器…", systemImage: "slider.vertical.3", action: onEqualizer)
+        PopMenuItem.button("播放页设置…", systemImage: "gearshape", action: onOpenSettings)
     }
 
     private func copy(_ text: String, toast: String) {
@@ -447,17 +447,19 @@ struct NowPlayingPressStyle: ButtonStyle {
 struct NowPlayingCircleButtonStyle: ButtonStyle {
     var tint: Color
     var size: CGFloat
+    var isActive = false
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: size, height: size)
-            .background(Circle().fill(tint.opacity(configuration.isPressed ? 0.26 : (hovering ? 0.2 : 0.14))))
+            .background(Circle().fill(tint.opacity(configuration.isPressed || isActive ? 0.26 : (hovering ? 0.2 : 0.14))))
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
             .contentShape(Circle())
             .onHover { hovering = $0 }
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
             .animation(Motion.hover, value: hovering)
+            .animation(Motion.hover, value: isActive)
     }
 }
 

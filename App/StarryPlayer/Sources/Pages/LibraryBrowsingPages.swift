@@ -68,12 +68,8 @@ struct LibraryAlbumsPage: View {
                     PageTitle(title: genre ?? "专辑", stat: total.count.map { "\($0) 张专辑" }, statIcon: genre == nil ? "opticaldisc" : "guitars")
                     Spacer(minLength: 12)
                     if let browsing, browsing.albumSorts.count > 1 {
-                        Picker("排序", selection: sortBinding) {
-                            ForEach(browsing.albumSorts, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .fixedSize()
+                        SettingsMenu(selection: sortBinding, options: browsing.albumSorts.map { ($0, $0.title) })
+                            .help("排序")
                     }
                 }
                 .padding(.bottom, 22)

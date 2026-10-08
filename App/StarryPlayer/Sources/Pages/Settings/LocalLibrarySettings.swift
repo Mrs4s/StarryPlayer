@@ -83,32 +83,29 @@ struct LocalFolderRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 12)
-            Menu {
-                Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([folder.url]) }
-                    .disabled(folder.isOffline)
-                Button("重新扫描") { Task { await model.localSource?.rescan(folder.id) } }
-                Button("重新读取所有文件") { Task { await model.localSource?.rescan(folder.id, rereadTags: true) } }
-                Menu("旧标签的编码") {
-                    Picker("旧标签的编码", selection: encodingBinding) {
-                        Text("自动识别").tag(LegacyEncoding?.none)
-                        Divider()
-                        ForEach(LegacyEncoding.allCases.filter { $0 != .utf8 }, id: \.self) { encoding in
-                            Text(encoding.displayName).tag(LegacyEncoding?.some(encoding))
-                        }
-                    }
-                    .pickerStyle(.inline)
+            PopMenu {
+                PopMenuItem.button("在访达中显示", systemImage: "folder", disabled: folder.isOffline) {
+                    NSWorkspace.shared.activateFileViewerSelecting([folder.url])
                 }
-                Divider()
-                Button("移除文件夹…", role: .destructive) { confirmingRemoval = true }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .semibold))
+                PopMenuItem.button("重新扫描", systemImage: "arrow.clockwise") { Task { await model.localSource?.rescan(folder.id) } }
+                PopMenuItem.button("重新读取所有文件", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await model.localSource?.rescan(folder.id, rereadTags: true) }
+                }
+                PopMenuItem.submenu("旧标签的编码", systemImage: "character.book.closed", detail: folder.encoding?.displayName ?? "自动识别") {
+                    PopMenuItem.option("自动识别", selected: folder.encoding == nil) { encodingBinding.wrappedValue = nil }
+                    PopMenuItem.divider
+                    for encoding in LegacyEncoding.allCases.filter({ $0 != .utf8 }) {
+                        PopMenuItem.option(encoding.displayName, selected: folder.encoding == encoding) { encodingBinding.wrappedValue = encoding }
+                    }
+                }
+                PopMenuItem.divider
+                PopMenuItem.button("移除文件夹…", systemImage: "trash", role: .destructive) { confirmingRemoval = true }
+            } label: { open in
+                PopMenuEllipsis(isOpen: open, size: 12)
                     .foregroundStyle(theme.onSurface)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
             .buttonStyle(VariantButtonStyle(variant: .tertiary, isPill: true))
             .fixedSize()
             .help("文件夹操作")

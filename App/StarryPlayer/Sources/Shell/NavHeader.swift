@@ -1,3 +1,4 @@
+import Library
 import SwiftUI
 
 /// 64 pt header: sidebar button, back, search box; the account chip (with the account switcher,
@@ -26,24 +27,25 @@ struct NavHeader: View {
             if !model.registry.sources.isEmpty {
                 AccountChip(namespace: switcherSpace, events: switcherEvents)
             }
-            Menu {
-                Picker("外观", selection: appearanceBinding) {
-                    Text("跟随系统").tag(0)
-                    Text("浅色").tag(1)
-                    Text("深色").tag(2)
+            PopMenu {
+                PopMenuItem.header("外观")
+                for (appearance, title) in [(AppSettings.Appearance.system, "跟随系统"), (.light, "浅色"), (.dark, "深色")] {
+                    PopMenuItem.option(title, selected: model.settings.settings.appearance == appearance) {
+                        model.settings.settings.appearance = appearance
+                    }
                 }
-                Divider()
-                Button("设置…") { model.openSettings() }
-            } label: {
+                PopMenuItem.divider
+                PopMenuItem.button("设置…", systemImage: "gearshape") { model.openSettings() }
+            } label: { open in
                 Image(systemName: "gearshape")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(theme.onSurface.opacity(0.85))
+                    .rotationEffect(.degrees(open ? 60 : 0))
+                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: open)
                     .frame(width: 40, height: 40)
                     .contentShape(Circle())
             }
-            .menuStyle(.button)
             .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true))
-            .menuIndicator(.hidden)
             .fixedSize()
         }
         .padding(.horizontal, 16)
@@ -56,18 +58,6 @@ struct NavHeader: View {
         switch model.sidebarMode {
         case .docked: model.sidebarCollapsed ? "展开侧栏（⌘S）" : "折叠侧栏（⌘S）"
         case .floating, .autoHide: "固定侧栏（⌘S）"
-        }
-    }
-
-    private var appearanceBinding: Binding<Int> {
-        Binding {
-            switch model.settings.settings.appearance {
-            case .system: 0
-            case .light: 1
-            case .dark: 2
-            }
-        } set: { value in
-            model.settings.settings.appearance = [.system, .light, .dark][value]
         }
     }
 }

@@ -286,15 +286,11 @@ struct SettingsMenu<Value: Hashable>: View {
     @State private var hovering = false
 
     var body: some View {
-        Menu {
-            Picker("", selection: $selection) {
-                ForEach(options.indices, id: \.self) { index in
-                    Text(options[index].1).tag(options[index].0)
-                }
+        PopMenu(matchesWidth: true) {
+            for index in options.indices {
+                PopMenuItem.option(options[index].1, selected: options[index].0 == selection) { selection = options[index].0 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
+        } label: { open in
             HStack(spacing: 6) {
                 Text(options.first { $0.0 == selection }?.1 ?? "")
                     .font(.system(size: 12.5, weight: .medium))
@@ -309,12 +305,10 @@ struct SettingsMenu<Value: Hashable>: View {
             .padding(.leading, 12)
             .padding(.trailing, 10)
             .frame(height: 28)
-            .background(theme.onSurface.opacity(hovering ? 0.1 : 0.06), in: Capsule())
+            .background(theme.onSurface.opacity(hovering || open ? 0.1 : 0.06), in: Capsule())
             .contentShape(Capsule())
         }
-        .menuStyle(.button)
         .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }
         .animation(Motion.hover, value: hovering)

@@ -166,25 +166,22 @@ struct LikedPage: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            Button("下一首播放") { enqueue(next: true) }
-            Button("添加到播放队列") { enqueue(next: false) }
-        } label: {
+        PopMenu {
+            PopMenuItem.button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward") { enqueue(next: true) }
+            PopMenuItem.button("添加到播放队列", systemImage: "text.line.last.and.arrowtriangle.forward") { enqueue(next: false) }
+        } label: { open in
             ZStack {
                 if preparing {
                     ProgressView().controlSize(.small).scaleEffect(0.7)
                 } else {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                    PopMenuEllipsis(isOpen: open)
                         .foregroundStyle(theme.primary)
                 }
             }
             .frame(width: 38, height: 38)
             .contentShape(Circle())
         }
-        .menuStyle(.button)
         .buttonStyle(VariantButtonStyle(variant: .tertiary, isCircle: true))
-        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(list?.tracks.isEmpty != false)
     }

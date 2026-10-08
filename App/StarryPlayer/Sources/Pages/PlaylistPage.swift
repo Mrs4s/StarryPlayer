@@ -233,34 +233,35 @@ struct PlaylistPage: View {
 
     private var moreMenu: some View {
         let empty = list?.tracks.isEmpty != false
-        return Menu {
-            Button("下一首播放") { enqueue(next: true) }.disabled(empty)
-            Button("添加到播放队列") { enqueue(next: false) }.disabled(empty)
-            if let list, list.isComplete { AddToPlaylistMenu(tracks: list.tracks, excluding: playlist.id) }
-            if model.canEdit(shown) || model.canDelete(shown) {
-                Divider()
-                if model.canEdit(shown) { Button("编辑歌单…", action: edit) }
-                if model.canDelete(shown) { Button("删除歌单…", role: .destructive) { confirmingDelete = true } }
+        return PopMenu {
+            PopMenuItem.button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward", disabled: empty) { enqueue(next: true) }
+            PopMenuItem.button("添加到播放队列", systemImage: "text.line.last.and.arrowtriangle.forward", disabled: empty) { enqueue(next: false) }
+            if let list, list.isComplete {
+                PopMenuItem.addToPlaylist(list.tracks, model: model, systemImage: "text.badge.plus", excluding: playlist.id)
+            }
+            PopMenuItem.divider
+            if model.canEdit(shown) {
+                PopMenuItem.button("编辑歌单…", systemImage: "pencil", action: edit)
+            }
+            if model.canDelete(shown) {
+                PopMenuItem.button("删除歌单…", systemImage: "trash", role: .destructive) { confirmingDelete = true }
             }
             if let url = webURL {
-                Divider()
-                Button("复制链接") {
+                PopMenuItem.divider
+                PopMenuItem.button("复制链接", systemImage: "link") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     model.showToast("已复制歌单链接")
                 }
-                Button("在浏览器中打开") { NSWorkspace.shared.open(url) }
+                PopMenuItem.button("在浏览器中打开", systemImage: "safari") { NSWorkspace.shared.open(url) }
             }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
+        } label: { open in
+            PopMenuEllipsis(isOpen: open)
                 .foregroundStyle(theme.primary)
                 .frame(width: 38, height: 38)
                 .contentShape(Circle())
         }
-        .menuStyle(.button)
         .buttonStyle(VariantButtonStyle(variant: .tertiary, isCircle: true))
-        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(state.value == nil)
     }

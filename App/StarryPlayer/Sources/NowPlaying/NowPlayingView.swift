@@ -85,6 +85,7 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var equalizerMounted = false
     @State private var editingLyricOffset = false
+    @State private var showMoreMenu = false
     /// The bar's cover in page coordinates when the page last opened or started closing.
     @State private var heroSource: CGRect?
 
@@ -160,6 +161,9 @@ struct NowPlayingView: View {
             .onChange(of: editingLyricOffset) { _, editing in
                 if !editing { wake() }
             }
+            .onChange(of: showMoreMenu) { _, open in
+                if !open { wake() }
+            }
             .onChange(of: model.nowPlayingPanel) { _, _ in wake() }
             .onChange(of: player.vocalAttenuationEnabled) { _, on in
                 if on { wake() }
@@ -218,7 +222,7 @@ struct NowPlayingView: View {
             try? await Task.sleep(for: .seconds(3))
             // The settings popover is its own window, so hovering it sends no events here; hiding
             // the chrome would remove its anchor button and close it.
-            guard !Task.isCancelled, idleHides, !scrubbing, !showLyricsSettings, !showLyricsSource, !showAudioInfo, !showVocals, !editingLyricOffset, !showEqualizer, player.showNowPlaying else { return }
+            guard !Task.isCancelled, idleHides, !scrubbing, !showLyricsSettings, !showLyricsSource, !showAudioInfo, !showVocals, !editingLyricOffset, !showEqualizer, !showMoreMenu, player.showNowPlaying else { return }
             withAnimation(.easeInOut(duration: 0.6)) {
                 chromeVisible = false
             } completion: {
@@ -289,7 +293,7 @@ struct NowPlayingView: View {
                     if model.canLike(track) {
                         NowPlayingLikeButton(track: track, tint: tint, k: k)
                     }
-                    NowPlayingMoreMenu(track: track, tint: tint, k: k) {
+                    NowPlayingMoreMenu(track: track, tint: tint, k: k, isOpen: $showMoreMenu) {
                         model.openSettings(.nowPlaying)
                     } onSearchLyrics: {
                         searchLyricsByHand()

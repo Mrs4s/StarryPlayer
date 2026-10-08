@@ -185,28 +185,25 @@ struct ArtistPage: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            Button("下一首播放") { enqueue(next: true) }
-            Button("添加到播放队列") { enqueue(next: false) }
+        PopMenu {
+            PopMenuItem.button("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward") { enqueue(next: true) }
+            PopMenuItem.button("添加到播放队列", systemImage: "text.line.last.and.arrowtriangle.forward") { enqueue(next: false) }
             if let url = webURL {
-                Divider()
-                Button("复制链接") {
+                PopMenuItem.divider
+                PopMenuItem.button("复制链接", systemImage: "link") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     model.showToast("已复制歌手链接")
                 }
-                Button("在浏览器中打开") { NSWorkspace.shared.open(url) }
+                PopMenuItem.button("在浏览器中打开", systemImage: "safari") { NSWorkspace.shared.open(url) }
             }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
+        } label: { open in
+            PopMenuEllipsis(isOpen: open)
                 .foregroundStyle(theme.primary)
                 .frame(width: 38, height: 38)
                 .contentShape(Circle())
         }
-        .menuStyle(.button)
         .buttonStyle(VariantButtonStyle(variant: .tertiary, isCircle: true))
-        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(topTracks.isEmpty)
     }
