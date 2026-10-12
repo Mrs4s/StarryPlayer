@@ -72,6 +72,8 @@ struct StarryPlayerApp: App {
                     .keyboardShortcut("k", modifiers: .command)
                 Button("后退") { model.back() }
                     .keyboardShortcut("[", modifiers: .command)
+                Button("刷新当前页面") { model.refreshCurrentPage() }
+                    .keyboardShortcut("r", modifiers: .command)
                 Button("定位到正在播放的歌曲") { model.locatePlaying() }
                     .keyboardShortcut("l", modifiers: [.command, .option])
             }

@@ -94,4 +94,11 @@ struct NavigationHistory {
         live.removeLast()
         if live.last?.id != current.id { live.append(current) }
     }
+
+    /// Rebuild only the current page, leaving the back stack and its retained pages intact.
+    mutating func refreshCurrentPage() {
+        let entry = HistoryEntry(route: current.route)
+        entries[entries.count - 1] = entry
+        live[live.count - 1] = entry
+    }
 }

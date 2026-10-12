@@ -550,6 +550,7 @@ final class AppModel {
     /// The last Home content, so a new visit to Home (each visit is its own page) shows it at
     /// once instead of a skeleton, and does not ask the source again for a few minutes.
     @ObservationIgnored private var homeCache: (content: HomeContent, key: HomeKey, date: Date)?
+    @ObservationIgnored private var homeCacheGeneration = 0
 
     func cachedHome(maxAge: TimeInterval = 300) -> HomeContent? {
         guard let homeCache, homeCache.key == homeKey, Date().timeIntervalSince(homeCache.date) < maxAge else { return nil }
@@ -558,8 +559,10 @@ final class AppModel {
 
     func loadHome() async throws -> HomeContent {
         let key = homeKey
+        let generation = homeCacheGeneration
         let content = try await fetchHome(key)
-        homeCache = (content, key, Date())
+        try Task.checkCancellation()
+        if generation == homeCacheGeneration { homeCache = (content, key, Date()) }
         return content
     }
 
@@ -1016,6 +1019,15 @@ final class AppModel {
     func navigate(_ route: Route) {
         guard !route.isSamePage(as: self.route) else { return }
         history.open(route)
+    }
+
+    func refreshCurrentPage() {
+        if route == .home {
+            homeCache = nil
+            // A request still finishing on the old page must not refill the cleared cache.
+            homeCacheGeneration += 1
+        }
+        history.refreshCurrentPage()
     }
 
     func showAlbum(of track: Track) {

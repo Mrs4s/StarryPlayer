@@ -1,7 +1,7 @@
 import Library
 import SwiftUI
 
-/// 64 pt header: sidebar button, back, search box; the account chip (with the account switcher,
+/// 64 pt header: sidebar button, back, refresh, search box; the account chip (with the account switcher,
 /// `AccountChip`) and settings on the right. The floating sidebar carries its own button, so the
 /// header drops it.
 struct NavHeader: View {
@@ -19,6 +19,8 @@ struct NavHeader: View {
             }
             IconButton(systemName: "chevron.left", size: 40, iconSize: 16, help: "后退") { model.goBack() }
                 .disabled(!model.canGoBack).opacity(model.canGoBack ? 1 : 0.35)
+            IconButton(systemName: "arrow.clockwise", size: 40, iconSize: 16, help: "刷新当前页面（⌘R）") { model.refreshCurrentPage() }
+                .accessibilityLabel("刷新当前页面")
 
             Color.clear.searchBoxSlot()
 
