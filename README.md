@@ -6,6 +6,8 @@
 
 高性能原生全特效 macOS 音乐播放器
 
+[简体中文](README.md) · [English](README.en.md)
+
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
 
@@ -24,7 +26,7 @@
 - 🎯 **歌词校准**：歌词和演唱对不上时，一键分析人声自动校准偏移，每首歌单独记住
 - 🌌 **律动背景**：流动的封面背景，跟着音乐节奏起伏
 - 🎵 **多种来源**：网易云音乐、Jellyfin、Subsonic / Navidrome、本地音乐
-- 🧩 **插件**：灵活的插件系统, 开发者可以实现任意自定义音源的接入.
+- 🧩 **插件**：灵活的插件系统，开发者可以接入自定义音源
 - 🎧 **播放**：无缝播放、交叉淡化、ReplayGain、十段与参数均衡器（可导入 AutoEQ、Equalizer APO 设置）
 - 🎙️ **唱歌模式**：消去原唱人声，跟着伴奏唱
 - ⚡ **高性能**：Swift 原生开发，动画流畅、占用低
@@ -42,17 +44,17 @@ Starry Player 使用 Swift 原生开发，针对 macOS 深度优化。以下为�
 | 网易云音乐 | M5 Max（40 核 GPU） | 约 +2 ~ 3 W |
 | Apple Music | M5 Max（40 核 GPU） | 约 +5 W |
 
-¹ M5 Max 的外围部件(比如更多统一内存)功耗更高，因此增量高于 M4。
+¹ M5 Max 的外围部件（比如更多统一内存）功耗更高，因此增量高于 M4。
 
-同时播放页的CPU占用也比所有常用播放器更低
+同时，播放页的 CPU 占用也比所有常用播放器更低：
 
-| 实现 | 设备 | 平均CPU占用 ¹ |
+| 实现 | 设备 | 平均 CPU 占用 ¹ |
 | --- | --- | --- |
-| **Starry Player** | M5 Max（18 核 CPU） | 0.5% | 
-| Apple Music | M5 Max（18 核 CPU）| 1% |
-| 网易云音乐 | M5 Max（18 核 CPU）| 2% |
+| **Starry Player** | M5 Max（18 核 CPU） | 0.5% |
+| Apple Music | M5 Max（18 核 CPU） | 1% |
+| 网易云音乐 | M5 Max（18 核 CPU） | 2% |
 
-¹ 根据歌词换行频率不同, 不同歌曲可能会有波动
+¹ 根据歌词换行频率不同，不同歌曲可能会有波动。
 
 ## 安装
 
