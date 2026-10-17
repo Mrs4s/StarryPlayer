@@ -56,7 +56,7 @@ struct PlaylistPage: View {
                         do {
                             try await model.deletePlaylist(shown)
                         } catch {
-                            model.showToast(ErrorText.describe(error))
+                            model.showToast(ErrorText.message(error))
                         }
                     }
                 }
@@ -300,8 +300,8 @@ struct PlaylistPage: View {
         case .failed(let message):
             return [.hosted("failed") {
                 VStack(spacing: 14) {
-                    StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-                    PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
+                    StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+                    PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
             }]
@@ -371,7 +371,7 @@ struct PlaylistPage: View {
                 try await model.removeSongs([track.id], from: shown)
                 model.showToast("已从歌单中删除")
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
                 await load()
             }
         }
@@ -386,7 +386,7 @@ struct PlaylistPage: View {
             do {
                 try await model.reorder(playlist, to: order)
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
                 await load()
             }
         }
@@ -467,7 +467,7 @@ struct PlaylistPage: View {
                     subscribed = was
                     subscribedCount = count
                 }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

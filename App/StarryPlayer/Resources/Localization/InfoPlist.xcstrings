@@ -1,0 +1,23 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starry Player 需要访问本地网络，才能连接你在局域网里的音乐服务器（如 Jellyfin）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starry Player needs access to your local network to connect to music servers such as Jellyfin."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

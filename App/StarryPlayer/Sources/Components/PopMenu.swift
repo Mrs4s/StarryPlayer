@@ -99,6 +99,7 @@ struct PopMenu<Label: View>: View {
     private let matchesWidth: Bool
     private let isPresented: Binding<Bool>?
     @Environment(\.theme) private var theme
+    @Environment(LocalizationStore.self) private var localization
     @State private var controller = PopMenuController()
 
     /// - Parameters:
@@ -121,7 +122,7 @@ struct PopMenu<Label: View>: View {
 
     var body: some View {
         Button {
-            controller.toggle(items: items(), theme: theme, placement: placement, matchesWidth: matchesWidth)
+            controller.toggle(items: items(), theme: theme, localization: localization, placement: placement, matchesWidth: matchesWidth)
         } label: {
             label(controller.isOpen)
         }
@@ -192,15 +193,15 @@ final class PopMenuController {
     /// A menu is open: other click and Esc watchers (the account switcher's) leave it the events.
     static var isAnyOpen: Bool { active?.isOpen == true }
 
-    func toggle(items: [PopMenuItem], theme: Theme, placement: PopMenuPlacement, matchesWidth: Bool) {
+    func toggle(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, placement: PopMenuPlacement, matchesWidth: Bool) {
         if isOpen {
             close()
         } else {
-            open(items: items, theme: theme, placement: placement, matchesWidth: matchesWidth)
+            open(items: items, theme: theme, localization: localization, placement: placement, matchesWidth: matchesWidth)
         }
     }
 
-    private func open(items: [PopMenuItem], theme: Theme, placement: PopMenuPlacement, matchesWidth: Bool) {
+    private func open(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, placement: PopMenuPlacement, matchesWidth: Bool) {
         let items = PopMenuItem.tidy(items)
         guard !items.isEmpty, let anchor, let window = anchor.window, let screen = window.screen ?? NSScreen.main else { return }
         Self.active?.close()
@@ -219,7 +220,7 @@ final class PopMenuController {
         session.onPick = { [weak self] action in self?.close(then: action) }
         session.onDismiss = { [weak self] in self?.close() }
 
-        let panel = PopMenuPanel(session: session)
+        let panel = PopMenuPanel(session: session, localization: localization)
         panel.setFrame(flipped(layout.frame.insetBy(dx: -PopMenuMetrics.margin, dy: -PopMenuMetrics.margin)), display: false)
         window.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
@@ -328,11 +329,11 @@ final class PopMenuController {
 /// card can reach past the window's edge.
 final class PopMenuPanel: NSPanel {
     private let session: PopMenuSession
-    private let host: PopMenuHostingView<PopMenuCanvas>
+    private let host: PopMenuHostingView<AnyView>
 
-    init(session: PopMenuSession) {
+    init(session: PopMenuSession, localization: LocalizationStore) {
         self.session = session
-        host = PopMenuHostingView(rootView: PopMenuCanvas(session: session))
+        host = PopMenuHostingView(rootView: AnyView(PopMenuCanvas(session: session).modifier(AppLocalization(localization: localization))))
         host.sizingOptions = []
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isFloatingPanel = true

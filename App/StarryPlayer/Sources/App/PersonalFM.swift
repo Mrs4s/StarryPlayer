@@ -16,7 +16,7 @@ extension AppModel {
                 guard !tracks.isEmpty else { showToast("私人 FM 暂时没有推荐"); return }
                 player.play(tracks, context: PlaybackContext(source: source.id, originType: .radio, originName: Self.personalFMName))
             } catch {
-                showToast(ErrorText.describe(error))
+                showToast(ErrorText.message(error))
             }
         }
     }
@@ -31,7 +31,7 @@ extension AppModel {
             do {
                 try await source.trashFM(track.id, playedSeconds: played)
             } catch {
-                showToast(ErrorText.describe(error))
+                showToast(ErrorText.message(error))
             }
         }
     }

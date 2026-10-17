@@ -1,0 +1,261 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "playback.vipRequired": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该歌曲需要 VIP，或未登录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This track requires VIP access, or you aren’t signed in."
+          }
+        }
+      }
+    },
+    "playback.loginExpired": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录已过期，请重新登录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your session has expired. Please sign in again."
+          }
+        }
+      }
+    },
+    "playback.unavailableInRegion": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该歌曲在当前地区不可用，可在设置的音乐平台页填写代理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This track isn’t available in your region. You can configure a proxy in the music source’s settings."
+          }
+        }
+      }
+    },
+    "playback.sourceUnreachable": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到音乐来源"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t connect to the music source."
+          }
+        }
+      }
+    },
+    "playback.assetExpired": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放地址已失效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The playback URL has expired."
+          }
+        }
+      }
+    },
+    "playback.trialOnly": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有试听片段"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only a preview is available."
+          }
+        }
+      }
+    },
+    "playback.decodeFailed": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解码失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decoding failed: %@"
+          }
+        }
+      }
+    },
+    "source.notImplemented": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未实现：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not implemented: %@"
+          }
+        }
+      }
+    },
+    "source.notRegistered": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源未注册"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The music source isn’t registered."
+          }
+        }
+      }
+    },
+    "source.capabilityMissing": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前来源不支持%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This source doesn’t support %@."
+          }
+        }
+      }
+    },
+    "source.invalidResponse": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "响应异常：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid response: %@"
+          }
+        }
+      }
+    },
+    "source.network": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络错误：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error: %@"
+          }
+        }
+      }
+    },
+    "user.rankingHidden": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方没有公开听歌排行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This user’s listening ranking is private."
+          }
+        }
+      }
+    },
+    "user.followsHidden": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方没有公开关注和粉丝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This user’s following and followers are private."
+          }
+        }
+      }
+    },
+    "cancelled": {
+      "comment": "User-facing error. Inserted details are source diagnostics.",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelled"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

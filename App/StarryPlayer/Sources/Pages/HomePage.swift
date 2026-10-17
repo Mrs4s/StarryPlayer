@@ -133,8 +133,8 @@ struct HomePage: View {
                 .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.2)), removal: .identity))
         case .failed(let message):
             VStack(spacing: 14) {
-                StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-                PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
+                StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+                PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
             }
             .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let content):
@@ -388,7 +388,7 @@ private struct HomeSections: View {
                 let detail = try await model.catalog(playlist.source).playlist(id: playlist.id)
                 player.play(detail.tracks, context: PlaybackContext(source: playlist.source, originType: .playlist, originID: playlist.id, originName: playlist.name))
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

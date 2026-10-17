@@ -320,10 +320,10 @@ struct ArtistPage: View {
         }
     }
 
-    private func failure(_ message: String, retry: @escaping () -> Void) -> some View {
+    private func failure(_ message: DisplayText, retry: @escaping () -> Void) -> some View {
         VStack(spacing: 14) {
-            StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-            PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary, action: retry)
+            StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+            PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary, action: retry)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
     }
@@ -387,7 +387,7 @@ struct ArtistPage: View {
                 model.showToast(was ? "已取消关注" : "已关注 \(shown.name)")
             } catch {
                 withAnimation { followed = was }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }
@@ -567,7 +567,7 @@ struct DiscographyRows: View {
                 let detail = try await model.catalog(album.source).album(id: album.id)
                 model.player.play(detail.tracks, context: PlaybackContext(source: album.source, originType: .album, originID: album.id, originName: album.name))
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

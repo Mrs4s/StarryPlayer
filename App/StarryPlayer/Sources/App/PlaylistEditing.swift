@@ -64,7 +64,7 @@ extension AppModel {
                 tookSongs(playlist, added: added)
                 showToast(Self.addedText(added, of: ids.count, to: playlist.name))
             } catch {
-                showToast(ErrorText.describe(error))
+                showToast(ErrorText.message(error))
             }
         }
     }

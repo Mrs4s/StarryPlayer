@@ -336,31 +336,30 @@ extension NSColor {
 struct ShortcutGrid: View {
     @Environment(\.theme) private var theme
 
-    private static let items: [(title: String, keys: [String])] = [
-        ("播放 / 暂停", ["空格"]),
-        ("上一首 / 下一首", ["⌘", "← →"]),
-        ("音量加 / 减", ["⌘", "↑ ↓"]),
-        ("静音", ["⌥", "⌘", "↓"]),
-        ("打开 / 收起播放页", ["⌘", "L"]),
-        ("唱歌开 / 关", ["⌥", "⌘", "K"]),
-        ("搜索", ["⌘", "K"]),
-        ("折叠侧栏", ["⌘", "S"]),
-        ("后退", ["⌘", "["]),
-        ("定位到正在播放", ["⌥", "⌘", "L"]),
-        ("设置", ["⌘", ","]),
+    private static let items: [(id: String, title: LocalizedStringResource, keys: [DisplayText])] = [
+        ("shortcut.play", LocalizedStringResource("shortcut.play", defaultValue: "播放 / 暂停", table: "Settings"), [.localized(LocalizedStringResource("shortcut.space", defaultValue: "空格", table: "Settings"))]),
+        ("shortcut.tracks", LocalizedStringResource("shortcut.tracks", defaultValue: "上一首 / 下一首", table: "Settings"), [.verbatim("⌘"), .verbatim("← →")]),
+        ("shortcut.volume", LocalizedStringResource("shortcut.volume", defaultValue: "音量加 / 减", table: "Settings"), [.verbatim("⌘"), .verbatim("↑ ↓")]),
+        ("shortcut.mute", LocalizedStringResource("shortcut.mute", defaultValue: "静音", table: "Settings"), [.verbatim("⌥"), .verbatim("⌘"), .verbatim("↓")]),
+        ("shortcut.nowPlaying", LocalizedStringResource("shortcut.nowPlaying", defaultValue: "打开 / 收起播放页", table: "Settings"), [.verbatim("⌘"), .verbatim("L")]),
+        ("shortcut.vocals", LocalizedStringResource("shortcut.vocals", defaultValue: "唱歌开 / 关", table: "Settings"), [.verbatim("⌥"), .verbatim("⌘"), .verbatim("K")]),
+        ("shortcut.search", LocalizedStringResource("shortcut.search", defaultValue: "搜索", table: "Settings"), [.verbatim("⌘"), .verbatim("K")]),
+        ("shortcut.sidebar", LocalizedStringResource("shortcut.sidebar", defaultValue: "折叠侧栏", table: "Settings"), [.verbatim("⌘"), .verbatim("S")]),
+        ("shortcut.back", LocalizedStringResource("shortcut.back", defaultValue: "后退", table: "Settings"), [.verbatim("⌘"), .verbatim("[")]),
+        ("shortcut.locate", LocalizedStringResource("shortcut.locate", defaultValue: "定位到正在播放", table: "Settings"), [.verbatim("⌥"), .verbatim("⌘"), .verbatim("L")]),
+        ("shortcut.settings", LocalizedStringResource("shortcut.settings", defaultValue: "设置", table: "Settings"), [.verbatim("⌘"), .verbatim(",")]),
     ]
-
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 28), GridItem(.flexible())], alignment: .leading, spacing: 10) {
-            ForEach(Self.items, id: \.title) { item in
+            ForEach(Self.items, id: \.id) { item in
                 HStack(spacing: 8) {
-                    Text(item.title)
+                    DisplayTextView(text: .localized(item.title))
                         .font(.system(size: 12.5))
                         .foregroundStyle(theme.onSurface.opacity(0.85))
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     HStack(spacing: 3) {
-                        ForEach(item.keys, id: \.self) { Keycap(label: $0) }
+                        ForEach(item.keys.indices, id: \.self) { Keycap(label: item.keys[$0]) }
                     }
                 }
             }
@@ -368,11 +367,11 @@ struct ShortcutGrid: View {
     }
 
     private struct Keycap: View {
-        var label: String
+        var label: DisplayText
         @Environment(\.theme) private var theme
 
         var body: some View {
-            Text(label)
+            DisplayTextView(text: label)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(theme.onSurface.opacity(0.75))
                 .padding(.horizontal, 5)

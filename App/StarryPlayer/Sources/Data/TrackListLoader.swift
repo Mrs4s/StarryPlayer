@@ -11,7 +11,7 @@ final class TrackListLoader {
     private(set) var pendingIDs: [String]
     private(set) var paging: Paging?
     private(set) var isLoading = false
-    private(set) var failure: String?
+    private(set) var failure: DisplayText?
     private(set) var revision = 0
     private(set) var arrival: (id: TrackRef, time: CFTimeInterval)?
 
@@ -128,13 +128,13 @@ final class TrackListLoader {
                 }
                 var arrived: [Int: Chunk] = [:]
                 var next = 0
-                var failed: (chunk: Int, message: String)?
+                var failed: (chunk: Int, message: DisplayText)?
                 for await (number, result) in group {
                     switch result {
                     case .success(let chunk):
                         arrived[number] = chunk
                     case .failure(let error):
-                        if number < failed?.chunk ?? .max { failed = (number, ErrorText.describe(error)) }
+                        if number < failed?.chunk ?? .max { failed = (number, ErrorText.message(error)) }
                     }
                     var ready: [Chunk] = []
                     while next < failed?.chunk ?? .max, let chunk = arrived.removeValue(forKey: next) {

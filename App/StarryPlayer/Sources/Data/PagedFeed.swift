@@ -13,7 +13,7 @@ final class PagedFeed<Item: Identifiable> {
 
     enum Phase: Equatable {
         case idle, loading, loaded
-        case failed(String)
+        case failed(DisplayText)
     }
 
     private(set) var items: [Item] = []
@@ -57,7 +57,7 @@ final class PagedFeed<Item: Identifiable> {
             moreFailed = false
             phase = .loaded
         } catch {
-            phase = Task.isCancelled ? .idle : .failed(ErrorText.describe(error))
+            phase = Task.isCancelled ? .idle : .failed(ErrorText.message(error))
         }
     }
 

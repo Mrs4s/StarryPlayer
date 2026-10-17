@@ -25,8 +25,8 @@ struct RootView: View {
                         .transition(.identity)
                         .zIndex(2)
                 }
-                if let toast = model.toast {
-                    Text(toast)
+                if let toast = model.toastText {
+                    DisplayTextView(text: toast)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(theme.onSurface)
                         .padding(.horizontal, 16)
@@ -41,8 +41,9 @@ struct RootView: View {
             }
         }
         .environment(\.theme, theme)
+        .modifier(AppLocalization(localization: model.localization))
         .animation(Motion.nowPlaying, value: model.player.showNowPlaying)
-        .animation(Motion.popover, value: model.toast == nil)
+        .animation(Motion.popover, value: model.toastText == nil)
         .ignoresSafeArea(.container, edges: .top)
         .dropDestination(for: URL.self) { urls, _ in
             model.open(urls)
@@ -96,6 +97,7 @@ private struct MainShell: View {
     var body: some View {
         MainLayout()
             .environment(\.theme, model.theme(for: colorScheme))
+            .modifier(AppLocalization(localization: model.localization))
             .ignoresSafeArea(.container, edges: .top)
     }
 }

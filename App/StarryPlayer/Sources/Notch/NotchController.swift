@@ -99,7 +99,7 @@ final class NotchController {
         // Inside a plain view, not the panel's content view itself: as that, the hosting view
         // sizes the window to the island on its own and fights the frames set here (an endless
         // update-constraints loop).
-        let hosting = NotchHostingView(rootView: NotchRoot(island: island, actions: actions, app: model))
+        let hosting = NotchHostingView(rootView: NotchRoot(island: island, actions: actions, app: model).modifier(AppLocalization(localization: model.localization)))
         hosting.sizingOptions = []
         hosting.autoresizingMask = [.width, .height]
         let content = NSView()

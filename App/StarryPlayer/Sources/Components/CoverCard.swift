@@ -91,7 +91,7 @@ extension View {
                     let detail = try await model.catalog(playlist.source).playlist(id: playlist.id)
                     model.player.play(detail.tracks, context: PlaybackContext(source: playlist.source, originType: .playlist, originID: playlist.id, originName: playlist.name))
                 } catch {
-                    model.showToast(ErrorText.describe(error))
+                    model.showToast(ErrorText.message(error))
                 }
             }
         }

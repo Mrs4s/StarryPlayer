@@ -118,7 +118,7 @@ struct LocalFolderRow: View {
                     do {
                         try await model.localSource?.removeFolder(folder.id)
                     } catch {
-                        model.showToast(ErrorText.describe(error))
+                        model.showToast(ErrorText.message(error))
                     }
                 }
             }

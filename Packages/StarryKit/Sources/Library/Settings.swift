@@ -3,6 +3,12 @@ import Observation
 import StarryCore
 
 public struct AppSettings: Codable, Sendable, Equatable {
+    public enum Language: String, Codable, Sendable, CaseIterable {
+        case system
+        case simplifiedChinese = "zh-Hans"
+        case english = "en"
+    }
+
     public struct Transition: Codable, Sendable, Equatable {
         public var gapless = false
         public var crossfade = false
@@ -276,6 +282,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var vocalModelDirectory: String?
     public var visualizerEnabled = true
     public var appearance: Appearance = .system
+    public var language: Language = .system
     public var themeColorMode: ThemeColorMode = .cover
     public var customThemeColorHex = "#FE7971"
     public var sidebarCollapsed = false
@@ -301,7 +308,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     // Tolerant decoding so settings saved by older builds keep working when fields are added.
     private enum CodingKeys: String, CodingKey {
-        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, lyrics, background, menuBarLyrics, desktopLyrics, notch, checksForUpdates
+        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, language, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, lyrics, background, menuBarLyrics, desktopLyrics, notch, checksForUpdates
     }
 
     public init(from decoder: any Decoder) throws {
@@ -331,6 +338,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         vocalModelDirectory = try c.decodeIfPresent(String.self, forKey: .vocalModelDirectory)
         visualizerEnabled = try c.decodeIfPresent(Bool.self, forKey: .visualizerEnabled) ?? d.visualizerEnabled
         appearance = try c.decodeIfPresent(Appearance.self, forKey: .appearance) ?? d.appearance
+        language = (try? c.decodeIfPresent(Language.self, forKey: .language)) ?? d.language
         themeColorMode = try c.decodeIfPresent(ThemeColorMode.self, forKey: .themeColorMode) ?? d.themeColorMode
         customThemeColorHex = try c.decodeIfPresent(String.self, forKey: .customThemeColorHex) ?? d.customThemeColorHex
         sidebarCollapsed = try c.decodeIfPresent(Bool.self, forKey: .sidebarCollapsed) ?? d.sidebarCollapsed

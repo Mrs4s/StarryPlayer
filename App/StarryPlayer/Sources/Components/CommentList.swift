@@ -8,7 +8,7 @@ import SwiftUI
 final class CommentFeed {
     enum Phase: Equatable {
         case idle, loading, loaded
-        case failed(String)
+        case failed(DisplayText)
     }
 
     /// The source the thread is in, and what it hangs off there.
@@ -46,7 +46,7 @@ final class CommentFeed {
             hasMore = page.hasMore && !page.latest.isEmpty
             phase = .loaded
         } catch {
-            phase = .failed(ErrorText.describe(error))
+            phase = .failed(ErrorText.message(error))
         }
     }
 
@@ -100,8 +100,8 @@ struct CommentThreadView: View {
                 }
         case .failed(let message):
             VStack(spacing: 14) {
-                StateView(systemName: "exclamationmark.triangle", title: "评论加载失败", detail: message).frame(minHeight: 0)
-                PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { reload() }
+                StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.commentsFailed", defaultValue: "评论加载失败"), detail: message).frame(minHeight: 0)
+                PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { reload() }
             }
             .frame(maxWidth: .infinity, minHeight: 280)
         case .loaded:
@@ -170,7 +170,7 @@ struct CommentThreadView: View {
                 try await source.setCommentLiked(comment.id, on: feed.target, liked: liked)
             } catch {
                 withAnimation { feed.setLiked(comment.id, !liked) }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

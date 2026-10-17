@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LocalizationStore.self) private var localization
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
@@ -60,14 +61,14 @@ struct SettingsView: View {
                 .frame(height: Self.titleBarHeight)
                 .contentShape(Rectangle())
                 .modifier(WindowDrag())
-            SearchField(text: $query, placeholder: "搜索设置", width: Self.railWidth - 30, focusedWidth: Self.railWidth - 30)
+            SearchField(text: $query, placeholder: localization.string(LocalizedStringResource("search.placeholder", defaultValue: "搜索设置", table: "Settings")), width: Self.railWidth - 30, focusedWidth: Self.railWidth - 30)
                 .reveal(shown, delay: 0.03, distance: 4)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(appPages.enumerated()), id: \.element) { index, page in
                     railItem(page, catalog: catalog, delay: 0.05 + Double(index) * 0.025)
                 }
                 if !sourcePages.isEmpty {
-                    Text("音乐平台")
+                    DisplayTextView(text: .localized(LocalizedStringResource("rail.sources", defaultValue: "音乐平台", table: "Settings")))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(theme.onSurfaceVariant.opacity(0.8))
                         .padding(.leading, 10)
@@ -113,10 +114,10 @@ struct SettingsView: View {
                 .foregroundStyle(on ? theme.accent : theme.onSurface.opacity(0.6))
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
-                Text("高级设置")
+                DisplayTextView(text: .localized(LocalizedStringResource("advanced.title", defaultValue: "高级设置", table: "Settings")))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(theme.onSurface)
-                Text(on ? "显示全部选项" : "更多细节选项")
+                DisplayTextView(text: .localized(on ? LocalizedStringResource("advanced.on", defaultValue: "显示全部选项", table: "Settings") : LocalizedStringResource("advanced.off", defaultValue: "更多细节选项", table: "Settings")))
                     .font(.system(size: 11))
                     .foregroundStyle(theme.onSurfaceVariant)
                     .contentTransition(.opacity)
@@ -133,7 +134,7 @@ struct SettingsView: View {
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture { setAdvanced(!on) }
         .animation(Motion.hover, value: on)
-        .help("显示歌词排版、背景细节、歌词来源顺序、代理等更细的选项")
+        .help(localization.string(LocalizedStringResource("advanced.help", defaultValue: "显示歌词排版、背景细节、歌词来源顺序、代理等更细的选项", table: "Settings")))
     }
 
     @ViewBuilder
@@ -177,8 +178,9 @@ struct SettingsView: View {
             var entries: [SettingsEntry] = []
             for group in catalog.groups(for: page) {
                 for var entry in group.entries {
-                    let words = [info.title, group.title ?? "", entry.title, entry.detail ?? "", entry.keywords].joined(separator: " ").lowercased()
-                    let found = terms.allSatisfy { words.contains($0) } || (latin && compact.count >= 2 && Self.pinyin(entry.title).contains(compact))
+                    let title = localization.string(entry.title)
+                    let words = [info.title, group.title.map(localization.string) ?? "", title, entry.detail.map(localization.string) ?? "", entry.keywords].joined(separator: " ").lowercased()
+                    let found = terms.allSatisfy { words.contains($0) } || (latin && compact.count >= 2 && Self.pinyin(title).contains(compact))
                     guard found else { continue }
                     entry.advanced = entry.advanced || group.advanced
                     entries.append(entry)
@@ -359,10 +361,10 @@ private struct SettingsSearchResults: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("搜索结果")
+                    DisplayTextView(text: .localized(LocalizedStringResource("search.resultsTitle", defaultValue: "搜索结果", table: "Settings")))
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(theme.onSurface)
-                    Text("\(count) 项")
+                    DisplayTextView(text: .localized(LocalizedStringResource("search.count", defaultValue: "\(count) 项", table: "Settings")))
                         .font(.system(size: 13))
                         .monospacedDigit()
                         .foregroundStyle(theme.onSurfaceVariant)
@@ -375,10 +377,10 @@ private struct SettingsSearchResults: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 34, weight: .light))
                             .foregroundStyle(theme.onSurfaceVariant.opacity(0.5))
-                        Text("没有找到与“\(query)”有关的设置")
+                        DisplayTextView(text: .localized(LocalizedStringResource("search.noResults", defaultValue: "没有找到与“\(query)”有关的设置", table: "Settings")))
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(theme.onSurface)
-                        Text("换个说法试试，比如“歌词”“深色”“音质”")
+                        DisplayTextView(text: .localized(LocalizedStringResource("search.hint", defaultValue: "换个说法试试，比如“歌词”“深色”“音质”", table: "Settings")))
                             .font(.system(size: 12.5))
                             .foregroundStyle(theme.onSurfaceVariant)
                     }
@@ -404,6 +406,7 @@ private struct SettingsSearchResults: View {
         var info: SettingsPageInfo
         var action: () -> Void
         @Environment(\.theme) private var theme
+        @Environment(LocalizationStore.self) private var localization
         @State private var hovering = false
 
         var body: some View {
@@ -422,7 +425,7 @@ private struct SettingsSearchResults: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .animation(Motion.hover, value: hovering)
-            .help("打开“\(info.title)”")
+            .help(localization.string(LocalizedStringResource("search.openPage", defaultValue: "打开“\(info.title)”", table: "Settings")))
         }
     }
 }

@@ -198,8 +198,8 @@ struct LikedPage: View {
         case .failed(let message):
             return [.hosted("failed") {
                 VStack(spacing: 14) {
-                    StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-                    PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
+                    StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+                    PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
                 }
                 .frame(maxWidth: .infinity, minHeight: 280)
             }]

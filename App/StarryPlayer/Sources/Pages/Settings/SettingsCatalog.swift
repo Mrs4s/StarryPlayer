@@ -37,7 +37,7 @@ struct SettingsCatalog {
     func info(for page: SettingsPage) -> SettingsPageInfo {
         switch page {
         case .app(let category):
-            return SettingsPageInfo(title: category.title, icon: category.icon, summary: category.summary)
+            return SettingsPageInfo(title: model.localization.string(category.title), icon: category.icon, summary: model.localization.string(category.summary))
         case .source(let id):
             let source = model.configurableSources.first { $0.id == id }
             let quality = model.registry.source(for: id).map(Self.hasQualityChoice) == true ? "音质" : nil
@@ -63,25 +63,30 @@ struct SettingsCatalog {
 
     private var general: [SettingsGroup] {
         [
-            SettingsGroup("launch", title: "启动", entries: [
-                toggle("restorePlayback", "启动时恢复上次播放", "打开应用时回到上次听的歌和进度，不会自动开始播放", \.restorePlayback, keywords: "队列 进度 继续"),
+            SettingsGroup("language", localizedTitle: LocalizedStringResource("group.language", defaultValue: "语言", table: "Settings"), entries: [
+                SettingsEntry("language", localizedTitle: LocalizedStringResource("language.title", defaultValue: "界面语言", table: "Settings"), detail: LocalizedStringResource("language.detail", defaultValue: "选择界面使用的语言，立即生效", table: "Settings"), keywords: "language interface system 语言 界面") {
+                    LanguagePicker()
+                },
             ]),
-            SettingsGroup("notch", title: "刘海", entries: notch),
-            SettingsGroup("shortcuts", title: "快捷键", entries: [
-                SettingsEntry("shortcuts", "键盘快捷键", keywords: "快捷键 键盘 shortcut 空格", layout: .block) { ShortcutGrid() },
+            SettingsGroup("launch", localizedTitle: LocalizedStringResource("group.launch", defaultValue: "启动", table: "Settings"), entries: [
+                toggle("restorePlayback", localizedTitle: LocalizedStringResource("restorePlayback.title", defaultValue: "启动时恢复上次播放", table: "Settings"), detail: LocalizedStringResource("restorePlayback.detail", defaultValue: "打开应用时回到上次听的歌和进度，不会自动开始播放", table: "Settings"), \.restorePlayback, keywords: "队列 进度 继续 queue position resume launch"),
+            ]),
+            SettingsGroup("notch", localizedTitle: LocalizedStringResource("group.notch", defaultValue: "刘海", table: "Settings"), entries: notch),
+            SettingsGroup("shortcuts", localizedTitle: LocalizedStringResource("group.shortcuts", defaultValue: "快捷键", table: "Settings"), entries: [
+                SettingsEntry("shortcuts", localizedTitle: LocalizedStringResource("shortcuts.title", defaultValue: "键盘快捷键", table: "Settings"), keywords: "快捷键 键盘 shortcut keyboard space 空格", layout: .block) { ShortcutGrid() },
             ]),
         ]
     }
 
     private var notch: [SettingsEntry] {
         var entries = [
-            toggle("notch", "刘海播放器", "播放时在屏幕顶部的刘海两侧显示封面和律动，指针移上去展开播放控制；没有刘海的屏幕显示在菜单栏中间", \.notch.enabled, keywords: "灵动岛 notch dynamic island 迷你播放器 菜单栏 顶部"),
+            toggle("notch", localizedTitle: LocalizedStringResource("notch.title", defaultValue: "刘海播放器", table: "Settings"), detail: LocalizedStringResource("notch.detail", defaultValue: "播放时在屏幕顶部的刘海两侧显示封面和律动，指针移上去展开播放控制；没有刘海的屏幕显示在菜单栏中间", table: "Settings"), \.notch.enabled, keywords: "灵动岛 notch dynamic island 迷你播放器 菜单栏 顶部 menu bar mini player"),
         ]
         if settings.notch.enabled {
             entries += [
-                toggle("notchLyrics", "显示歌词", "在刘海右侧（没有刘海的屏幕在中间）显示正在唱的那一句，会盖住那里的菜单栏图标", \.notch.showsLyrics, keywords: "刘海 灵动岛 歌词 菜单栏"),
-                toggle("notchHover", "悬停展开", "指针停在刘海上就展开；关闭后点按才展开", \.notch.expandsOnHover, keywords: "刘海 灵动岛 悬停 点按 点击"),
-                toggle("notchNotchedOnly", "只在有刘海的屏幕上显示", "没有刘海的 Mac 和外接显示器上不显示", \.notch.notchedScreensOnly, keywords: "刘海 灵动岛 外接显示器 屏幕"),
+                toggle("notchLyrics", localizedTitle: LocalizedStringResource("notchLyrics.title", defaultValue: "显示歌词", table: "Settings"), detail: LocalizedStringResource("notchLyrics.detail", defaultValue: "在刘海右侧（没有刘海的屏幕在中间）显示正在唱的那一句，会盖住那里的菜单栏图标", table: "Settings"), \.notch.showsLyrics, keywords: "刘海 灵动岛 歌词 菜单栏 notch lyrics menu bar"),
+                toggle("notchHover", localizedTitle: LocalizedStringResource("notchHover.title", defaultValue: "悬停展开", table: "Settings"), detail: LocalizedStringResource("notchHover.detail", defaultValue: "指针停在刘海上就展开；关闭后点按才展开", table: "Settings"), \.notch.expandsOnHover, keywords: "刘海 灵动岛 悬停 点按 点击 notch hover click"),
+                toggle("notchNotchedOnly", localizedTitle: LocalizedStringResource("notchNotchedOnly.title", defaultValue: "只在有刘海的屏幕上显示", table: "Settings"), detail: LocalizedStringResource("notchNotchedOnly.detail", defaultValue: "没有刘海的 Mac 和外接显示器上不显示", table: "Settings"), \.notch.notchedScreensOnly, keywords: "刘海 灵动岛 外接显示器 屏幕 notch external display screen"),
             ]
         }
         return entries
@@ -636,6 +641,10 @@ struct SettingsCatalog {
 
     private func toggle(_ id: String, _ title: String, _ detail: String?, _ keyPath: WritableKeyPath<AppSettings, Bool>, keywords: String = "", advanced: Bool = false) -> SettingsEntry {
         SettingsEntry(id, title, detail: detail, keywords: keywords, advanced: advanced) { SettingsSwitch(isOn: bind(keyPath)) }
+    }
+
+    private func toggle(_ id: String, localizedTitle: LocalizedStringResource, detail: LocalizedStringResource?, _ keyPath: WritableKeyPath<AppSettings, Bool>, keywords: String = "") -> SettingsEntry {
+        SettingsEntry(id, localizedTitle: localizedTitle, detail: detail, keywords: keywords) { SettingsSwitch(isOn: bind(keyPath)) }
     }
 
     private func menu<T: Hashable>(_ id: String, _ title: String, _ detail: String?, _ keyPath: WritableKeyPath<AppSettings, T>, _ options: [(T, String)], keywords: String = "") -> SettingsEntry {

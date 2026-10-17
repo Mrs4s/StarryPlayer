@@ -10,7 +10,7 @@ import SwiftUI
 final class SongCommentThread {
     enum Phase: Equatable {
         case idle, loading, loaded
-        case failed(String)
+        case failed(DisplayText)
     }
 
     /// One order of the thread, paged in as it scrolls.
@@ -92,7 +92,7 @@ final class SongCommentThread {
             if slice.total > 0 { total = slice.total }
         } catch {
             guard generation == listing.generation else { return }
-            listing.phase = .failed(ErrorText.describe(error))
+            listing.phase = .failed(ErrorText.message(error))
         }
     }
 

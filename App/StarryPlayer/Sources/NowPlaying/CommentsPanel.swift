@@ -133,7 +133,7 @@ private struct CommentListView: View {
                 case .idle, .loading:
                     CommentPanelSkeleton(tint: tint, k: k)
                 case .failed(let message):
-                    stateView(systemName: "exclamationmark.triangle", title: "评论加载失败", detail: message, retry: true)
+                    stateView(systemName: "exclamationmark.triangle", title: .localized(LocalizedStringResource("common.commentsFailed", defaultValue: "评论加载失败")), detail: message, retry: true)
                 case .loaded:
                     if listing.comments.isEmpty {
                         stateView(systemName: "bubble.left.and.bubble.right", title: "还没有评论", detail: "这首歌还没有人留言", retry: false)
@@ -189,10 +189,14 @@ private struct CommentListView: View {
     }
 
     private func stateView(systemName: String, title: String, detail: String, retry: Bool) -> some View {
+        stateView(systemName: systemName, title: .verbatim(title), detail: .verbatim(detail), retry: retry)
+    }
+
+    private func stateView(systemName: String, title: DisplayText, detail: DisplayText, retry: Bool) -> some View {
         VStack(spacing: 10 * k) {
             Image(systemName: systemName).font(.system(size: 30 * k, weight: .light))
-            Text(title).font(.system(size: 15 * k, weight: .semibold))
-            Text(detail).font(.system(size: 12.5 * k)).opacity(0.6).multilineTextAlignment(.center)
+            DisplayTextView(text: title).font(.system(size: 15 * k, weight: .semibold))
+            DisplayTextView(text: detail).font(.system(size: 12.5 * k)).opacity(0.6).multilineTextAlignment(.center)
             if retry {
                 Button("重试") {
                     guard let source else { return }
@@ -538,7 +542,7 @@ private struct CommentLikeButton: View {
                 try await source.setCommentLiked(id, on: thread.target, liked: liked)
             } catch {
                 withAnimation { thread.setLiked(id, !liked) }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

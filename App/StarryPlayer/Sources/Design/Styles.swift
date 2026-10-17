@@ -67,12 +67,28 @@ struct IconButton: View {
 }
 
 struct PillButton: View {
-    var title: String
+    var title: DisplayText
     var systemName: String? = nil
     var variant: ButtonVariant = .secondary
     var height: CGFloat = 36
     var action: () -> Void
     @Environment(\.theme) private var theme
+
+    init(title: String, systemName: String? = nil, variant: ButtonVariant = .secondary, height: CGFloat = 36, action: @escaping () -> Void) {
+        self.title = .verbatim(title)
+        self.systemName = systemName
+        self.variant = variant
+        self.height = height
+        self.action = action
+    }
+
+    init(localizedTitle: LocalizedStringResource, systemName: String? = nil, variant: ButtonVariant = .secondary, height: CGFloat = 36, action: @escaping () -> Void) {
+        self.title = .localized(localizedTitle)
+        self.systemName = systemName
+        self.variant = variant
+        self.height = height
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
@@ -80,7 +96,7 @@ struct PillButton: View {
                 if let systemName {
                     Image(systemName: systemName).font(.system(size: 13, weight: .semibold))
                 }
-                Text(title).font(.system(size: 14, weight: .medium))
+                DisplayTextView(text: title).font(.system(size: 14, weight: .medium))
             }
             .foregroundStyle(variant == .filled ? theme.onPrimary : theme.primary)
             .padding(.horizontal, 18)
@@ -159,15 +175,27 @@ struct PageTitle: View {
 
 struct StateView: View {
     var systemName: String
-    var title: String
-    var detail: String? = nil
+    var title: DisplayText
+    var detail: DisplayText? = nil
     @Environment(\.theme) private var theme
+
+    init(systemName: String, title: String, detail: String? = nil) {
+        self.systemName = systemName
+        self.title = .verbatim(title)
+        self.detail = detail.map(DisplayText.verbatim)
+    }
+
+    init(systemName: String, localizedTitle: LocalizedStringResource, detail: DisplayText? = nil) {
+        self.systemName = systemName
+        title = .localized(localizedTitle)
+        self.detail = detail
+    }
 
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemName).font(.system(size: 56, weight: .light)).foregroundStyle(theme.onSurfaceVariant.opacity(0.5))
-            Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(theme.onSurface)
-            if let detail { Text(detail).font(.system(size: 13)).foregroundStyle(theme.onSurfaceVariant) }
+            DisplayTextView(text: title).font(.system(size: 15, weight: .medium)).foregroundStyle(theme.onSurface)
+            if let detail { DisplayTextView(text: detail).font(.system(size: 13)).foregroundStyle(theme.onSurfaceVariant) }
         }
         .frame(maxWidth: .infinity, minHeight: 320)
     }

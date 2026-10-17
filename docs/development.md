@@ -16,6 +16,24 @@ scripts/package.sh         # 分别构建 arm64 / x86_64 Release + ad-hoc 签名
 
 `*.xcodeproj` 不入库，改动 `project.yml` 后重新生成。要加自己的设置（签名团队、额外的源码），在根目录放一个 `project.local.yml`（不入库）：`include: [project.yml]` 再写要加的部分，`scripts/bootstrap.sh` 会优先用它；打包脚本只用 `project.yml`。
 
+## 界面本地化
+
+设置 › 通用 › 界面语言支持跟随系统、简体中文和 English，选择保存在 `AppSettings.language`。首批覆盖设置页分类、通用设置、快捷键、应用菜单和常见加载错误；其他页面、格式化和插件文案继续分批迁移。开发语言是 `zh-Hans`，不支持的系统语言回退到英文；繁体中文不会被当作简体中文。
+
+翻译位于 `App/StarryPlayer/Resources/Localization/` 的 String Catalog：`Localizable` 管理通用控件和菜单，`Settings` 管理设置，`Errors` 管理错误，`InfoPlist` 管理系统权限说明。使用稳定 key、中文默认文案和必要的译者注释，例如：
+
+```swift
+LocalizedStringResource("restorePlayback.title", defaultValue: "启动时恢复上次播放", table: "Settings")
+```
+
+传递界面文案使用 `DisplayText.localized`，歌曲、用户名、文件名和服务器返回的内容使用 `DisplayText.verbatim`。界面通过 `DisplayTextView` 在当前 locale 下解析；AppKit 属性通过 `model.localization.string(resource)` 赋值。带数量的文案保留数字插值，在 Catalog 中设置复数，不要提前把数字格式化成字符串。`LocalizationStore.formattingLocale` 保留系统地区，供后续日期和数字格式化迁移使用。
+
+独立创建的 `NSHostingView` / `NSHostingController` 根视图必须应用 `AppLocalization`，包括主界面、设置、辅助窗口、弹出菜单和刘海播放器。语言变化只更新环境和展示状态，不给整棵视图树增加语言相关的 `.id`。业务 ID、设置 key、音质 ID 和持久化数据保持语言无关。
+
+错误页面和加载器保存 `ErrorText.message(error)` 返回的文案引用，显示时才解析；toast 同样支持 `DisplayText`。旧接口的普通 `String` 被视为原文内容，不按字符串内容猜测翻译 key。插件本地化协议尚未扩展，插件提供的展示文案当前保留原文。
+
+本地化回归测试在 `LocalizationTests` 和 `AppSettingsTests` 中，检查语言匹配、选择持久化、资源回退、英文复数、错误页切换语言和旧设置兼容性。可在 Xcode Scheme 的 App Language 中使用双倍长度伪语言检查布局。
+
 ## 人声分离模型
 
 唱歌（人声消除）默认用内置分离模型 `starry-karaoke-zh`（针对中文歌曲微调过）。模型在 `App/StarryPlayer/Resources/Models/`，构建时整个目录复制到 `StarryPlayer.app/Contents/Resources/Models/`，保留 plist、MIL 与 `weights/` 的相对路径。也可以在 设置 › 播放 › 唱歌 › 分离模型 里另外指定一个 AUSoundIsolation 格式的音乐分离模型文件夹（plist + 网络文件 + weights）；都没有时退回系统的高质量人声隔离（macOS 15 起）。

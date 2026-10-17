@@ -1,6 +1,7 @@
 # XcodeGen spec. Regenerate the Xcode project with `scripts/bootstrap.sh` (or `xcodegen generate`).
 name: StarryPlayer
 options:
+  developmentLanguage: zh-Hans
   bundleIdPrefix: moe.mrs4s
   deploymentTarget:
     macOS: "14.0"

@@ -105,7 +105,7 @@ struct Sidebar: View {
                     do {
                         try await model.deletePlaylist(playlist)
                     } catch {
-                        model.showToast(ErrorText.describe(error))
+                        model.showToast(ErrorText.message(error))
                     }
                 }
             }

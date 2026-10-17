@@ -1,3 +1,4 @@
+import Library
 import StarryCore
 import SwiftUI
 
@@ -6,17 +7,17 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
-        case .general: "通用"
-        case .appearance: "外观"
-        case .playback: "播放"
-        case .nowPlaying: "播放页"
-        case .lyrics: "歌词"
-        case .account: "账号"
-        case .storage: "存储"
-        case .plugins: "插件"
-        case .about: "关于"
+        case .general: LocalizedStringResource("category.general", defaultValue: "通用", table: "Settings")
+        case .appearance: LocalizedStringResource("category.appearance", defaultValue: "外观", table: "Settings")
+        case .playback: LocalizedStringResource("category.playback", defaultValue: "播放", table: "Settings")
+        case .nowPlaying: LocalizedStringResource("category.nowPlaying", defaultValue: "播放页", table: "Settings")
+        case .lyrics: LocalizedStringResource("category.lyrics", defaultValue: "歌词", table: "Settings")
+        case .account: LocalizedStringResource("category.account", defaultValue: "账号", table: "Settings")
+        case .storage: LocalizedStringResource("category.storage", defaultValue: "存储", table: "Settings")
+        case .plugins: LocalizedStringResource("category.plugins", defaultValue: "插件", table: "Settings")
+        case .about: LocalizedStringResource("category.about", defaultValue: "关于", table: "Settings")
         }
     }
 
@@ -34,17 +35,17 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    var summary: String {
+    var summary: LocalizedStringResource {
         switch self {
-        case .general: "启动方式、刘海播放器与键盘快捷键"
-        case .appearance: "颜色、主题与窗口布局"
-        case .playback: "音质、输出设备、切歌与唱歌"
-        case .nowPlaying: "歌词的样子与背景效果"
-        case .lyrics: "歌词来源、菜单栏与桌面歌词"
-        case .account: "登录的账号与听歌记录"
-        case .storage: "缓存与本地数据"
-        case .plugins: "第三方音源与歌词源"
-        case .about: "版本信息与更新"
+        case .general: LocalizedStringResource("category.general.summary", defaultValue: "启动方式、刘海播放器与键盘快捷键", table: "Settings")
+        case .appearance: LocalizedStringResource("category.appearance.summary", defaultValue: "颜色、主题与窗口布局", table: "Settings")
+        case .playback: LocalizedStringResource("category.playback.summary", defaultValue: "音质、输出设备、切歌与唱歌", table: "Settings")
+        case .nowPlaying: LocalizedStringResource("category.nowPlaying.summary", defaultValue: "歌词的样子与背景效果", table: "Settings")
+        case .lyrics: LocalizedStringResource("category.lyrics.summary", defaultValue: "歌词来源、菜单栏与桌面歌词", table: "Settings")
+        case .account: LocalizedStringResource("category.account.summary", defaultValue: "登录的账号与听歌记录", table: "Settings")
+        case .storage: LocalizedStringResource("category.storage.summary", defaultValue: "缓存与本地数据", table: "Settings")
+        case .plugins: LocalizedStringResource("category.plugins.summary", defaultValue: "第三方音源与歌词源", table: "Settings")
+        case .about: LocalizedStringResource("category.about.summary", defaultValue: "版本信息与更新", table: "Settings")
         }
     }
 }
@@ -75,8 +76,8 @@ struct SettingsEntry: Identifiable {
     }
 
     let id: String
-    var title: String
-    var detail: String?
+    var title: DisplayText
+    var detail: DisplayText?
     var keywords: String
     var advanced: Bool
     var layout: Layout
@@ -84,8 +85,18 @@ struct SettingsEntry: Identifiable {
 
     init<Content: View>(_ id: String, _ title: String, detail: String? = nil, keywords: String = "", advanced: Bool = false, layout: Layout = .row, @ViewBuilder content: () -> Content) {
         self.id = id
-        self.title = title
-        self.detail = detail
+        self.title = .verbatim(title)
+        self.detail = detail.map(DisplayText.verbatim)
+        self.keywords = keywords
+        self.advanced = advanced
+        self.layout = layout
+        self.content = AnyView(content())
+    }
+
+    init<Content: View>(_ id: String, localizedTitle: LocalizedStringResource, detail: LocalizedStringResource? = nil, keywords: String = "", advanced: Bool = false, layout: Layout = .row, @ViewBuilder content: () -> Content) {
+        self.id = id
+        title = .localized(localizedTitle)
+        self.detail = detail.map(DisplayText.localized)
         self.keywords = keywords
         self.advanced = advanced
         self.layout = layout
@@ -95,17 +106,23 @@ struct SettingsEntry: Identifiable {
 
 struct SettingsGroup: Identifiable {
     let id: String
-    var title: String?
-    var footer: String?
+    var title: DisplayText?
+    var footer: DisplayText?
     var advanced: Bool
     var entries: [SettingsEntry]
 
     init(_ id: String, title: String? = nil, footer: String? = nil, advanced: Bool = false, entries: [SettingsEntry]) {
         self.id = id
-        self.title = title
-        self.footer = footer
+        self.title = title.map(DisplayText.verbatim)
+        self.footer = footer.map(DisplayText.verbatim)
         self.advanced = advanced
         self.entries = entries
+    }
+
+    init(_ id: String, localizedTitle: LocalizedStringResource, footer: LocalizedStringResource? = nil, advanced: Bool = false, entries: [SettingsEntry]) {
+        self.init(id, advanced: advanced, entries: entries)
+        title = .localized(localizedTitle)
+        self.footer = footer.map(DisplayText.localized)
     }
 
     /// The group as shown with advanced settings on or off; nil when nothing of it shows.
@@ -136,7 +153,7 @@ struct SettingsGroupView: View {
                 header
             } else if let title = group.title {
                 HStack(spacing: 6) {
-                    Text(title)
+                    DisplayTextView(text: title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(theme.onSurfaceVariant)
                     if group.advanced { AdvancedTag() }
@@ -158,7 +175,7 @@ struct SettingsGroupView: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(theme.onSurface.opacity(theme.isDark ? 0.07 : 0.06), lineWidth: 1))
             if let footer = group.footer {
-                Text(footer)
+                DisplayTextView(text: footer)
                     .font(.system(size: 11.5))
                     .foregroundStyle(theme.onSurfaceVariant.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
@@ -173,6 +190,7 @@ private struct SettingsEntryRow: View {
     var isAdvanced: Bool
     var tagged: Bool
     @Environment(\.theme) private var theme
+    @Environment(LocalizationStore.self) private var localization
     @Environment(\.settingsQuery) private var query
     @Environment(\.settingsRevealing) private var revealing
     @Environment(\.settingsCompact) private var compact
@@ -216,12 +234,12 @@ private struct SettingsEntryRow: View {
     private var labels: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(SettingsHighlight.text(entry.title, query: query, accent: theme.accent))
+                Text(SettingsHighlight.text(localization.string(entry.title), query: query, accent: theme.accent))
                     .font(.system(size: compact ? 12.5 : 13.5, weight: .medium))
                     .foregroundStyle(theme.onSurface)
                 if tagged { AdvancedTag() }
             }
-            if !compact, let detail = entry.detail, !detail.isEmpty {
+            if !compact, let detail = entry.detail.map(localization.string), !detail.isEmpty {
                 Text(SettingsHighlight.text(detail, query: query, accent: theme.accent, size: 12))
                     .font(.system(size: 12))
                     .foregroundStyle(theme.onSurfaceVariant)
@@ -252,7 +270,7 @@ struct AdvancedTag: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        Text("高级")
+        DisplayTextView(text: .localized(LocalizedStringResource("advanced.tag", defaultValue: "高级", table: "Settings")))
             .font(.system(size: 9.5, weight: .semibold))
             .foregroundStyle(theme.accent)
             .padding(.horizontal, 5)
@@ -275,6 +293,16 @@ struct SettingsSwitch: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()
+    }
+}
+
+struct LanguagePicker: View {
+    @Environment(LocalizationStore.self) private var localization
+
+    var body: some View {
+        SettingsMenu(selection: Binding { localization.language } set: { localization.language = $0 }, options: AppSettings.Language.allCases.map { language in
+            (language, language.nativeName ?? localization.string(LocalizedStringResource("language.system", defaultValue: "跟随系统", table: "Settings")))
+        })
     }
 }
 

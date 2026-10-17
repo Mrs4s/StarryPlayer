@@ -351,7 +351,7 @@ private struct LibraryFeedContent<Item: Identifiable, Content: View>: View {
         case .idle, .loading:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 200)
         case .failed(let message):
-            StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message)
+            StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message)
         case .loaded:
             if feed.items.isEmpty {
                 StateView(systemName: systemName, title: emptyTitle)
@@ -370,7 +370,7 @@ enum LibraryPlayback {
                 let detail = try await model.catalog(album.source).album(id: album.id)
                 model.player.play(detail.tracks, context: PlaybackContext(source: album.source, originType: .album, originID: album.id, originName: album.name))
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

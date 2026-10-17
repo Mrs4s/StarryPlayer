@@ -94,6 +94,7 @@ private struct AuxiliaryWindowRoot<Content: View>: View {
         content
             .environment(model)
             .environment(\.theme, model.theme(for: colorScheme))
+            .modifier(AppLocalization(localization: model.localization))
     }
 }
 

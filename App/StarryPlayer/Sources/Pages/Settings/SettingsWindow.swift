@@ -53,6 +53,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.initialFirstResponder = host.view
         self.window = window
         followAppearance()
+        followLanguage()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -78,6 +79,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    private func followLanguage() {
+        guard let window, let model else { return }
+        withObservationTracking {
+            window.title = model.localization.string(LocalizedStringResource("window.settings", defaultValue: "设置"))
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.followLanguage() }
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         // AppKit keeps the last closed window around for a while; its pages go once it has
         // faded out.
@@ -98,6 +108,7 @@ private struct SettingsWindowRoot: View {
         SettingsView()
             .environment(model)
             .environment(\.theme, model.theme(for: colorScheme))
+            .modifier(AppLocalization(localization: model.localization))
             .ignoresSafeArea()
     }
 }

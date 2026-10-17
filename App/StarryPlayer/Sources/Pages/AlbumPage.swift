@@ -233,8 +233,8 @@ struct AlbumPage: View {
             TrackSkeleton(count: min(max(shown.trackCount, 6), 10))
         case .failed(let message):
             VStack(spacing: 14) {
-                StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-                PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
+                StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+                PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
             }
             .frame(maxWidth: .infinity, minHeight: 280)
         case .loaded(let detail):
@@ -320,7 +320,7 @@ struct AlbumPage: View {
                     subscribed = was
                     subscribedCount = count
                 }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

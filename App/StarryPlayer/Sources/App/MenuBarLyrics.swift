@@ -194,7 +194,7 @@ final class MenuBarLyricsController: NSObject, NSMenuDelegate {
 
         let header = NSMenuItem()
         let subtitle = track.map { track in [track.artistText, track.album?.name].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ") } ?? ""
-        let hosting = NSHostingView(rootView: MenuBarNowPlayingHeader(title: track?.title ?? "未在播放", subtitle: subtitle, cover: track == nil ? nil : player.coverImage))
+        let hosting = NSHostingView(rootView: MenuBarNowPlayingHeader(title: track?.title ?? "未在播放", subtitle: subtitle, cover: track == nil ? nil : player.coverImage).modifier(AppLocalization(localization: model.localization)))
         hosting.frame = NSRect(x: 0, y: 0, width: 280, height: 56)
         header.view = hosting
         menu.addItem(header)

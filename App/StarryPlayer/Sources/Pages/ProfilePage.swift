@@ -410,10 +410,10 @@ struct ProfilePage: View {
         }
     }
 
-    private func failure(_ message: String, retry: @escaping () -> Void) -> some View {
+    private func failure(_ message: DisplayText, retry: @escaping () -> Void) -> some View {
         VStack(spacing: 14) {
-            StateView(systemName: "exclamationmark.triangle", title: "加载失败", detail: message).frame(minHeight: 0)
-            PillButton(title: "重试", systemName: "arrow.clockwise", variant: .tertiary, action: retry)
+            StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+            PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary, action: retry)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
     }
@@ -457,7 +457,7 @@ struct ProfilePage: View {
             rankingHidden = true
             setRanking(.loaded([]), period)
         } catch {
-            setRanking(Task.isCancelled ? .idle : .failed(ErrorText.describe(error)), period)
+            setRanking(Task.isCancelled ? .idle : .failed(ErrorText.message(error)), period)
         }
     }
 
@@ -499,7 +499,7 @@ struct ProfilePage: View {
                 model.showToast(was ? "已取消关注" : "已关注 \(profile.nickname)")
             } catch {
                 withAnimation { followed = was }
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }
@@ -886,7 +886,7 @@ private struct ProfilePlaylistRows: View {
                 let detail = try await model.catalog(playlist.source).playlist(id: playlist.id)
                 model.player.play(detail.tracks, context: PlaybackContext(source: playlist.source, originType: .playlist, originID: playlist.id, originName: playlist.name))
             } catch {
-                model.showToast(ErrorText.describe(error))
+                model.showToast(ErrorText.message(error))
             }
         }
     }

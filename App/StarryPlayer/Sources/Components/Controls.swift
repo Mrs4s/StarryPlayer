@@ -160,7 +160,7 @@ struct SearchField: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help("清除")
+                .help(Text(LocalizedStringResource("common.clear", defaultValue: "清除")))
                 .transition(.opacity.combined(with: .scale(scale: 0.7)))
             }
         }

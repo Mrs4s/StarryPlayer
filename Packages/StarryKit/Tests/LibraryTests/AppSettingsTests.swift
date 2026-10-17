@@ -35,10 +35,25 @@ struct AppSettingsTests {
         #expect(saved.menuBarLyrics == AppSettings.MenuBarLyrics())
         #expect(saved.menuBarLyrics.enabled == false)
         #expect(saved.checksForUpdates)
+        #expect(saved.language == .system)
         let partial = try decode(#"{"menuBarLyrics": {"enabled": true}}"#)
         #expect(partial.menuBarLyrics.enabled)
         #expect(partial.menuBarLyrics.perSyllable)
         #expect(partial.menuBarLyrics.maxWidth == 300)
+    }
+
+    @Test func languagePreferencesRoundTripAndTolerateUnknownValues() throws {
+        for language in AppSettings.Language.allCases {
+            var settings = AppSettings()
+            settings.language = language
+            let data = try JSONEncoder().encode(settings)
+            #expect(try JSONDecoder().decode(AppSettings.self, from: data) == settings)
+        }
+        for value in ["\"future-language\"", "null", "42"] {
+            let saved = try decode("{\"language\":\(value),\"sidebarCollapsed\":true}")
+            #expect(saved.language == .system)
+            #expect(saved.sidebarCollapsed)
+        }
     }
 
     @Test func desktopLyricsRoundTripAndFillGaps() throws {

@@ -30,7 +30,7 @@ final class TrackListLocator {
     /// Locates `track` in `list`, whose rows show the matches of `query`; `clearSearch` empties
     /// the page's search field and the query its rows show, `failed` tells why the list could
     /// not load as far as the song. `topInset`: what pins over the top of the scroll view.
-    func locate(_ track: Track, in list: TrackListLoader, query: String, topInset: CGFloat, animated: Bool, clearSearch: @escaping () -> Void, failed: @escaping (String) -> Void) {
+    func locate(_ track: Track, in list: TrackListLoader, query: String, topInset: CGFloat, animated: Bool, clearSearch: @escaping () -> Void, failed: @escaping (DisplayText) -> Void) {
         run?.cancel()
         run = Task {
             let loaded = if case .loaded? = list.place(of: track.id) { true } else { false }

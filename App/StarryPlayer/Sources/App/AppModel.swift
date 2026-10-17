@@ -35,6 +35,7 @@ struct LaunchOptions {
 @Observable
 final class AppModel {
     let settings: SettingsStore
+    let localization: LocalizationStore
     let registry = SourceRegistry()
     let library = LibraryDatabase()
     let player: PlayerController
@@ -61,7 +62,8 @@ final class AppModel {
     let updates = UpdateCenter()
     let updateWindow = AuxiliaryWindowController(identifier: AppModel.updateWindowIdentifier)
     static let updateWindowIdentifier = "starry.update"
-    var toast: String?
+    var toastText: DisplayText?
+    var toast: String? { toastText.map(localization.string) }
     private var toastTask: Task<Void, Never>?
 
     let accounts: AccountCenter
@@ -85,6 +87,7 @@ final class AppModel {
 
     init(launch: LaunchOptions = LaunchOptions()) {
         settings = launch.settings ?? SettingsStore()
+        localization = LocalizationStore(settings: settings)
         keepsData = launch.sources == nil
         keepsPlayback = keepsData && launch.keepsPlayback
         player = PlayerController()
@@ -341,7 +344,7 @@ final class AppModel {
             do {
                 try await accounts.watch(source)
             } catch {
-                showToast(ErrorText.describe(error))
+                showToast(ErrorText.message(error))
             }
         }
         followsFirstAccount = false
@@ -434,7 +437,7 @@ final class AppModel {
             try await accounts.switchAccount(source, to: userID)
             if let profile = accounts.profile(of: id), profile.userID == userID { showToast("已切换到「\(profile.nickname)」") }
         } catch {
-            showToast(ErrorText.describe(error))
+            showToast(ErrorText.message(error))
         }
     }
 
@@ -445,7 +448,7 @@ final class AppModel {
         do {
             return try await accounts.beginAdding(source)
         } catch {
-            showToast(ErrorText.describe(error))
+            showToast(ErrorText.message(error))
             return false
         }
     }
@@ -457,7 +460,7 @@ final class AppModel {
         do {
             try await accounts.endAdding(source)
         } catch {
-            showToast(ErrorText.describe(error))
+            showToast(ErrorText.message(error))
         }
     }
 
@@ -522,7 +525,7 @@ final class AppModel {
                 try await source.setLiked(track.id, liked: liked)
             } catch {
                 setLiked(track, !liked)
-                showToast(ErrorText.describe(error))
+                showToast(ErrorText.message(error))
             }
         }
     }
@@ -723,7 +726,7 @@ final class AppModel {
             try await localSource.addFolder(url)
             showToast("正在扫描「\(url.lastPathComponent)」")
         } catch {
-            showToast(ErrorText.describe(error))
+            showToast(ErrorText.message(error))
         }
     }
 
@@ -1177,12 +1180,16 @@ final class AppModel {
     }
 
     func showToast(_ message: String) {
+        showToast(.verbatim(message))
+    }
+
+    func showToast(_ message: DisplayText) {
         toastTask?.cancel()
-        withAnimation(Motion.popover) { toast = message }
+        withAnimation(Motion.popover) { toastText = message }
         toastTask = Task {
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
-            withAnimation(Motion.popover) { toast = nil }
+            withAnimation(Motion.popover) { toastText = nil }
         }
     }
 
@@ -1212,7 +1219,7 @@ final class AppModel {
     func resetSettings() {
         settings.settings = AppSettings()
         settingsPage = .app(.general)
-        showToast("已恢复默认设置")
+        showToast(.localized(LocalizedStringResource("settings.resetDone", defaultValue: "已恢复默认设置")))
     }
 
     private(set) var outputDevices: [AudioOutputDevice] = []
