@@ -35,6 +35,27 @@ public enum AudioOutputDevices {
         return AudioOutputDevice(uid: uid, name: name)
     }
 
+    /// The system's output device, 0 when there is none.
+    public static func defaultOutputID() -> AudioDeviceID {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id)
+        return id
+    }
+
+    /// The Core Audio device with `uid`, nil when it is not connected.
+    public static func deviceID(forUID uid: String) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var cfUID = uid as CFString
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = withUnsafePointer(to: &cfUID) { pointer in
+            AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, UInt32(MemoryLayout<CFString>.size), pointer, &size, &id)
+        }
+        return status == noErr && id != kAudioObjectUnknown ? id : nil
+    }
+
     public static func watch(_ onChange: @escaping @MainActor () -> Void) -> AnyObject {
         Watch(onChange)
     }

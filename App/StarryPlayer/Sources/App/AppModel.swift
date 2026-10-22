@@ -77,6 +77,11 @@ final class AppModel {
     var playlistPulse: PlaylistPulse?
     let playlistEditorWindow = AuxiliaryWindowController(identifier: AppModel.playlistEditorIdentifier)
     static let playlistEditorIdentifier = "starry.playlist-editor"
+    let lyricsEditorWindow = AuxiliaryWindowController(identifier: AppModel.lyricsEditorIdentifier)
+    static let lyricsEditorIdentifier = "starry.lyrics-editor"
+    @ObservationIgnored var lyricsEditorSessions: [TrackRef: LyricsEditorSession] = [:]
+    @ObservationIgnored var lyricsEditorTrack: TrackRef?
+    @ObservationIgnored var lyricsEditorAudio: LyricsEditorAudio?
     @ObservationIgnored var draggedTracks: [Track] = []
     /// Local music: built in, there with or without plugins; nil without `keepsData`.
     @ObservationIgnored private(set) var localSource: LocalSource?
@@ -747,6 +752,7 @@ final class AppModel {
         let model = VocalSeparationModelLocator.locate(in: [vocalModelFolder], bundle: .main)
         vocalModel = model
         player.engine.vocalModel = model
+        lyricsEditorAudio?.vocalModel = model
     }
 
     /// nil restores the default folder.
@@ -890,6 +896,15 @@ final class AppModel {
         }
         pinLyrics(lyrics, to: .file(file), for: track)
         showToast("已载入歌词「\(name)」")
+        return true
+    }
+
+    @discardableResult
+    func applyEditedLyrics(_ session: LyricsEditorSession) -> Bool {
+        let file = LyricsFile(name: session.exportFileName, text: session.ttml())
+        guard let lyrics = lyricsResolver?.lyrics(from: file, for: session.track, options: lyricOptions()) else { return false }
+        pinLyrics(lyrics, to: .file(file), for: session.track)
+        session.markSaved()
         return true
     }
 
@@ -1243,6 +1258,7 @@ final class AppModel {
     private func applyOutputDevice() {
         let picked = settings.settings.outputDevice?.uid
         player.engine.outputDeviceUID = picked.flatMap { uid in outputDevices.contains { $0.uid == uid } ? uid : nil }
+        lyricsEditorAudio?.setOutputDevice(player.engine.outputDeviceUID)
     }
 
     @ObservationIgnored private let snapshotQueue = DispatchQueue(label: "moe.mrs4s.starry-player.playback-state", qos: .utility)

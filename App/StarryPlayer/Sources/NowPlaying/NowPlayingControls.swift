@@ -225,6 +225,7 @@ struct NowPlayingMoreMenu: View {
         }
         PopMenuItem.button("搜索歌词…", systemImage: "magnifyingglass", action: onSearchLyrics)
         PopMenuItem.button("打开歌词文件…", systemImage: "doc.text") { model.openLyricsFile(for: track) }
+        PopMenuItem.button("编辑歌词…", systemImage: "pencil.line") { model.presentLyricsEditor(for: track) }
         PopMenuItem.divider
         PopMenuItem.header("这首歌")
         PopMenuItem.info("来源", model.displayName(of: track.id.source))

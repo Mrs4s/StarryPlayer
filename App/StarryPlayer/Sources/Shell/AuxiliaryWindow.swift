@@ -15,28 +15,41 @@ final class AuxiliaryWindowController: NSObject, NSWindowDelegate {
 
     var isOpen: Bool { window != nil }
 
-    func show<Content: View>(title: String, model: AppModel, onClose: @escaping () -> Void = {}, @ViewBuilder content: () -> Content) {
+    /// Resizable windows move only by their title bar to preserve content drag gestures.
+    func show<Content: View>(title: String, model: AppModel, resizable: Bool = false, initialContentSize: NSSize? = nil, centerOnScreen: Bool = false, onClose: @escaping () -> Void = {}, @ViewBuilder content: () -> Content) {
+        // Capture the invoking screen before closing an existing editor on that display.
+        let parent = NSApp.keyWindow ?? NSApp.mainWindow
+        let screen = parent?.screen ?? NSScreen.main
         if window != nil { closeNow() }
         self.model = model
         self.onClose = onClose
-        let parent = NSApp.keyWindow ?? NSApp.mainWindow
         let host = NSHostingController(rootView: AuxiliaryWindowRoot(model: model, content: content()))
-        host.sizingOptions = .preferredContentSize
+        host.sizingOptions = resizable ? .minSize : .preferredContentSize
         let window = NSWindow(contentViewController: host)
         window.identifier = identifier
         window.title = title
         window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        if resizable { window.styleMask.insert(.resizable) }
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = !resizable
         window.collectionBehavior.insert([.fullScreenNone, .fullScreenAuxiliary])
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         window.animationBehavior = .documentWindow
         window.delegate = self
         host.view.layoutSubtreeIfNeeded()
-        window.setContentSize(host.view.fittingSize)
-        if let parent {
+        window.setContentSize(initialContentSize ?? host.view.fittingSize)
+        if centerOnScreen, let screen {
+            // Work within the usable screen, leaving room around the editor and accounting
+            // for the menu bar, Dock and window chrome. Small screens keep the minimum size.
+            let visible = screen.visibleFrame
+            var frame = window.frame
+            frame.size.width = min(frame.width, max(visible.width - 48, window.minSize.width))
+            frame.size.height = min(frame.height, max(visible.height - 48, window.minSize.height))
+            window.setFrame(frame, display: false)
+            window.setFrameOrigin(NSPoint(x: visible.midX - window.frame.width / 2, y: visible.midY - window.frame.height / 2))
+        } else if let parent {
             let frame = parent.frame
             window.setFrameOrigin(NSPoint(x: frame.midX - window.frame.width / 2, y: frame.midY - window.frame.height / 2))
         } else {
@@ -47,6 +60,10 @@ final class AuxiliaryWindowController: NSObject, NSWindowDelegate {
         self.window = window
         followAppearance()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    func bringToFront() {
+        window?.makeKeyAndOrderFront(nil)
     }
 
     /// Closes the window as its close button would.

@@ -63,6 +63,9 @@ struct StarryPlayerApp: App {
                 Divider()
                 Button(localization.string(LocalizedStringResource("menu.desktopLyrics", defaultValue: "桌面歌词开/关"))) { model.showsDesktopLyrics.toggle() }
                 Button(localization.string(LocalizedStringResource("menu.lockDesktopLyrics", defaultValue: "锁定/解锁桌面歌词"))) { model.desktopLyricsLocked.toggle() }
+                Button(localization.string(LocalizedStringResource("menu.editLyrics", defaultValue: "编辑歌词…"))) {
+                    if let track = model.player.current { model.presentLyricsEditor(for: track) }
+                }
             }
             CommandGroup(before: .sidebar) {
                 Button(localization.string(LocalizedStringResource("menu.sidebar", defaultValue: "切换侧栏"))) { model.toggleSidebar() }

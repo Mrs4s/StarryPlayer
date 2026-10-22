@@ -385,6 +385,22 @@
         }
       }
     },
+    "menu.editLyrics": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑歌词…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Lyrics…"
+          }
+        }
+      }
+    },
     "menu.sidebar": {
       "localizations": {
         "zh-Hans": {

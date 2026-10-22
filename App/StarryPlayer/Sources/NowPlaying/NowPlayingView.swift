@@ -467,6 +467,7 @@ struct NowPlayingView: View {
                 HStack(spacing: 8) {
                     noLyricsAction("搜索歌词", systemImage: "magnifyingglass") { searchLyricsByHand() }
                     noLyricsAction("打开歌词文件…", systemImage: "doc.text") { model.openLyricsFile(for: track) }
+                    noLyricsAction("自己做歌词", systemImage: "pencil.line") { model.presentLyricsEditor(for: track) }
                 }
                 .padding(.top, 8)
                 Text("也可以把歌词文件拖到这里")

@@ -103,6 +103,18 @@ public final class AVDeckEngine: PlaybackEngine {
         didSet { applyVolume() }
     }
 
+    /// Changes speed immediately while preserving pitch.
+    public var playbackRate: Float = 1 {
+        didSet {
+            guard playbackRate != oldValue else { return }
+            for deck in decks {
+                deck.player.defaultRate = playbackRate
+                if deck.wantsPlayback, deck.player.rate > 0 { deck.player.rate = playbackRate }
+            }
+            if active.wantsPlayback { continuation.yield(.rate(playbackRate)) }
+        }
+    }
+
     public var loudness = Loudness() {
         didSet {
             guard loudness != oldValue else { return }
@@ -279,7 +291,7 @@ public final class AVDeckEngine: PlaybackEngine {
             deck.wantsPlayback = true
             deck.player.play()
         }
-        continuation.yield(.rate(1))
+        continuation.yield(.rate(playbackRate))
     }
 
     public func pause(fade: Bool) {
