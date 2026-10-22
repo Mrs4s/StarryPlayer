@@ -220,7 +220,7 @@ final class SongCellView: NSView {
     private var state = State()
     private var actions = Actions()
     private let fill = NSView()
-    private let glow = NSView()
+    private let glow = SongRowGlowView()
     private let content = SongContentView()
     private let mark = SongMarkView()
     private let heart = SongHeartView()
@@ -316,6 +316,11 @@ final class SongCellView: NSView {
         mark.state = state
         if fresh { heart.reset(state) } else { heart.state = state }
     }
+}
+
+/// The locate animation sits above the row's controls, even when fully transparent.
+private final class SongRowGlowView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 final class SongContentView: NSView {
