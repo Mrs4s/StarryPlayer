@@ -34,8 +34,6 @@ A high-performance native macOS music player with rich visual effects
 
 ## Performance
 
-Most players with Apple Music-style visuals are built with web technologies, which can demand substantial resources with all effects enabled. On a MacBook, this can often send the fans spinning even while plugged in.
-
 Starry Player is built natively in Swift and optimized for macOS. The following measurements show the increase in total system power consumption over idle during steady playback on the lyrics page with all effects enabled:
 
 | Player | Device | Steady-state power increase |
@@ -46,16 +44,6 @@ Starry Player is built natively in Swift and optimized for macOS. The following 
 | Apple Music | M5 Max (40-core GPU) | Approx. +5 W |
 
 ¹ Components in the M5 Max system, such as its larger unified memory configuration, consume more power, resulting in a larger increase than on the M4.
-
-CPU usage on the playback page is also lower than that of other popular players:
-
-| Player | Device | Average CPU usage ¹ |
-| --- | --- | --- |
-| **Starry Player** | M5 Max (18-core CPU) | 0.5% |
-| Apple Music | M5 Max (18-core CPU) | 1% |
-| NetEase Cloud Music | M5 Max (18-core CPU) | 2% |
-
-¹ Results may vary between songs depending on how frequently the lyrics advance to a new line.
 
 ## Installation
 
