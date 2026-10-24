@@ -201,6 +201,18 @@ struct LyricsEditorView: View {
             PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
+            PopMenuItem.submenu("日语音译", systemImage: "character.phonetic") {
+                PopMenuItem.button(session.isGeneratingRomanization ? "正在生成音译…" : "补全整首日语音译", systemImage: "wand.and.stars", disabled: session.draft.isEmpty || session.isGeneratingRomanization) {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    Task { await session.generateJapaneseRomanization() }
+                }
+                PopMenuItem.button("重新生成整首音译（覆盖已有）", systemImage: "arrow.clockwise", disabled: session.draft.isEmpty || session.isGeneratingRomanization) {
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                    Task { await session.generateJapaneseRomanization(overwrite: true) }
+                }
+                PopMenuItem.divider
+                PopMenuItem.header("离线生成罗马音，特殊读法可手动校对")
+            }
             PopMenuItem.divider
             PopMenuItem.button("整体提前 0.1 秒", systemImage: "backward") { session.edit { $0.shift(by: -0.1) } }
             PopMenuItem.button("整体延后 0.1 秒", systemImage: "forward") { session.edit { $0.shift(by: 0.1) } }

@@ -1,3 +1,4 @@
+import AppKit
 import LyricsCore
 import SwiftUI
 
@@ -36,7 +37,15 @@ struct LyricsEditorInspector: View {
                     SettingsSwitch(isOn: Binding { line.isBackground } set: { setLine(\.isBackground, $0, at: position.line) })
                 }
                 LineTextField(placeholder: "翻译", value: line.translation, lineID: line.id) { setLine(\.translation, $0, at: position.line) }
-                LineTextField(placeholder: "音译", value: line.romanization, lineID: line.id) { setLine(\.romanization, $0, at: position.line) }
+                HStack(spacing: 6) {
+                    LineTextField(placeholder: "音译", value: line.romanization, lineID: line.id) { setLine(\.romanization, $0, at: position.line) }
+                    IconButton(systemName: "wand.and.stars", size: 26, iconSize: 12, help: "为这一行生成日语罗马音（替换已有音译，可撤销）") {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { await session.generateJapaneseRomanization(for: line.id, overwrite: true) }
+                    }
+                    .disabled(session.isGeneratingRomanization || !JapaneseRomanization.containsJapaneseScript(line.text))
+                    .accessibilityLabel("生成这一行的日语音译")
+                }
             } else {
                 Text("选中一个音节，在这里细调它的时间和所在行")
                     .font(.system(size: 12.5))

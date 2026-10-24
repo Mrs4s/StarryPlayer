@@ -410,6 +410,10 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
         let singers: [(String, LyricSinger)] = [("主唱", .primary), ("对唱", .secondary), ("合唱", .duet)]
         return PopMenuItem.tidy([
             .button("编辑文本", systemImage: "pencil") { session.editingLine = id },
+            .button("生成日语音译（替换已有）", systemImage: "wand.and.stars", disabled: session.isGeneratingRomanization || !JapaneseRomanization.containsJapaneseScript(line.text)) { [weak self] in
+                self?.window?.makeFirstResponder(nil)
+                Task { await session.generateJapaneseRomanization(for: id, overwrite: true) }
+            },
             .button("选中这一行的音节", systemImage: "checklist", disabled: line.syllables.isEmpty) { session.selectSyllables(ofLine: index) },
             .button("从这一行播放", systemImage: "play.circle") { [weak self] in self?.play(id: id) },
             .button("在下方插入一行", systemImage: "plus") {
