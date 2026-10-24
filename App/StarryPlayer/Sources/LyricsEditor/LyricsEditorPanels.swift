@@ -1,7 +1,7 @@
 import LyricsCore
 import SwiftUI
 
-private struct EditorPanel<Content: View>: View {
+struct EditorPanel<Content: View>: View {
     var title: String
     var subtitle: String? = nil
     var width: CGFloat

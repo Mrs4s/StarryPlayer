@@ -28,6 +28,7 @@ final class LyricsEditorSession {
     private var savedRevision = 0
     private(set) var flashText: String?
     var isGeneratingRomanization = false
+    let translation = LyricsEditorTranslationState()
     @ObservationIgnored private var flashTask: Task<Void, Never>?
     private var undoStack: [Snapshot] = []
     private var redoStack: [Snapshot] = []

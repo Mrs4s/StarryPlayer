@@ -28,7 +28,7 @@ struct LyricsEditorView: View {
     }
 
     enum Panel {
-        case importer, metadata, tracks, shortcuts
+        case importer, metadata, tracks, shortcuts, translation
     }
 
     var body: some View {
@@ -108,6 +108,8 @@ struct LyricsEditorView: View {
             LyricsEditorTracks(session: session, close: close).transition(.opacity).zIndex(3)
         case .shortcuts:
             LyricsEditorShortcuts(close: close).transition(.opacity).zIndex(3)
+        case .translation:
+            LyricsEditorTranslation(session: session, close: close).transition(.opacity).zIndex(3)
         case nil:
             EmptyView()
         }
@@ -201,6 +203,10 @@ struct LyricsEditorView: View {
             PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
+            PopMenuItem.button("AI 翻译…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                show(.translation)
+            }
             PopMenuItem.submenu("日语音译", systemImage: "character.phonetic") {
                 PopMenuItem.button(session.isGeneratingRomanization ? "正在生成音译…" : "补全整首日语音译", systemImage: "wand.and.stars", disabled: session.draft.isEmpty || session.isGeneratingRomanization) {
                     NSApp.keyWindow?.makeFirstResponder(nil)
