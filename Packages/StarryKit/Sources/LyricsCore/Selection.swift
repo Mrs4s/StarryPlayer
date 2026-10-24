@@ -92,7 +92,9 @@ public struct LyricsSelection: Sendable {
 
     /// A new clock position that is not a continuation of the last one (seek, click, new lyrics):
     /// the last entry starting by `t + 0.1` is selected if it already started (or starts within 0.1
-    /// s), otherwise nothing is selected until it does.
+    /// s), otherwise nothing is selected until it does. Lines before it that are still sung (a
+    /// duet partner's, a line it overlaps) are lit with it, as playback would have left them:
+    /// the jump goes to the oldest, the others are appended.
     public mutating func jump(to t: TimeInterval) -> [Event] {
         guard !entries.isEmpty else {
             selected = []
@@ -102,9 +104,9 @@ public struct LyricsSelection: Sendable {
         let candidate = entry(before: t + 0.1) ?? 0
         let start = entries[candidate].start
         if start < t || abs(t - start) <= 0.1 {
-            selected = [candidate]
+            selected = stillSung(before: candidate, at: t) + [candidate]
             next = after(candidate)
-            return [.jump(candidate, selected: true)]
+            return [.jump(selected[0], selected: true)] + selected.dropFirst().map { .append($0) }
         }
         selected = []
         next = candidate
@@ -138,8 +140,14 @@ public struct LyricsSelection: Sendable {
         case .finish:
             events += selected.map { .finish($0) }
         case .none, .overlapping:
-            if selected.count >= 2, entries[selected[0]].releaseTime(margin: lead) < t {
-                events.append(.deselect(selected.removeFirst()))
+            // Of lines lit together, each but the last to end leaves when its singing does. A
+            // line on its own gives way early so the page has moved on as the next is sung;
+            // here the lines still lit hold the page, and leaving early would fill the last
+            // syllables before they are sung and dim the line while its partners go on.
+            if selected.count >= 2, let last = selected.max(by: { singingEnd($0) < singingEnd($1) }) {
+                let done = selected.filter { $0 != last && singingEnd($0) <= t }
+                selected.removeAll { done.contains($0) }
+                events += done.map { .deselect($0) }
             }
         }
 
@@ -220,6 +228,19 @@ public struct LyricsSelection: Sendable {
             best = i
         }
         return best
+    }
+
+    private func stillSung(before candidate: Int, at t: TimeInterval) -> [Int] {
+        guard !entries[candidate].isInstrumental else { return [] }
+        // Overlapping it: a line ending as it starts has handed over to it.
+        let start = entries[candidate].start
+        return entries.indices.prefix(candidate).filter { i in
+            !entries[i].isInstrumental && entries[i].start <= t + 0.1 && max(t, start) < singingEnd(i)
+        }
+    }
+
+    private func singingEnd(_ i: Int) -> TimeInterval {
+        entries[i].releaseTime(margin: 0)
     }
 
     private func after(_ i: Int) -> Int? {

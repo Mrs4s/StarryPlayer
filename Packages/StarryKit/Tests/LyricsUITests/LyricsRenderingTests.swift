@@ -593,6 +593,8 @@ private final class Harness {
         h.waitForLags(5, timeout: 1.5)
         #expect(abs((h.visualTops()[5] ?? 0) - anchorTop) < 1)
         h.advance(from: 12.1, to: 12.9)
+        #expect(h.line(5)?.state == .selected)
+        h.advance(from: 12.9, to: 13.1)
         #expect(h.line(5)?.state == .past)
         #expect(h.line(6)?.state == .selected)
         h.waitForLags(6)

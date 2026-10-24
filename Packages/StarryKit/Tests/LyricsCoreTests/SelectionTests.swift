@@ -2,10 +2,7 @@ import Foundation
 import Testing
 @testable import LyricsCore
 
-/// `LyricsSelection` against its selection rules, with a fixed 0.6 s line-change lead so the
-/// thresholds are easy to read: finish when `last.end − 0.5 < t + 0.25`, switch when
-/// `last.end − 0.5 < t` and `next.start ≤ t + 0.6`, append when `next.start < t` while the last
-/// line is still sung.
+/// Uses a fixed 0.6 s line-change lead for deterministic transition thresholds.
 @Suite struct LyricsSelectionTests {
     private func entry(_ index: Int, _ start: Double, _ end: Double) -> LyricsTimelineEntry {
         LyricsTimelineEntry(kind: .line(index), start: start, end: end)
@@ -32,16 +29,15 @@ import Testing
         #expect(s.update(at: 2.05) == [.append(1)])
         #expect(s.selected == [0, 1])
         #expect(s.update(at: 3.3) == [])
-        #expect(s.update(at: 3.45) == [.deselect(0)])
+        #expect(s.update(at: 3.95) == [])
+        #expect(s.selected == [0, 1])
+        #expect(s.update(at: 4.05) == [.deselect(0)])
         #expect(s.selected == [1])
         #expect(s.update(at: 4.45) == [.finish(1)])
         #expect(s.update(at: 4.55) == [.finish(1), .select(2, gap: 0)])
     }
 
     @Test func trailingBackgroundVocalsHoldTheLine() {
-        // A's main vocals end at 2.5, its background vocals at 4; B starts at 3. A stays lit
-        // through its background vocals: B joins it, and A leaves only once they end — not a
-        // lead earlier, as a plain overlapping line would.
         let doc = LyricsDocument(format: .ttml, lines: [
             LyricLine(id: 0, start: 0, end: 4, words: [LyricWord(start: 0, end: 2.5, text: "a")],
                       background: LyricBackgroundVocals(start: 1, end: 4, words: [LyricWord(start: 1, end: 4, text: "(a)")]),
@@ -58,7 +54,6 @@ import Testing
         #expect(s.selected == [0])
         #expect(s.update(at: 3.05) == [.append(1)])
         #expect(s.selected == [0, 1])
-        #expect(s.update(at: 3.45) == [])
         #expect(s.update(at: 3.95) == [])
         #expect(s.update(at: 4.05) == [.deselect(0)])
         #expect(s.selected == [1])
@@ -133,11 +128,39 @@ import Testing
         #expect(s.jump(to: 3.95) == [.jump(2, selected: true)])
     }
 
+    @Test func jumpsIntoOverlappingLinesLightEveryLineStillSung() {
+        var s = selection([entry(0, 0, 5), entry(1, 0.02, 4), entry(2, 3.2, 8), entry(3, 9, 10)])
+        #expect(s.jump(to: 0) == [.jump(0, selected: true), .append(1)])
+        #expect(s.selected == [0, 1])
+        #expect(s.next == 2)
+        #expect(s.update(at: 3.25) == [.append(2)])
+        #expect(s.selected == [0, 1, 2])
+        #expect(s.jump(to: 3.4) == [.jump(0, selected: true), .append(1), .append(2)])
+        #expect(s.jump(to: 4.6) == [.jump(0, selected: true), .append(2)])
+        #expect(s.jump(to: 5.1) == [.jump(2, selected: true)])
+        #expect(s.selected == [2])
+    }
+
+    @Test func linesLitTogetherEachLeaveAsTheirSingingEnds() {
+        var s = selection([entry(0, 0, 5), entry(1, 0.02, 4), entry(2, 3.2, 8), entry(3, 8, 10)])
+        _ = s.jump(to: 0)
+        #expect(s.update(at: 3.25) == [.append(2)])
+        #expect(s.update(at: 3.95) == [])
+        #expect(s.update(at: 4.05) == [.deselect(1)])
+        #expect(s.selected == [0, 2])
+        #expect(s.update(at: 4.95) == [])
+        #expect(s.update(at: 5.05) == [.deselect(0)])
+        #expect(s.selected == [2])
+        #expect(s.update(at: 7.3) == [.finish(2)])
+        #expect(s.update(at: 7.55) == [.finish(2), .select(3, gap: 0)])
+    }
+
     @Test func pastTheLastLineNothingRepeats() {
         var s = selection([entry(0, 0, 4), entry(1, 2, 5)])
         _ = s.jump(to: 0)
         #expect(s.update(at: 2.1) == [.append(1)])
-        #expect(s.update(at: 3.5) == [.deselect(0)])
+        #expect(s.update(at: 3.55) == [])
+        #expect(s.update(at: 4.05) == [.deselect(0)])
         #expect(s.update(at: 4.8) == [.finish(1)])
         #expect(s.selected == [1])
     }
