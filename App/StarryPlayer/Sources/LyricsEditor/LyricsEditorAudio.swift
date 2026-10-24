@@ -27,6 +27,13 @@ final class LyricsEditorAudio {
     private(set) var volume: Double = 0.8
     private(set) var waveform: WaveformPeaks?
     private(set) var vocals = VocalsStatus.none
+    private(set) var onsets: [VocalOnset] = []
+    private(set) var onsetStatus = OnsetStatus.none
+
+    enum OnsetStatus: Equatable {
+        case none, analyzing, ready
+        case failed(String)
+    }
 
     enum VocalsStatus: Equatable {
         case none
@@ -61,6 +68,9 @@ final class LyricsEditorAudio {
     @ObservationIgnored private var outputDeviceUID: String?
     @ObservationIgnored private var vocalsFile: URL?
     @ObservationIgnored private var vocalsTask: Task<Void, Never>?
+    @ObservationIgnored private var vocalRequestID = UUID()
+    @ObservationIgnored private var onsetTask: Task<Void, Never>?
+    @ObservationIgnored private var onsetRequestID = UUID()
 
     init() {
         engine.keepsDownloads = true
@@ -102,20 +112,22 @@ final class LyricsEditorAudio {
         case .separating, .ready: return
         }
         let id = generation
+        let requestID = UUID()
+        vocalRequestID = requestID
         let destination = PCMPlayer.directory.appendingPathComponent("\(UUID().uuidString)-vocals.caf")
         let model = vocalModel
         vocals = .separating(0)
         let report: @Sendable (Double) -> Void = { [weak self] progress in
             guard let self else { return }
             Task { @MainActor in
-                guard id == self.generation, case .separating = self.vocals else { return }
+                guard id == self.generation, requestID == self.vocalRequestID, case .separating = self.vocals else { return }
                 self.vocals = .separating(progress)
             }
         }
         vocalsTask = Task { [weak self] in
             do {
                 try await VocalExtraction.extractVocals(from: song, to: destination, model: model, progress: report)
-                guard let self, id == self.generation, !Task.isCancelled else {
+                guard let self, id == self.generation, requestID == self.vocalRequestID, !Task.isCancelled else {
                     try? FileManager.default.removeItem(at: destination)
                     return
                 }
@@ -123,18 +135,63 @@ final class LyricsEditorAudio {
                 self.vocals = .ready
             } catch {
                 try? FileManager.default.removeItem(at: destination)
-                guard let self, id == self.generation, !(error is CancellationError) else { return }
+                guard let self, id == self.generation, requestID == self.vocalRequestID, !(error is CancellationError) else { return }
                 self.vocals = .failed(error as? VocalExtraction.Failure == .unsupported ? "这台 Mac 没有能处理这首歌的人声分离模型" : "人声分离没能完成")
             }
         }
     }
 
     func discardVocals() {
+        vocalRequestID = UUID()
         vocalsTask?.cancel()
         vocalsTask = nil
         if let vocalsFile { try? FileManager.default.removeItem(at: vocalsFile) }
         vocalsFile = nil
         vocals = .none
+        cancelOnsets()
+        onsets = []
+        onsetStatus = .none
+    }
+
+    // MARK: Onset hints
+
+    /// Hints always use isolated vocals, even when the displayed spectrum is the mix.
+    func prepareOnsets() {
+        guard isPrecise else { return }
+        guard vocals == .ready, let vocalsFile else {
+            prepareVocals()
+            return
+        }
+        guard onsetStatus != .analyzing, onsetStatus != .ready else { return }
+        let requestID = UUID()
+        onsetRequestID = requestID
+        onsetStatus = .analyzing
+        onsetTask = Task { [weak self] in
+            let worker = Task.detached(priority: .utility) { try VocalOnsetDetector.analyze(file: vocalsFile) }
+            do {
+                let result = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard let self, self.onsetRequestID == requestID, !Task.isCancelled else { return }
+                self.onsets = result
+                self.onsetStatus = .ready
+                self.onsetTask = nil
+            } catch {
+                guard let self, self.onsetRequestID == requestID, !Task.isCancelled else { return }
+                self.onsetStatus = .failed("起字提示分析没能完成，请重试")
+                self.onsetTask = nil
+            }
+        }
+    }
+
+    /// Keep completed results so toggling hints does not repeat the analysis.
+    func cancelOnsets() {
+        onsetRequestID = UUID()
+        onsetTask?.cancel()
+        onsetTask = nil
+        if onsetStatus == .analyzing { onsetStatus = .none }
     }
 
     // MARK: Spectrogram

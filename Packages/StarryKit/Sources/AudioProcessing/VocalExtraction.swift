@@ -18,9 +18,14 @@ public enum VocalExtraction {
     /// file). Cancelling stops it part-way and throws `CancellationError`.
     @discardableResult
     public static func extractVocals(from source: URL, to destination: URL, model: VocalSeparationModel, progress: (@Sendable (Double) -> Void)? = nil) async throws -> VocalSeparationModel {
-        try await Task.detached(priority: .userInitiated) {
+        let worker = Task.detached(priority: .userInitiated) {
             try run(source: source, destination: destination, model: model, progress: progress)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     static func run(source: URL, destination: URL, model: VocalSeparationModel, progress: (@Sendable (Double) -> Void)?) throws -> VocalSeparationModel {

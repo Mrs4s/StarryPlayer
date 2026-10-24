@@ -1,0 +1,97 @@
+import AVFoundation
+import Foundation
+import Testing
+@testable import AudioProcessing
+
+@Suite struct VocalOnsetDetectorTests {
+    private func analyze(seconds: Double, rate: Double = 44_100, signal: (Double) -> Float) throws -> [VocalOnset] {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("vocal-onsets-\(UUID().uuidString).caf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(seconds * rate))!
+            buffer.frameLength = buffer.frameCapacity
+            for i in 0..<Int(buffer.frameLength) { buffer.floatChannelData![0][i] = signal(Double(i) / rate) }
+            try file.write(from: buffer)
+        }
+        return try VocalOnsetDetector.analyze(file: url)
+    }
+
+    private func pulse(_ t: Double, start: Double, frequency: Double = 700, amplitude: Double = 0.3) -> Float {
+        let elapsed = t - start
+        guard elapsed >= 0, elapsed < 0.35 else { return 0 }
+        let envelope = min(elapsed / 0.015, 1) * min((0.35 - elapsed) / 0.06, 1)
+        return Float(amplitude * envelope * sin(2 * .pi * frequency * t))
+    }
+
+    @Test func silenceHasNoSuggestions() throws {
+        #expect(try analyze(seconds: 1) { _ in 0 }.isEmpty)
+    }
+
+    @Test(arguments: [22_050.0, 44_100.0, 48_000.0, 96_000.0])
+    func isolatedAttacksKeepTheirAudioTimesAcrossSampleRates(rate: Double) throws {
+        let starts = [0.5, 1.2, 2.0]
+        let result = try analyze(seconds: 3, rate: rate) { t in
+            starts.reduce(0) { $0 + pulse(t, start: $1) }
+        }
+        #expect(result.count == starts.count, "\(result)")
+        for start in starts { #expect(result.contains { abs($0.time - start) < 0.045 }, "\(result)") }
+        #expect(result.allSatisfy { $0.strength >= 0.5 && $0.strength <= 1 })
+    }
+
+    @Test func quietAttacksAndChunkBoundariesAreNotLostOrDuplicated() throws {
+        let starts = [0.5, 9.5, 9.95, 10.1, 11.2]
+        let result = try analyze(seconds: 12) { t in
+            starts.reduce(0) { $0 + pulse(t, start: $1, frequency: $1 == 10.1 ? 1300 : 700, amplitude: $1 < 1 ? 0.3 : 0.025) }
+        }
+        for start in starts { #expect(result.filter { abs($0.time - start) < 0.045 }.count == 1, "\(result)") }
+    }
+
+    @Test func vibratoDoesNotMarkEveryPitchOscillationAsANewSyllable() throws {
+        let result = try analyze(seconds: 3) { t in
+            guard t >= 0.5 else { return 0 }
+            let envelope = min((t - 0.5) / 0.02, 1)
+            // +/- 20 Hz at 700 Hz, 6 cycles per second, with a second harmonic.
+            let phase = 2 * Double.pi * 700 * t - 20.0 / 6 * cos(2 * .pi * 6 * t)
+            return Float(envelope * (0.3 * sin(phase) + 0.1 * sin(2 * phase)))
+        }
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        #expect(prominent.contains { abs($0.time - 0.5) < 0.045 }, "\(result)")
+        #expect(prominent.filter { $0.time > 0.65 }.isEmpty, "\(result)")
+    }
+
+    @Test func closePeaksMergeAndInvalidFramesCannotBecomeHints() {
+        var activity = VocalActivity(frameCount: 100)
+        activity.energy = .init(repeating: 10, count: 100)
+        activity.valid = .init(repeating: true, count: 100)
+        activity.flux[20] = 1
+        activity.flux[25] = 2
+        activity.flux[60] = 3
+        for i in 57...63 { activity.valid[i] = false }
+        let result = VocalOnsetDetector.candidates(in: activity, frameDuration: 0.01, centerOffset: 0.02, duration: 1)
+        #expect(result.count == 1)
+        #expect(abs((result.first?.time ?? 0) - 0.26) < 0.001)
+    }
+
+    @Test func spectralChangesCanSuggestABoundaryWithoutASilentGap() throws {
+        let result = try analyze(seconds: 2) { t in
+            guard t >= 0.2 else { return 0 }
+            let frequency = t < 1 ? 700.0 : 1300.0
+            return Float(0.3 * min((t - 0.2) / 0.02, 1) * sin(2 * .pi * frequency * t))
+        }
+        #expect(result.contains { abs($0.time - 1) < 0.045 }, "\(result)")
+    }
+
+    @Test func cancellationStopsBeforeOpeningTheAudio() async {
+        let cancelled = await Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try VocalOnsetDetector.analyze(file: URL(fileURLWithPath: "/missing-audio.caf"))
+                return false
+            } catch is CancellationError { return true }
+            catch { return false }
+        }.value
+        #expect(cancelled)
+    }
+}

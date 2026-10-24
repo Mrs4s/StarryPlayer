@@ -39,6 +39,9 @@ public final class VocalActivityAnalyzer {
     static let tailMargin: TimeInterval = 0.25
 
     public let duration: TimeInterval
+    /// Analysis frames are timestamped at their centres when used as editor hints.
+    public var frameCenterOffset: TimeInterval { Double(spectrum.size) / (2 * sampleRate) }
+    public var frameDuration: TimeInterval { Double(spectrum.hop) / sampleRate }
     public private(set) var activity: VocalActivity
     /// Network in use (after fallbacks); nil when measuring the mix itself.
     public let model: VocalSeparationModel?
@@ -56,7 +59,7 @@ public final class VocalActivityAnalyzer {
     private let spectrum: BandSpectrum
 
     /// `model` nil measures the mix without separating it (tests, and a fallback).
-    public init(file url: URL, model: VocalSeparationModel?) throws {
+    public init(file url: URL, model: VocalSeparationModel?, suppressVibrato: Bool = false) throws {
         guard let file = try? AVAudioFile(forReading: url) else { throw VocalActivityError.unreadable }
         let format = file.processingFormat
         guard format.commonFormat == .pcmFormatFloat32, !format.isInterleaved else { throw VocalActivityError.unreadable }
@@ -69,7 +72,7 @@ public final class VocalActivityAnalyzer {
         guard let input = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(block)) else { throw VocalActivityError.unreadable }
         self.input = input
         output = (0..<channels).map { _ in .allocate(capacity: 4096) }
-        spectrum = BandSpectrum(sampleRate: format.sampleRate)
+        spectrum = BandSpectrum(sampleRate: format.sampleRate, suppressVibrato: suppressVibrato)
         activity = VocalActivity(frameCount: Int(Double(file.length) / Double(spectrum.hop)) + 1)
 
         if let model {
@@ -99,7 +102,7 @@ public final class VocalActivityAnalyzer {
     /// Separates and measures `range` (seconds; clipped to the file).
     public func analyze(_ range: ClosedRange<TimeInterval>) throws {
         let hop = spectrum.hop, size = spectrum.size
-        let frameRate = VocalActivity.frameRate
+        let frameRate = 1 / frameDuration
         let firstFrame = max(0, Int(((range.lowerBound - Self.leadMargin) * frameRate).rounded(.up)))
         let lastFrame = min(activity.frameCount - 1, Int(((range.upperBound + Self.tailMargin) * sampleRate - Double(size)) / Double(hop)))
         guard lastFrame >= firstFrame else { return }
@@ -113,6 +116,9 @@ public final class VocalActivityAnalyzer {
             let offset = frame * hop - Int(start)
             guard offset + size <= vocals.count else { break }
             let (energy, flux) = vocals.withUnsafeBufferPointer { spectrum.measure($0.baseAddress! + offset) }
+            // Overlapping chunks warm up two frames of spectral history. Preserve earlier
+            // valid measurements there instead of replacing their flux with reset zeros.
+            if frame < firstFrame + 2, activity.valid[frame] { continue }
             activity.energy[frame] = energy
             activity.flux[frame] = flux
         }
@@ -214,9 +220,12 @@ final class BandSpectrum {
     private var imaginary: [Float]
     private var history: [[Float]]
     private var measured = 0
+    private let comparisonBands: [Range<Int>]
+    private let suppressVibrato: Bool
 
-    init(sampleRate: Double) {
-        size = sampleRate > 60000 ? 4096 : 2048
+    init(sampleRate: Double, suppressVibrato: Bool = false) {
+        self.suppressVibrato = suppressVibrato
+        size = suppressVibrato ? 1 << min(13, max(8, Int(log2(sampleRate * 0.046).rounded()))) : (sampleRate > 60000 ? 4096 : 2048)
         hop = Int((sampleRate / VocalActivity.frameRate).rounded())
         log2Size = vDSP_Length(log2(Double(size)))
         setup = vDSP_create_fftsetup(log2Size, FFTRadix(kFFTRadix2))!
@@ -224,7 +233,14 @@ final class BandSpectrum {
         vDSP_hann_window(&window, vDSP_Length(size), Int32(vDSP_HANN_DENORM))
         self.window = window
         let binWidth = sampleRate / Double(size)
-        band = Int((200 / binWidth).rounded(.up))..<Int((5000 / binWidth).rounded(.up))
+        band = min(Int((200 / binWidth).rounded(.up)), size / 2 - 1)..<min(Int((5000 / binWidth).rounded(.up)), size / 2)
+        // A frequency maximum filter tolerates small harmonic movements (vibrato).
+        // Keep the original flux unchanged for whole-song offset calibration.
+        let bandCount = band.count
+        comparisonBands = band.enumerated().map { i, bin in
+            let radius = suppressVibrato ? max(1, Int((Double(bin) * 0.03).rounded())) : 0
+            return max(0, i - radius)..<min(bandCount, i + radius + 1)
+        }
         // vDSP_fft_zrip doubles the transform; normalize to the 1024-point reference scale.
         magnitudeScale = 0.5 * 1024 / Float(size)
         windowed = [Float](repeating: 0, count: size)
@@ -256,9 +272,14 @@ final class BandSpectrum {
                 for (i, bin) in band.enumerated() {
                     let magnitude = (re[bin] * re[bin] + im[bin] * im[bin]).squareRoot() * magnitudeScale
                     power += magnitude * magnitude
-                    let level = log(magnitude + 1e-4)
+                    // log1p avoids promoting vanishing FFT leakage at a fading note's
+                    // tail into a loud onset. Calibration retains its original feature.
+                    let level = suppressVibrato ? log1p(magnitude * 10) : log(magnitude + 1e-4)
                     current[i] = level
-                    if measured >= 2 { rise += max(0, level - older[i]) }
+                    if measured >= 2 {
+                        let reference = comparisonBands[i].reduce(-Float.infinity) { max($0, older[$1]) }
+                        rise += max(0, level - reference)
+                    }
                 }
             }
         }
