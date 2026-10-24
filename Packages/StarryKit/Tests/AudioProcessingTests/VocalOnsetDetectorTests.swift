@@ -25,6 +25,19 @@ import Testing
         return Float(amplitude * envelope * sin(2 * .pi * frequency * t))
     }
 
+    // Deterministic, noise-like energy above the old 5 kHz cutoff. Multiple carriers
+    // exercise fluctuations within a fricative, rather than just a high sine wave.
+    private func frication(_ t: Double, start: Double, duration: Double = 0.16, amplitude: Double = 0.015) -> Float {
+        let elapsed = t - start
+        guard elapsed >= 0, elapsed < duration else { return 0 }
+        let envelope = min(elapsed / 0.025, 1) * min((duration - elapsed) / 0.015, 1)
+        let noise = (0..<24).reduce(0.0) { value, i in
+            let frequency = 5500 + Double((i * 1777) % 5000)
+            return value + sin(2 * .pi * frequency * t + Double(i * i))
+        } / sqrt(12)
+        return Float(amplitude * envelope * noise)
+    }
+
     @Test func silenceHasNoSuggestions() throws {
         #expect(try analyze(seconds: 1) { _ in 0 }.isEmpty)
     }
@@ -81,6 +94,65 @@ import Testing
             return Float(0.3 * min((t - 0.2) / 0.02, 1) * sin(2 * .pi * frequency * t))
         }
         #expect(result.contains { abs($0.time - 1) < 0.045 }, "\(result)")
+    }
+
+    @Test(arguments: [22_050.0, 44_100.0, 48_000.0, 96_000.0])
+    func unvoicedFricativesHaveHintsWithoutAVowel(rate: Double) throws {
+        let result = try analyze(seconds: 1, rate: rate) { frication($0, start: 0.5) }
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        #expect(prominent.count == 1, "\(result)")
+        #expect(prominent.contains { abs($0.time - 0.5) < 0.045 }, "\(result)")
+    }
+
+    @Test(arguments: [0.05, 0.12, 0.18])
+    func consonantAndLouderVowelShareTheEarlierHint(consonantDuration: Double) throws {
+        let result = try analyze(seconds: 1.2) { t in
+            frication(t, start: 0.5, duration: consonantDuration, amplitude: 0.008)
+                + pulse(t, start: 0.5 + consonantDuration - 0.01)
+        }
+        #expect(result.count == 1, "\(result)")
+        #expect(result.contains { abs($0.time - 0.5) < 0.045 }, "\(result)")
+        #expect(result.first.map { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength } == true)
+    }
+
+    @Test func sustainedFricationAndItsFadeDoNotProduceRepeatedHints() throws {
+        let result = try analyze(seconds: 2) { t in
+            let fade = max(0, min(1, (1.8 - t) / 0.5))
+            return frication(t, start: 0.2, duration: 1.6) * Float(fade)
+        }
+        #expect(result.count == 1, "\(result)")
+        #expect(result.contains { abs($0.time - 0.2) < 0.045 }, "\(result)")
+    }
+
+    @Test func separateFricativesAndVowelsAcrossAGapStaySeparate() throws {
+        let result = try analyze(seconds: 1.4) { t in
+            frication(t, start: 0.5, duration: 0.06) + pulse(t, start: 0.68)
+        }
+        #expect(result.count == 2, "\(result)")
+        for start in [0.5, 0.68] { #expect(result.contains { abs($0.time - start) < 0.045 }, "\(result)") }
+    }
+
+    @Test func fricativesNearTheBeginningAndChunkBoundaryKeepTheirTimes() throws {
+        let starts = [0.08, 9.98, 10.3]
+        let result = try analyze(seconds: 11) { t in
+            starts.reduce(0) { $0 + frication(t, start: $1) }
+        }
+        #expect(result.count == starts.count, "\(result)")
+        for start in starts { #expect(result.contains { abs($0.time - start) < 0.045 }, "\(result)") }
+    }
+
+    @Test func fricativeAfterAVowelWithUpperHarmonicsKeepsTheConsonantStart() throws {
+        let result = try analyze(seconds: 1.2) { t in
+            pulse(t, start: 0.2) + pulse(t, start: 0.2, frequency: 8000, amplitude: 0.04)
+                + frication(t, start: 0.5, amplitude: 0.015) + pulse(t, start: 0.65)
+        }
+        #expect(result.count == 2, "\(result)")
+        for start in [0.2, 0.5] { #expect(result.contains { abs($0.time - start) < 0.045 }, "\(result)") }
+    }
+
+    @Test func lowLevelHighFrequencyResidueDoesNotBecomeAProminentHint() throws {
+        let result = try analyze(seconds: 1) { frication($0, start: 0.5, amplitude: 0.00001) }
+        #expect(result.isEmpty, "\(result)")
     }
 
     @Test func cancellationStopsBeforeOpeningTheAudio() async {

@@ -11,10 +11,17 @@ public struct VocalActivity: Sendable {
     public var flux: [Float]
     public var valid: [Bool]
 
+    /// Separate high-band features for editor onsets. Kept out of the calibration
+    /// features so quiet unvoiced consonants do not compete with vowel harmonics.
+    var fricativeEnergy: [Float]
+    var fricativeFlux: [Float]
+
     public init(frameCount: Int) {
         energy = Array(repeating: 0, count: frameCount)
         flux = Array(repeating: 0, count: frameCount)
         valid = Array(repeating: false, count: frameCount)
+        fricativeEnergy = Array(repeating: -100, count: frameCount)
+        fricativeFlux = Array(repeating: 0, count: frameCount)
     }
 
     public var frameCount: Int { energy.count }
@@ -115,12 +122,14 @@ public final class VocalActivityAnalyzer {
         for frame in firstFrame...lastFrame {
             let offset = frame * hop - Int(start)
             guard offset + size <= vocals.count else { break }
-            let (energy, flux) = vocals.withUnsafeBufferPointer { spectrum.measure($0.baseAddress! + offset) }
+            let measured = vocals.withUnsafeBufferPointer { spectrum.measure($0.baseAddress! + offset) }
             // Overlapping chunks warm up two frames of spectral history. Preserve earlier
             // valid measurements there instead of replacing their flux with reset zeros.
             if frame < firstFrame + 2, activity.valid[frame] { continue }
-            activity.energy[frame] = energy
-            activity.flux[frame] = flux
+            activity.energy[frame] = measured.energy
+            activity.flux[frame] = measured.flux
+            activity.fricativeEnergy[frame] = measured.fricativeEnergy
+            activity.fricativeFlux[frame] = measured.fricativeFlux
         }
         let validFrom = max(firstFrame + 2, Int((range.lowerBound * frameRate).rounded(.up)))
         let validTo = min(lastFrame, Int((range.upperBound * frameRate).rounded(.down)) - 1)
@@ -205,7 +214,8 @@ public final class VocalActivityAnalyzer {
     }
 }
 
-/// Short-time spectrum of the 200–5000 Hz band: a Hann-windowed FFT of about 46 ms every 10 ms.
+/// Short-time spectrum of the vocal band, with an optional 4–12 kHz consonant band:
+/// a Hann-windowed FFT of about 46 ms every 10 ms.
 /// Magnitudes are scaled to a 1024-point transform so levels match across sample rates.
 final class BandSpectrum {
     let size: Int
@@ -214,13 +224,17 @@ final class BandSpectrum {
     private let setup: FFTSetup
     private let window: [Float]
     private let band: Range<Int>
+    private let fricativeBand: Range<Int>
     private let magnitudeScale: Float
     private var windowed: [Float]
     private var real: [Float]
     private var imaginary: [Float]
     private var history: [[Float]]
+    private var fricativeHistory: [Float] = [0, 0]
+    private var fricativeSpectra: [[Float]]
     private var measured = 0
     private let comparisonBands: [Range<Int>]
+    private let fricativeComparisons: [Range<Int>]
     private let suppressVibrato: Bool
 
     init(sampleRate: Double, suppressVibrato: Bool = false) {
@@ -234,6 +248,12 @@ final class BandSpectrum {
         self.window = window
         let binWidth = sampleRate / Double(size)
         band = min(Int((200 / binWidth).rounded(.up)), size / 2 - 1)..<min(Int((5000 / binWidth).rounded(.up)), size / 2)
+        // /s/ and similar unvoiced consonants can concentrate above 5 kHz. Measure
+        // their band energy before frequency max filtering, which suppresses noise
+        // as well as vibrato. Clip at Nyquist for lower-rate audio.
+        fricativeBand = suppressVibrato
+            ? min(Int((4000 / binWidth).rounded(.up)), size / 2)..<min(Int((12000 / binWidth).rounded(.up)), size / 2)
+            : 0..<0
         // A frequency maximum filter tolerates small harmonic movements (vibrato).
         // Keep the original flux unchanged for whole-song offset calibration.
         let bandCount = band.count
@@ -241,12 +261,18 @@ final class BandSpectrum {
             let radius = suppressVibrato ? max(1, Int((Double(bin) * 0.03).rounded())) : 0
             return max(0, i - radius)..<min(bandCount, i + radius + 1)
         }
+        let fricativeCount = fricativeBand.count
+        fricativeComparisons = fricativeBand.enumerated().map { i, bin in
+            let radius = max(1, Int((Double(bin) * 0.03).rounded()))
+            return max(0, i - radius)..<min(fricativeCount, i + radius + 1)
+        }
         // vDSP_fft_zrip doubles the transform; normalize to the 1024-point reference scale.
         magnitudeScale = 0.5 * 1024 / Float(size)
         windowed = [Float](repeating: 0, count: size)
         real = [Float](repeating: 0, count: size / 2)
         imaginary = [Float](repeating: 0, count: size / 2)
         history = [[Float](repeating: 0, count: band.count), [Float](repeating: 0, count: band.count)]
+        fricativeSpectra = [[Float](repeating: 0, count: fricativeCount), [Float](repeating: 0, count: fricativeCount)]
     }
 
     deinit { vDSP_destroy_fftsetup(setup) }
@@ -254,12 +280,15 @@ final class BandSpectrum {
     func reset() { measured = 0 }
 
     /// Band energy (dB) and onset strength of the `size` samples at `samples`.
-    func measure(_ samples: UnsafePointer<Float>) -> (energy: Float, flux: Float) {
+    func measure(_ samples: UnsafePointer<Float>) -> (energy: Float, flux: Float, fricativeEnergy: Float, fricativeFlux: Float) {
         vDSP_vmul(samples, 1, window, 1, &windowed, 1, vDSP_Length(size))
         var power: Float = 0
         var rise: Float = 0
+        var fricativePower: Float = 0
+        var fricativeRise: Float = 0
         let older = history[0]
         var current = [Float](repeating: 0, count: band.count)
+        var fricativeSpectrum = [Float](repeating: 0, count: fricativeBand.count)
         real.withUnsafeMutableBufferPointer { re in
             imaginary.withUnsafeMutableBufferPointer { im in
                 var split = DSPSplitComplex(realp: re.baseAddress!, imagp: im.baseAddress!)
@@ -281,11 +310,32 @@ final class BandSpectrum {
                         rise += max(0, level - reference)
                     }
                 }
+                for (i, bin) in fricativeBand.enumerated() {
+                    let power = (re[bin] * re[bin] + im[bin] * im[bin]) * magnitudeScale * magnitudeScale
+                    fricativePower += power
+                    let level = log1p(power.squareRoot() * 10)
+                    fricativeSpectrum[i] = level
+                    if measured >= 2 {
+                        let reference = fricativeComparisons[i].reduce(-Float.infinity) { max($0, fricativeSpectra[0][$1]) }
+                        fricativeRise += max(0, level - reference)
+                    }
+                }
             }
         }
         history[0] = history[1]
         history[1] = current
+        // Band energy catches noise rises that the frequency max filter suppresses;
+        // spectral flux also catches a vowel harmonic giving way to broadband /s/
+        // without increasing total high-band energy.
+        let fricativeLevel = log1p(fricativePower.squareRoot() * 10)
+        let fricativeFlux = measured >= 2
+            ? max(fricativeRise / Float(max(1, fricativeBand.count)), max(0, fricativeLevel - fricativeHistory[0])) : 0
+        fricativeHistory[0] = fricativeHistory[1]
+        fricativeHistory[1] = fricativeLevel
+        fricativeSpectra[0] = fricativeSpectra[1]
+        fricativeSpectra[1] = fricativeSpectrum
         measured += 1
-        return (10 * log10(power + 1e-10), rise / Float(band.count))
+        return (10 * log10(power + 1e-10), rise / Float(band.count),
+                10 * log10(fricativePower + 1e-10), fricativeFlux)
     }
 }
