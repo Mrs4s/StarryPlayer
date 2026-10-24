@@ -23,7 +23,7 @@ struct LyricsEditorOverview: View {
     private var caretLine: Int? { (session.caret ?? session.lastStarted)?.line }
 
     private var duration: TimeInterval {
-        max(audio.duration, session.track.duration, session.timedEnd, 1)
+        LyricsTimelineViewport.duration(of: session, audio: audio)
     }
 
     var body: some View {

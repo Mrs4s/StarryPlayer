@@ -1,3 +1,4 @@
+import AppKit
 import LyricsCore
 import SwiftUI
 
@@ -8,461 +9,464 @@ struct LyricsEditorLineList: View {
     var appeared: Bool
     var playFrom: (LyricsDraft.Position) -> Void
     @Environment(\.theme) private var theme
-    @Namespace private var caretSpace
-    /// The line a click just moved the caret to: it is in view already, and scrolling it would
-    /// move what the next click lands on.
-    @State private var clickedLine: Int?
+    @Environment(LocalizationStore.self) private var localization
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(session.draft.lines.enumerated()), id: \.element.id) { index, line in
-                        LyricsEditorObservedLine(session: session, index: index, line: line, clock: clock, canPlay: canPlay, caretSpace: caretSpace, playFrom: playFrom) {
-                            if session.caret?.line != index { clickedLine = index }
-                        }
-                        .id(line.id)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 12)
-                        .animation(Motion.reveal.delay(Double(min(index, Motion.staggerLimit)) * Motion.staggerStep), value: appeared)
-                    }
-                    if !session.draft.lines.isEmpty { addLineButton }
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
-                .animation(Motion.selection, value: session.caret)
-                .animation(Motion.listEdit, value: session.draft.lines.map(\.id))
-            }
-            .scrollIndicators(.automatic)
+        LyricsEditorLinesHost(session: session, clock: clock, localization: localization, revision: session.revision,
+                              caret: session.caret, selection: session.selection, editingLine: session.editingLine,
+                              lastTapped: session.lastTapped, tapSerial: session.tapSerial,
+                              canPlay: canPlay, theme: theme, playFrom: playFrom)
+            .opacity(appeared ? 1 : 0)
             .overlay {
                 if session.draft.lines.isEmpty {
                     StateView(systemName: "text.badge.plus", title: "还没有歌词", detail: "点「导入」粘贴歌词，或打开歌词文件")
                 }
             }
-            .onChange(of: session.caret?.line) { _, line in
-                defer { clickedLine = nil }
-                guard let line, line != clickedLine, session.draft.lines.indices.contains(line) else { return }
-                withAnimation(Motion.reveal) { proxy.scrollTo(session.draft.lines[line].id, anchor: UnitPoint(x: 0.5, y: 0.4)) }
-            }
-            .onChange(of: session.editingLine) { _, id in
-                guard let id else { return }
-                withAnimation(Motion.reveal) { proxy.scrollTo(id, anchor: .center) }
-            }
-        }
-    }
-
-    private var addLineButton: some View {
-        Button {
-            let line = LyricsDraft.Line(syllables: [])
-            session.edit { $0.lines.append(line) }
-            session.editingLine = line.id
-        } label: {
-            Label("添加一行", systemImage: "plus")
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(theme.onSurfaceVariant)
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(VariantButtonStyle(variant: .ghost, isPill: true))
-        .padding(.leading, 34)
-        .padding(.top, 6)
     }
 }
 
-/// Reads shared selection/playback state outside the expensive row subtree. Unchanged rows
-/// keep their layout and gesture graph when another line is selected or starts playing.
-private struct LyricsEditorObservedLine: View {
+private struct LyricsEditorLinesHost: NSViewRepresentable {
     let session: LyricsEditorSession
-    let index: Int
-    let line: LyricsDraft.Line
     let clock: LyricsEditorClock
-    var canPlay: Bool
-    var caretSpace: Namespace.ID
-    var playFrom: (LyricsDraft.Position) -> Void
-    var willSelect: () -> Void
-
-    var body: some View {
-        let lastTapped = session.lastTapped
-        let tapped = lastTapped.flatMap { id in line.syllables.contains { $0.id == id } ? id : nil }
-        LyricsEditorLineRow(session: session, index: index, line: line, clock: clock,
-                            isPlaying: canPlay && clock.activeLines.contains(index),
-                            caretSyllable: session.caret?.line == index ? session.caret?.syllable : nil,
-                            isEditing: session.editingLine == line.id,
-                            lastTapped: tapped, tapSerial: tapped == nil ? 0 : session.tapSerial,
-                            caretSpace: caretSpace, playFrom: playFrom, willSelect: willSelect)
-            .equatable()
-    }
-}
-
-private struct LyricsEditorLineRow: View, @MainActor Equatable {
-    let session: LyricsEditorSession
-    let index: Int
-    let line: LyricsDraft.Line
-    let clock: LyricsEditorClock
-    var isPlaying: Bool
-    var caretSyllable: Int?
-    var isEditing: Bool
+    let localization: LocalizationStore
+    var revision: Int
+    var caret: LyricsDraft.Position?
+    var selection: Set<UUID>
+    var editingLine: UUID?
     var lastTapped: UUID?
     var tapSerial: Int
-    var caretSpace: Namespace.ID
+    var canPlay: Bool
+    var theme: Theme
     var playFrom: (LyricsDraft.Position) -> Void
-    var willSelect: () -> Void
-    @Environment(\.theme) private var theme
-    @State private var hovering = false
-    @State private var menuOpen = false
-    @State private var text = ""
-    @FocusState private var focused: Bool
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.session === rhs.session && lhs.clock === rhs.clock && lhs.index == rhs.index
-            && lhs.line == rhs.line && lhs.isPlaying == rhs.isPlaying
-            && lhs.caretSyllable == rhs.caretSyllable && lhs.isEditing == rhs.isEditing
-            && lhs.lastTapped == rhs.lastTapped && lhs.tapSerial == rhs.tapSerial
-            && lhs.caretSpace == rhs.caretSpace
+    func makeNSView(context: Context) -> LyricsEditorListView { LyricsEditorListView() }
+
+    func updateNSView(_ view: LyricsEditorListView, context: Context) {
+        view.configure(session: session, clock: clock, localization: localization, theme: theme, canPlay: canPlay, playFrom: playFrom)
     }
 
-    private var isCaretLine: Bool { caretSyllable != nil }
+    static func dismantleNSView(_ view: LyricsEditorListView, coordinator: ()) { view.disconnect() }
 
-    private func playLine() { playFrom(LyricsDraft.Position(line: index, syllable: 0)) }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LyricsEditorListView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions()
+    }
+}
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            gutter
-            VStack(alignment: .leading, spacing: 4) {
-                if isEditing {
-                    editor
-                } else if line.syllables.isEmpty {
-                    Text("空行")
-                        .font(.system(size: 15))
-                        .foregroundStyle(theme.onSurfaceVariant.opacity(0.6))
-                        .frame(height: 30)
-                } else {
-                    LyricsFlowLayout(spacing: 2, lineSpacing: 4) {
-                        if let badge {
-                            Tag(text: badge, style: line.isBackground ? .neutral : .primary, soft: true)
-                                .fixedSize()
-                                .padding(.trailing, 4)
-                        }
-                        ForEach(Array(line.syllables.enumerated()), id: \.element.id) { s, syllable in
-                            let position = LyricsDraft.Position(line: index, syllable: s)
-                            SyllableChip(syllable: syllable, position: position, isCaret: caretSyllable == s, pulse: lastTapped == syllable.id ? tapSerial : 0, clock: isPlaying ? clock : nil, background: line.isBackground, caretSpace: caretSpace) {
-                                willSelect()
-                                session.caret = position
-                            }
-                            .equatable()
-                            .contextMenu { syllableItems(syllable, at: position) }
-                        }
-                    }
-                }
-                if !line.translation.isEmpty {
-                    Text(line.translation)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(theme.onSurfaceVariant)
-                        .lineLimit(2)
-                }
-                if !line.romanization.isEmpty {
-                    Text(line.romanization)
-                        .font(.system(size: 12).italic())
-                        .foregroundStyle(theme.onSurfaceVariant.opacity(0.8))
-                        .lineLimit(2)
-                }
+/// Timing/selection changes retain text layout; scrolling only reuses visible native rows.
+final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDelegate {
+    private let scroll = NSScrollView()
+    private let table = NSTableView()
+    private let selection = LyricsEditorCaret()
+    private let popMenu = PopMenuController()
+    private var localization: LocalizationStore?
+    private var session: LyricsEditorSession?
+    private var clock: LyricsEditorClock?
+    private var clockToken: UUID?
+    private var lines: [LyricsDraft.Line] = []
+    private var layouts: [UUID: LyricsEditorLineLayout] = [:]
+    private var revision = -1
+    private var caret: LyricsDraft.Position?
+    private var editingLine: UUID?
+    private var clickedLine: UUID?
+    private var measuredWidth: CGFloat = 0
+    private var theme = Theme.darkBase
+    private var canPlay = false
+    private var playFrom: ((LyricsDraft.Position) -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 24, right: 0)
+        table.headerView = nil
+        table.backgroundColor = .clear
+        table.style = .plain
+        table.selectionHighlightStyle = .none
+        table.intercellSpacing = NSSize(width: 0, height: 2)
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        table.usesAutomaticRowHeights = false
+        table.focusRingType = .none
+        table.wantsLayer = true
+        table.layer?.addSublayer(selection.layer)
+        let column = NSTableColumn(identifier: .init("lyrics"))
+        column.resizingMask = .autoresizingMask
+        column.minWidth = 1
+        table.addTableColumn(column)
+        table.dataSource = self
+        table.delegate = self
+        scroll.documentView = table
+        addSubview(scroll)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        scroll.frame = NSRect(x: 14, y: 0, width: max(1, bounds.width - 28), height: bounds.height)
+        let width = max(1, scroll.contentSize.width)
+        guard abs(width - measuredWidth) > 0.5 else { return }
+        measuredWidth = width
+        table.tableColumns.first?.width = width
+        updateLayouts()
+        refreshVisible()
+        updateSelection(animated: false)
+    }
+
+    func configure(session: LyricsEditorSession, clock: LyricsEditorClock, localization: LocalizationStore, theme: Theme, canPlay: Bool,
+                   playFrom: @escaping (LyricsDraft.Position) -> Void) {
+        self.localization = localization
+        let replaced = self.session !== session
+        if replaced { selection.reset() }
+        if self.clock !== clock {
+            disconnect()
+            self.clock = clock
+            connect()
+        }
+        self.session = session
+        self.theme = theme
+        self.canPlay = canPlay
+        self.playFrom = playFrom
+        let oldCaret = caret
+        let oldEditing = editingLine
+        caret = session.caret
+        editingLine = session.editingLine
+        if replaced || revision != session.revision {
+            let oldLines = lines
+            let oldIDs = lines.map(\.id)
+            revision = session.revision
+            lines = session.draft.lines
+            let ids = lines.map(\.id)
+            let live = Set(ids)
+            layouts = layouts.filter { live.contains($0.key) }
+            let changed = oldIDs == ids ? IndexSet(lines.indices.filter {
+                oldLines[$0] != lines[$0] || lines[$0].id == oldEditing || lines[$0].id == editingLine
+            }) : nil
+            updateLayouts(rows: changed, notify: oldIDs == ids)
+            if oldIDs != ids { table.reloadData() }
+        } else if oldEditing != editingLine {
+            updateLayouts(rows: IndexSet(lines.indices.filter { lines[$0].id == oldEditing || lines[$0].id == editingLine }))
+        }
+        refreshVisible()
+        if oldEditing != editingLine, let editingLine,
+           let row = lines.firstIndex(where: { $0.id == editingLine }) {
+            table.scrollRowToVisible(row)
+            DispatchQueue.main.async { [weak self] in self?.focusEditor(id: editingLine) }
+        } else if oldCaret?.line != caret?.line, let row = caret?.line, lines.indices.contains(row) {
+            if clickedLine != lines[row].id { table.scrollRowToVisible(row) }
+        }
+        updateSelection(animated: oldCaret != caret)
+        clickedLine = nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { disconnect() } else {
+            connect()
+            updateSelection(animated: false)
+        }
+    }
+
+    private func connect() {
+        guard window != nil, clockToken == nil, let clock else { return }
+        clockToken = clock.observeFrames { [weak self] in self?.updatePlayback() }
+    }
+
+    func disconnect() {
+        if let clockToken { clock?.removeFrameObserver(clockToken) }
+        clockToken = nil
+        selection.reset()
+        popMenu.close()
+    }
+
+    private func updateSelection(animated: Bool) {
+        var target: NSRect?
+        if let caret, lines.indices.contains(caret.line),
+           let layout = layouts[lines[caret.line].id], !layout.input.editing,
+           layout.chips.indices.contains(caret.syllable) {
+            let cell = table.frameOfCell(atColumn: 0, row: caret.line)
+            target = layout.chips[caret.syllable].offsetBy(dx: cell.minX, dy: cell.minY).insetBy(dx: -2, dy: -2)
+        }
+        // Jump to distant selections instead of animating across the whole document.
+        let visible = table.visibleRect
+        let from = selection.layer.presentation()?.frame ?? selection.frame
+        let movesOnScreen = from?.intersects(visible) == true && target?.intersects(visible) == true
+        selection.update(frame: target, color: NSColor(theme.primary),
+                         animated: animated && movesOnScreen && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    private func updateLayouts(rows: IndexSet? = nil, notify: Bool = true) {
+        var changed = IndexSet()
+        for index in rows ?? IndexSet(lines.indices) {
+            let line = lines[index]
+            let input = LyricsEditorLineLayout.Input(line: line, width: measuredWidth,
+                                                     paragraph: index > 0 && line.isParagraphStart,
+                                                     editing: line.id == editingLine)
+            if layouts[line.id]?.input != input {
+                layouts[line.id] = LyricsEditorLineLayout(input: input)
+                changed.insert(index)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            trailing
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .padding(.leading, line.isBackground ? 24 : 0)
-        .background {
-            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                .fill(isCaretLine ? theme.primary.opacity(theme.isDark ? 0.1 : 0.06) : theme.onSurface.opacity(hovering ? 0.035 : 0))
-        }
-        .overlay(alignment: .leading) {
-            Capsule()
-                .fill(theme.primary)
-                .frame(width: 3, height: isPlaying ? 18 : 0)
-                .opacity(isPlaying ? 1 : 0)
-                .padding(.leading, line.isBackground ? 26 : 2)
-                .animation(Motion.lift, value: isPlaying)
-        }
-        .padding(.top, line.isParagraphStart && index > 0 ? 12 : 0)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .animation(Motion.hover, value: hovering)
-        // A click anywhere on the row picks the line at once (a chip picks its syllable);
-        // the double click that edits the text does not hold the single one back.
-        .onTapGesture(count: 2) { if !isEditing { begin() } }
-        .simultaneousGesture(TapGesture().onEnded(select))
-        .contextMenu { contextItems }
-        .onChange(of: isEditing) { _, editing in
-            if editing { begin() }
+        if notify, !changed.isEmpty {
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            table.noteHeightOfRows(withIndexesChanged: changed)
+            NSAnimationContext.endGrouping()
         }
     }
 
-    private var gutter: some View {
-        Text("\(index + 1)")
-            .font(.system(size: 11, weight: .medium).monospacedDigit())
-            .foregroundStyle(isCaretLine ? theme.primary : theme.onSurfaceVariant.opacity(0.7))
-            .frame(width: 26, height: 30, alignment: .trailing)
-    }
-
-    private var badge: String? {
-        if line.isBackground { return "背景" }
-        switch line.singer {
-        case .primary: return nil
-        case .secondary: return "对唱"
-        case .duet: return "合唱"
+    private func refreshVisible() {
+        table.enumerateAvailableRowViews { [self] _, row in
+            guard lines.indices.contains(row),
+                  let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false) as? LyricsEditorRowView else { return }
+            configure(cell, row: row)
         }
     }
 
-    private var trailing: some View {
-        HStack(spacing: 2) {
-            HStack(spacing: 2) {
-                IconButton(systemName: "play.fill", size: 26, iconSize: 10, help: "从这一行播放（Q）", action: playLine)
-                PopMenu(isPresented: $menuOpen) {
-                    menuItems
-                } label: { open in
-                    PopMenuEllipsis(isOpen: open, size: 12, weight: .semibold)
-                        .foregroundStyle(theme.onSurface.opacity(0.8))
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true, isActive: menuOpen))
-            }
-            // Reserve the controls' width: hover while scrolling must not rewrap lyrics
-            // and change the lazy stack's row heights underneath the pointer.
-            .opacity(hovering || menuOpen || isCaretLine ? 1 : 0)
-            .allowsHitTesting(hovering || menuOpen || isCaretLine)
-            .accessibilityHidden(!(hovering || menuOpen || isCaretLine))
-            Text(LyricsEditorFormat.time(line.timedRange?.lowerBound))
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
-                .foregroundStyle(theme.onSurfaceVariant.opacity(line.timedRange == nil ? 0.4 : 0.8))
-                .frame(width: 58, height: 28, alignment: .trailing)
-        }
-        .animation(Motion.hover, value: hovering || menuOpen || isCaretLine)
-    }
-
-    private var editor: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("这一行的歌词", text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 16, weight: .medium))
-                .focused($focused)
-                .onSubmit(commit)
-                .onExitCommand { endEditing() }
-                .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
-                .padding(.horizontal, 8)
-                .frame(height: 30)
-                .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: Radius.menu, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radius.menu, style: .continuous).strokeBorder(theme.primary.opacity(0.5), lineWidth: 1))
-            Text("用 | 手动分开音节，空格分开单词；回车保存，Esc 取消")
-                .font(.system(size: 11))
-                .foregroundStyle(theme.onSurfaceVariant.opacity(0.8))
-        }
-        .transition(.opacity)
-    }
-
-    private func select() {
-        guard session.editingLine != line.id else { return }
-        if line.syllables.isEmpty { return begin() }
-        willSelect()
-        session.selectLine(index)
-    }
-
-    private func begin() {
-        text = LyricsDraft.editableText(of: line)
-        if session.editingLine != line.id { session.editingLine = line.id }
-        Task {
-            try? await Task.sleep(for: .milliseconds(30))
-            focused = true
+    private func updatePlayback() {
+        guard let clock else { return }
+        table.enumerateAvailableRowViews { [self] _, row in
+            guard let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false) as? LyricsEditorRowView else { return }
+            cell.updatePlayback(time: clock.time, active: canPlay && clock.activeLines.contains(row))
         }
     }
 
-    private func commit() {
-        guard session.editingLine == line.id else { return }
+    private func configure(_ cell: LyricsEditorRowView, row: Int) {
+        guard let session, let layout = layouts[lines[row].id] else { return }
+        let line = lines[row]
+        let selection = session.selection
+        cell.configure(line: line, index: row, layout: layout, theme: theme,
+                       caret: caret?.line == row ? caret?.syllable : nil,
+                       selected: selection.isEmpty ? [] : IndexSet(line.syllables.indices.filter { selection.contains(line.syllables[$0].id) }),
+                       pulse: line.syllables.contains(where: { $0.id == session.lastTapped }) ? session.tapSerial : 0,
+                       lastTapped: session.lastTapped)
+        cell.select = { [weak self] syllable in self?.select(id: line.id, syllable: syllable) }
+        cell.toggle = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: false) }
+        cell.extend = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: true) }
+        cell.drag = { [weak self] event in self?.drag(event) }
+        cell.edit = { [weak session] in session?.editingLine = line.id }
+        cell.commit = { [weak self] text in self?.commit(text, id: line.id) }
+        cell.cancel = { [weak session] in session?.editingLine = nil }
+        cell.play = { [weak self] in self?.play(id: line.id) }
+        cell.showMenu = { [weak self, weak cell] syllable, rect in
+            guard let cell else { return }
+            self?.showMenu(id: line.id, syllable: syllable, rect: rect, in: cell)
+        }
+        cell.updatePlayback(time: clock?.time ?? 0, active: canPlay && (clock?.activeLines.contains(row) ?? false))
+    }
+
+    private func focusEditor(id: UUID) {
+        guard session?.editingLine == id, let row = lines.firstIndex(where: { $0.id == id }),
+              let cell = table.view(atColumn: 0, row: row, makeIfNecessary: true) as? LyricsEditorRowView else { return }
+        cell.focusEditor()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { lines.isEmpty ? 0 : lines.count + 1 }
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { false }
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        lines.indices.contains(row) ? layouts[lines[row].id]?.height ?? 44 : 46
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        if row == lines.count {
+            let button = NSButton(title: "＋ 添加一行", target: self, action: #selector(addLine))
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 12.5, weight: .medium)
+            button.contentTintColor = NSColor(theme.onSurfaceVariant)
+            return button
+        }
+        guard lines.indices.contains(row) else { return nil }
+        let cell = table.makeView(withIdentifier: LyricsEditorRowView.reuseID, owner: nil) as? LyricsEditorRowView ?? LyricsEditorRowView()
+        configure(cell, row: row)
+        return cell
+    }
+
+    @objc private func addLine() {
+        guard let session else { return }
+        let line = LyricsDraft.Line(syllables: [])
+        session.edit { $0.lines.append(line) }
+        session.editingLine = line.id
+    }
+
+    private func select(id: UUID, syllable: Int?) {
+        guard let session, let index = session.draft.lines.firstIndex(where: { $0.id == id }) else { return }
+        clickedLine = id
+        if session.draft.lines[index].syllables.isEmpty { session.editingLine = id; return }
+        if let syllable { session.select(.init(line: index, syllable: syllable)) }
+        else {
+            session.clearSelection()
+            session.selectLine(index)
+        }
+    }
+
+    private func pick(id: UUID, syllable: Int, extending: Bool) {
+        guard let session, let index = session.draft.lines.firstIndex(where: { $0.id == id }) else { return }
+        clickedLine = id
+        let position = LyricsDraft.Position(line: index, syllable: syllable)
+        if extending { session.extendSelection(to: position) } else { session.toggleSelection(position) }
+    }
+
+    private func drag(_ event: NSEvent) {
+        guard let session else { return }
+        table.autoscroll(with: event)
+        let point = table.convert(event.locationInWindow, from: nil)
+        let row = table.row(at: point)
+        guard lines.indices.contains(row), let layout = layouts[lines[row].id], !layout.input.editing else { return }
+        let cell = table.frameOfCell(atColumn: 0, row: row)
+        guard let syllable = layout.syllable(at: NSPoint(x: point.x - cell.minX, y: point.y - cell.minY)) else { return }
+        let position = LyricsDraft.Position(line: row, syllable: syllable)
+        guard session.draft.contains(position) else { return }
+        clickedLine = lines[row].id
+        session.extendSelection(to: position)
+    }
+
+    private func play(id: UUID, syllable: Int = 0) {
+        guard let index = session?.draft.lines.firstIndex(where: { $0.id == id }) else { return }
+        playFrom?(.init(line: index, syllable: syllable))
+    }
+
+    private func commit(_ text: String, id: UUID) {
+        guard let session, session.editingLine == id else { return }
         let value = text.trimmingCharacters(in: .whitespaces)
-        if value != LyricsDraft.editableText(of: line) {
+        session.editingLine = nil
+        session.edit { draft in
+            guard let index = draft.lines.firstIndex(where: { $0.id == id }),
+                  value != LyricsDraft.editableText(of: draft.lines[index]) else { return }
+            if value.isEmpty { draft.lines.remove(at: index) }
+            else { draft.setText(value, ofLine: index) }
+        }
+    }
+
+    private func showMenu(id: UUID, syllable: Int?, rect: NSRect, in cell: NSView) {
+        guard let session, let index = session.draft.lines.firstIndex(where: { $0.id == id }) else { return }
+        let line = session.draft.lines[index]
+        // Menu shortcuts must target the syllable under the pointer.
+        if let syllable, line.syllables.indices.contains(syllable), !session.selection.contains(line.syllables[syllable].id) {
+            clickedLine = id
+            session.select(.init(line: index, syllable: syllable))
+        }
+        let items: [PopMenuItem]
+        if let syllable, line.syllables.indices.contains(syllable) {
+            items = session.selection.count > 1 ? selectionItems(session) : syllableItems(session, line: index, syllable: syllable)
+        } else {
+            items = lineItems(session, id: id)
+        }
+        guard let localization else { return }
+        popMenu.popUp(items: items, theme: theme, localization: localization, from: rect, in: cell)
+    }
+
+    private func selectionItems(_ session: LyricsEditorSession) -> [PopMenuItem] {
+        let selected = session.selectedPositions
+        return PopMenuItem.tidy([
+            .header("已选中 \(selected.count) 个音节"),
+            .button("移到新的一行", systemImage: "return") { session.moveToNewLine() }.shortcut("⌘↩"),
+            .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: (selected.first?.line ?? 0) == 0) { session.moveToLine(by: -1) }.shortcut("⌘↑"),
+            .button("移到下一行开头", systemImage: "arrow.down.to.line", disabled: (selected.last?.line ?? lines.count) >= lines.count - 1) { session.moveToLine(by: 1) }.shortcut("⌘↓"),
+            .button("合并成一个音节", systemImage: "link", disabled: !session.canMergeSelection) { session.mergeSelection() },
+            .divider,
+            .button("清除时间", systemImage: "eraser", disabled: !selected.contains { session.draft[$0].isTimed }) { session.clearTiming() },
+            .button("删除", systemImage: "trash", role: .destructive) { session.delete() }.shortcut("⌫"),
+            .divider,
+            .button("取消选择", systemImage: "xmark") { session.clearSelection() }.shortcut("Esc"),
+        ])
+    }
+
+    private func syllableItems(_ session: LyricsEditorSession, line index: Int, syllable: Int) -> [PopMenuItem] {
+        let line = session.draft.lines[index]
+        let id = line.id
+        let position = LyricsDraft.Position(line: index, syllable: syllable)
+        let text = line.syllables[syllable].text.trimmingCharacters(in: .whitespaces)
+        return PopMenuItem.tidy([
+            .header("「\(text)」"),
+            .button("从这里播放", systemImage: "play") { [weak self] in
+                session.caret = position
+                self?.play(id: id, syllable: syllable)
+            },
+            .divider,
+            .button("拆成单字", systemImage: "scissors", disabled: text.count <= 1) { session.edit { $0.splitSyllable(at: position) } },
+            .button("与后一个合并", systemImage: "link", disabled: syllable + 1 >= line.syllables.count) { session.edit { $0.mergeWithNext(at: position) } },
+            .button("从这里断成新的一行", systemImage: "return", disabled: syllable == 0) { session.moveToNewLine() }.shortcut("⌘↩"),
+            .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: index == 0) { session.moveToLine(by: -1, [position]) }.shortcut("⌘↑"),
+            .button("移到下一行开头", systemImage: "arrow.down.to.line", disabled: index + 1 >= lines.count) { session.moveToLine(by: 1, [position]) }.shortcut("⌘↓"),
+            .divider,
+            .button("清除时间", systemImage: "eraser", disabled: !line.syllables[syllable].isTimed) { session.clearTiming([position]) },
+            .button("删除这个音节", systemImage: "trash", role: .destructive) { session.delete([position]) }.shortcut("⌫"),
+            .divider,
+            .submenu("这一行", systemImage: "text.alignleft") { lineItems(session, id: id) },
+        ])
+    }
+
+    private func lineItems(_ session: LyricsEditorSession, id: UUID) -> [PopMenuItem] {
+        guard let index = session.draft.lines.firstIndex(where: { $0.id == id }) else { return [] }
+        let line = session.draft.lines[index]
+        func editLine(_ change: @escaping (inout LyricsDraft.Line) -> Void) {
             session.edit { draft in
-                guard let index = draft.lines.firstIndex(where: { $0.id == line.id }) else { return }
-                if value.isEmpty { draft.lines.remove(at: index) } else { draft.setText(value, ofLine: index) }
+                guard let i = draft.lines.firstIndex(where: { $0.id == id }) else { return }
+                change(&draft.lines[i])
             }
         }
-        endEditing()
-    }
-
-    private func endEditing() {
-        if session.editingLine == line.id { session.editingLine = nil }
-    }
-
-    // MARK: Line actions
-
-    @PopMenuBuilder
-    private var menuItems: [PopMenuItem] {
-        PopMenuItem.button("编辑文本", systemImage: "pencil") { begin() }
-        PopMenuItem.button("从这一行播放", systemImage: "play", action: playLine)
-        PopMenuItem.button("在下方插入一行", systemImage: "text.insert") { insertBelow() }
-        PopMenuItem.divider
-        PopMenuItem.header("演唱")
-        PopMenuItem.option("主唱", selected: line.singer == .primary) { set(\.singer, .primary) }
-        PopMenuItem.option("对唱", selected: line.singer == .secondary) { set(\.singer, .secondary) }
-        PopMenuItem.option("合唱", selected: line.singer == .duet) { set(\.singer, .duet) }
-        PopMenuItem.option("背景人声", selected: line.isBackground) { set(\.isBackground, !line.isBackground) }
-        PopMenuItem.divider
-        PopMenuItem.button("清除这一行的时间", systemImage: "eraser", disabled: line.timedRange == nil) { clearTiming() }
-        PopMenuItem.button("删除这一行", systemImage: "trash", role: .destructive) { remove() }
-    }
-
-    @ViewBuilder
-    private func syllableItems(_ syllable: LyricsDraft.Syllable, at position: LyricsDraft.Position) -> some View {
-        Button("从这里播放") {
-            session.caret = position
-            playFrom(position)
-        }
-        Divider()
-        Button("拆成单字") { session.edit { $0.splitSyllable(at: position) } }
-            .disabled(syllable.text.trimmingCharacters(in: .whitespaces).count < 2)
-        Button("与后一个合并") { session.edit { $0.mergeWithNext(at: position) } }
-            .disabled(position.syllable + 1 >= line.syllables.count)
-        Button("清除时间") {
-            session.edit { draft in
-                guard draft.contains(position) else { return }
-                draft[position].start = nil
-                draft[position].end = nil
-            }
-        }
-        .disabled(!syllable.isTimed)
-        Divider()
-        Button("编辑这一行…") { begin() }
-    }
-
-    @ViewBuilder
-    private var contextItems: some View {
-        Button("编辑文本") { begin() }
-        Button("从这一行播放", action: playLine)
-        Button("在下方插入一行") { insertBelow() }
-        Divider()
-        Toggle("背景人声", isOn: Binding { line.isBackground } set: { set(\.isBackground, $0) })
-        Button("清除这一行的时间") { clearTiming() }
-        Button("删除这一行", role: .destructive) { remove() }
-    }
-
-    private func set<Value>(_ key: WritableKeyPath<LyricsDraft.Line, Value>, _ value: Value) {
-        session.edit { draft in
-            guard let index = draft.lines.firstIndex(where: { $0.id == line.id }) else { return }
-            draft.lines[index][keyPath: key] = value
-        }
-    }
-
-    private func insertBelow() {
-        let new = LyricsDraft.Line(syllables: [], singer: line.singer)
-        session.edit { draft in
-            guard let index = draft.lines.firstIndex(where: { $0.id == line.id }) else { return }
-            draft.lines.insert(new, at: index + 1)
-        }
-        session.editingLine = new.id
-    }
-
-    private func clearTiming() {
-        session.edit { draft in
-            guard let index = draft.lines.firstIndex(where: { $0.id == line.id }) else { return }
-            draft.clearTiming(ofLine: index)
-            draft.lines[index].start = nil
-            draft.lines[index].end = nil
-        }
-        session.caret = session.draft.firstPosition(fromLine: index)
-    }
-
-    private func remove() {
-        session.edit { draft in draft.lines.removeAll { $0.id == line.id } }
+        let singers: [(String, LyricSinger)] = [("主唱", .primary), ("对唱", .secondary), ("合唱", .duet)]
+        return PopMenuItem.tidy([
+            .button("编辑文本", systemImage: "pencil") { session.editingLine = id },
+            .button("选中这一行的音节", systemImage: "checklist", disabled: line.syllables.isEmpty) { session.selectSyllables(ofLine: index) },
+            .button("从这一行播放", systemImage: "play.circle") { [weak self] in self?.play(id: id) },
+            .button("在下方插入一行", systemImage: "plus") {
+                let new = LyricsDraft.Line(syllables: [], singer: line.singer, track: line.track)
+                session.edit { draft in
+                    guard let i = draft.lines.firstIndex(where: { $0.id == id }) else { return }
+                    draft.lines.insert(new, at: i + 1)
+                }
+                session.editingLine = new.id
+            },
+            .button("上移这一行", systemImage: "arrow.up", disabled: index == 0) { session.moveLine(by: -1, id: id) }
+                .shortcut(session.caret?.line == index ? "⌥↑" : ""),
+            .button("下移这一行", systemImage: "arrow.down", disabled: session.draft.lineGroup(at: index).upperBound >= session.draft.lines.count) { session.moveLine(by: 1, id: id) }
+                .shortcut(session.caret?.line == index ? "⌥↓" : ""),
+            .button("与下一行合并", systemImage: "arrow.triangle.merge", disabled: index + 1 >= session.draft.lines.count) {
+                session.edit { draft in
+                    guard let i = draft.lines.firstIndex(where: { $0.id == id }) else { return }
+                    draft.mergeLineWithNext(i)
+                }
+            },
+            .divider,
+            .submenu("演唱", systemImage: "person.2", detail: singers.first(where: { $0.1 == line.singer })?.0) {
+                for (title, singer) in singers {
+                    PopMenuItem.option(title, selected: line.singer == singer) { editLine { $0.singer = singer } }
+                }
+            },
+            .option("背景人声", selected: line.isBackground) { editLine { $0.isBackground.toggle() } },
+            .submenu("虚拟轨", systemImage: "rectangle.split.1x2", detail: session.draft.tracks.first { $0.id == line.track }.map { LyricsEditorSession.name(of: $0) }) {
+                PopMenuItem.option("不放在轨道上（按演唱）", selected: !session.draft.isOnTrack(line)) { session.setTrack(nil, ofLine: id) }
+                for track in session.draft.tracks {
+                    PopMenuItem.option(LyricsEditorSession.name(of: track), selected: line.track == track.id) { session.setTrack(track.id, ofLine: id) }
+                }
+                PopMenuItem.divider
+                PopMenuItem.button("新建轨道并移过去", systemImage: "plus") { session.addTrack(moving: id) }
+            },
+            .button("移到暂存区", systemImage: "tray.and.arrow.down", disabled: !line.syllables.contains(where: \.isTimed)) {
+                if let i = session.draft.lines.firstIndex(where: { $0.id == id }) { session.stageLine(i) }
+            },
+            .divider,
+            .button("清除这一行的时间", systemImage: "eraser", disabled: line.timedRange == nil) {
+                session.edit { draft in
+                    guard let i = draft.lines.firstIndex(where: { $0.id == id }) else { return }
+                    draft.clearTiming(ofLine: i)
+                    draft.lines[i].start = nil
+                    draft.lines[i].end = nil
+                }
+                session.caret = session.draft.firstPosition(fromLine: index)
+            },
+            .button("删除这一行", systemImage: "trash", role: .destructive) { session.edit { $0.lines.removeAll { $0.id == id } } },
+        ])
     }
 }
 
-private struct SyllableChip: View, @MainActor Equatable {
-    let syllable: LyricsDraft.Syllable
-    let position: LyricsDraft.Position
-    var isCaret: Bool
-    /// Changes when this syllable is tapped, to bounce it.
-    var pulse: Int
-    /// The playback clock, only on the lines being sung.
-    var clock: LyricsEditorClock?
-    var background: Bool
-    var caretSpace: Namespace.ID
-    var select: () -> Void
-    @Environment(\.theme) private var theme
-    @State private var hovering = false
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.syllable == rhs.syllable && lhs.position == rhs.position && lhs.isCaret == rhs.isCaret && lhs.pulse == rhs.pulse
-            && lhs.clock === rhs.clock && lhs.background == rhs.background && lhs.caretSpace == rhs.caretSpace
-    }
-
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 7, style: .continuous) }
-
-    var body: some View {
-        let timed = syllable.isTimed
-        Text(syllable.text.trimmingCharacters(in: .whitespaces))
-            .font(.system(size: background ? 15 : 17, weight: .medium))
-            .foregroundStyle(theme.onSurface.opacity(timed ? 0.95 : 0.5))
-            .padding(.horizontal, 6)
-            .frame(minWidth: 26, minHeight: background ? 26 : 30)
-            .background {
-                ZStack(alignment: .leading) {
-                    shape.fill(timed ? theme.primary.opacity(theme.isDark ? 0.14 : 0.09) : theme.onSurface.opacity(hovering ? 0.05 : 0))
-                    if let clock, timed {
-                        SyllableSweep(syllable: syllable, clock: clock)
-                    }
-                }
-                .clipShape(shape)
-            }
-            .overlay {
-                if !timed {
-                    shape.strokeBorder(theme.onSurface.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                }
-            }
-            .overlay {
-                if isCaret {
-                    shape.strokeBorder(theme.primary, lineWidth: 1.75)
-                        .padding(-2)
-                        .matchedGeometryEffect(id: "caret", in: caretSpace)
-                }
-            }
-            .keyframeAnimator(initialValue: 1.0, trigger: pulse) { content, scale in
-                content.scaleEffect(scale)
-            } keyframes: { _ in
-                SpringKeyframe(1.16, duration: 0.07, spring: .snappy)
-                SpringKeyframe(1, duration: 0.4, spring: .bouncy)
-            }
-            .padding(.trailing, syllable.text.hasSuffix(" ") ? 8 : 0)
-            .contentShape(Rectangle())
-            // Alongside the row's double click, so a click takes effect at once.
-            .simultaneousGesture(TapGesture().onEnded(select))
-            .onHover { hovering = $0 }
-            .animation(Motion.hover, value: hovering)
-            .animation(Motion.selection, value: timed)
-            .help(timed ? "\(LyricsEditorFormat.time(syllable.start, digits: 3)) – \(LyricsEditorFormat.time(syllable.end, digits: 3))" : "还没有打点")
-    }
-}
-
-private struct SyllableSweep: View {
-    let syllable: LyricsDraft.Syllable
-    let clock: LyricsEditorClock
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        GeometryReader { geo in
-            let fraction = progress
-            Rectangle()
-                .fill(theme.primary.opacity(theme.isDark ? 0.32 : 0.22))
-                .frame(width: geo.size.width * fraction)
-                .opacity(fraction > 0 && fraction < 1 ? 1 : 0)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private var progress: CGFloat {
-        guard let start = syllable.start else { return 0 }
-        let end = max(syllable.end ?? start + 0.3, start + 0.01)
-        return CGFloat(min(max((clock.time - start) / (end - start), 0), 1))
+private extension PopMenuItem {
+    func shortcut(_ keys: String) -> PopMenuItem {
+        var item = self
+        item.detail = keys.isEmpty ? nil : keys
+        return item
     }
 }

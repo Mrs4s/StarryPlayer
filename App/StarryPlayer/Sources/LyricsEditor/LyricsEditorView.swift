@@ -27,7 +27,7 @@ struct LyricsEditorView: View {
     }
 
     enum Panel {
-        case importer, metadata, shortcuts
+        case importer, metadata, tracks, shortcuts
     }
 
     var body: some View {
@@ -52,7 +52,7 @@ struct LyricsEditorView: View {
                     .padding(.trailing, 12)
                 }
             }
-            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() })
+            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) })
         }
         .frame(minWidth: 960, idealWidth: Self.defaultContentSize.width, maxWidth: .infinity, minHeight: 680, idealHeight: Self.defaultContentSize.height, maxHeight: .infinity)
         .background(theme.surface.ignoresSafeArea())
@@ -77,7 +77,11 @@ struct LyricsEditorView: View {
         } message: { _ in
             Text("没打点的音节会按前后已打点的时间平均分配。")
         }
-        .task(id: audio.isReady) { await runClock() }
+        .background {
+            LyricsEditorClockDriver(session: session, audio: audio, clock: clock, ready: audio.isReady, playing: audio.isPlaying)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         // The player started: the editor stops, so two songs never play at once.
         .onChange(of: model.player.isPlaying) { _, playing in
             if playing { audio.pause() }
@@ -98,6 +102,8 @@ struct LyricsEditorView: View {
             LyricsEditorImport(session: session, close: close).transition(.opacity).zIndex(3)
         case .metadata:
             LyricsEditorMetadata(session: session, close: close).transition(.opacity).zIndex(3)
+        case .tracks:
+            LyricsEditorTracks(session: session, close: close).transition(.opacity).zIndex(3)
         case .shortcuts:
             LyricsEditorShortcuts(close: close).transition(.opacity).zIndex(3)
         case nil:
@@ -130,18 +136,6 @@ struct LyricsEditorView: View {
             .frame(maxWidth: 240, alignment: .leading)
             LyricsEditorProgress(timed: session.draft.timedCount, total: session.draft.syllableCount)
             Spacer(minLength: 12)
-            HStack(spacing: 2) {
-                IconButton(systemName: "arrow.uturn.backward", size: 30, iconSize: 13, help: "撤销（⌘Z）") { session.undo() }
-                    .disabled(!session.canUndo)
-                    .opacity(session.canUndo ? 1 : 0.4)
-                IconButton(systemName: "arrow.uturn.forward", size: 30, iconSize: 13, help: "重做（⇧⌘Z）") { session.redo() }
-                    .disabled(!session.canRedo)
-                    .opacity(session.canRedo ? 1 : 0.4)
-                IconButton(systemName: "keyboard", size: 30, iconSize: 13, help: "快捷键（?）") { show(.shortcuts) }
-            }
-            PillButton(title: "导入", systemName: "square.and.arrow.down", variant: .tertiary, height: 30) { show(.importer) }
-                .help("粘贴或打开歌词，快速分好音节")
-            moreMenu
             IconButton(systemName: focusPreview ? "rectangle.split.2x1" : "rectangle.inset.filled", size: 30, iconSize: 13, isActive: focusPreview, help: focusPreview ? "回到编辑" : "全幅预览") {
                 withAnimation(Motion.shelf) { focusPreview.toggle() }
             }
@@ -172,7 +166,11 @@ struct LyricsEditorView: View {
     private var moreMenu: some View {
         PopMenu {
             PopMenuItem.button(findingLyrics ? "正在查找歌词…" : "载入这首歌的歌词", systemImage: "text.quote", disabled: findingLyrics) { loadSongLyrics() }
+            PopMenuItem.button("打开歌词工程…", systemImage: "folder") { model.openLyricsProject(into: session) }
+            PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square", disabled: session.draft.isEmpty) { model.saveLyricsProject(session) }
+            PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
+            PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
             PopMenuItem.divider
             PopMenuItem.button("整体提前 0.1 秒", systemImage: "backward") { session.edit { $0.shift(by: -0.1) } }
             PopMenuItem.button("整体延后 0.1 秒", systemImage: "forward") { session.edit { $0.shift(by: 0.1) } }
@@ -251,12 +249,18 @@ struct LyricsEditorView: View {
         case .export:
             model.exportLyrics(session)
         case .apply:
+            guard session.validateForExport() else { return }
             if model.applyEditedLyrics(session) {
                 session.flash(model.player.current?.id == session.track.id ? "已应用，播放页正在显示编辑好的歌词" : "已应用，播放这首歌时会显示编辑好的歌词")
             } else {
                 session.flash("没能应用这份歌词")
             }
         }
+    }
+
+    private func saveProject() {
+        guard !session.draft.isEmpty else { return }
+        model.saveLyricsProject(session)
     }
 
     private func loadSongLyrics() {
@@ -312,26 +316,6 @@ struct LyricsEditorView: View {
         play(from: position)
     }
 
-    private func runClock() async {
-        guard audio.isReady else {
-            clock.cancelScrubbing()
-            clock.sample(time: 0, playing: false, ranges: [])
-            return
-        }
-        var revision = -1
-        var ranges: [ClosedRange<TimeInterval>?] = []
-        while !Task.isCancelled {
-            let sample = audio.clock()
-            let playing = sample.rate > 0
-            if revision != session.revision {
-                revision = session.revision
-                ranges = session.timedRanges
-            }
-            clock.sample(time: sample.time, playing: playing, ranges: ranges)
-            try? await Task.sleep(for: .milliseconds(playing ? 16 : 100))
-        }
-    }
-
     // MARK: Keys
 
     private func installKeys() {
@@ -359,11 +343,20 @@ struct LyricsEditorView: View {
             return true
         }
         if flags.contains(.command) {
+            switch event.keyCode {
+            case 36, 76: session.moveToNewLine(); return true                // ⌘↩
+            case 126: session.moveToLine(by: -1); return true                // ⌘↑
+            case 125: session.moveToLine(by: 1); return true                 // ⌘↓
+            case 51: session.delete(); return true                           // ⌘⌫, as ⌫
+            default: break
+            }
             switch key {
+            case "a": session.selectAll()
             case "z": flags.contains(.shift) ? session.redo() : session.undo()
-            case "s": request(.apply)
+            case "s": flags.contains(.shift) ? saveProject() : request(.apply)
             case "e": request(.export)
             case "i": show(.importer)
+            case "o": model.openLyricsProject(into: session)
             default: return false
             }
             return true
@@ -373,15 +366,19 @@ struct LyricsEditorView: View {
         let option = flags.contains(.option)
         let repeated = event.isARepeat
         switch event.keyCode {
+        case 53 where !session.selection.isEmpty: session.clearSelection() // Esc
         case 49: if !repeated { audio.togglePlayPause() }                // Space
         case 36, 76: if !repeated { release(event) }                     // Return, Enter
-        case 51: session.stepBack()                                      // ⌫
+        case 51 where shift: session.stepBack()                          // ⇧⌫
+        case 51: session.delete()                                        // ⌫
         case 123 where option: session.nudge(by: shift ? -0.1 : -0.01)   // ⌥←
         case 124 where option: session.nudge(by: shift ? 0.1 : 0.01)     // ⌥→
         case 123 where shift: audio.seek(by: -3)                         // ⇧←
         case 124 where shift: audio.seek(by: 3)                          // ⇧→
         case 123: session.moveCaret(by: -1)                              // ←
         case 124: session.moveCaret(by: 1)                               // →
+        case 126 where option: session.moveLine(by: -1)                  // ⌥↑
+        case 125 where option: session.moveLine(by: 1)                   // ⌥↓
         case 126: session.moveCaretLine(by: -1)                          // ↑
         case 125: session.moveCaretLine(by: 1)                           // ↓
         case 115: moveInLineAndPlay(last: false)                         // Home

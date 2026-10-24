@@ -7,6 +7,7 @@ struct LyricsEditorDock: View {
     let clock: LyricsEditorClock
     var tap: () -> Void
     var release: () -> Void
+    var manageTracks: () -> Void
     @Environment(\.theme) private var theme
     @State private var viewport = LyricsTimelineViewport()
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
@@ -15,7 +16,8 @@ struct LyricsEditorDock: View {
 
     static let timelineHeightKey = "starry.lyricsEditor.timelineHeight"
     static let defaultTimelineHeight = 180.0
-    static let timelineHeights: ClosedRange<Double> = 104...300
+    /// The lower bound leaves two lanes room over the tray.
+    static let timelineHeights: ClosedRange<Double> = 136...340
 
     static func height(timeline: Double) -> CGFloat {
         CGFloat(min(max(timeline, timelineHeights.lowerBound), timelineHeights.upperBound)) + 120
@@ -26,7 +28,7 @@ struct LyricsEditorDock: View {
             VStack(spacing: 10) {
                 VStack(spacing: 8) {
                     LyricsEditorOverview(session: session, audio: audio, clock: clock, viewport: viewport)
-                    LyricsEditorTimeline(session: session, audio: audio, clock: clock, viewport: viewport)
+                    LyricsEditorTimeline(session: session, audio: audio, clock: clock, viewport: viewport, manageTracks: manageTracks)
                         .frame(height: CGFloat(min(max(timelineHeight, Self.timelineHeights.lowerBound), Self.timelineHeights.upperBound)))
                 }
                 transport
@@ -84,7 +86,7 @@ struct LyricsEditorDock: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
-                TimingKey(title: "撤回", key: "⌫", variant: .ghost, help: "撤回上一次打点（⌫）") { session.stepBack() }
+                TimingKey(title: "撤回", key: "⇧⌫", variant: .ghost, help: "撤回上一次打点（⇧⌫）") { session.stepBack() }
                 TimingKey(title: "结束", key: "H", variant: .tertiary, help: "在这里结束刚唱的音节，用于停顿和行尾（H、K 或 ↩）", action: release)
                 TimingKey(title: "打点", key: "F", variant: .filled, help: "开始当前音节，并结束上一个（F、G 或 J）", action: tap)
             }

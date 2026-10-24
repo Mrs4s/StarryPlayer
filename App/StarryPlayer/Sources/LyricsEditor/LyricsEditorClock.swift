@@ -11,6 +11,16 @@ final class LyricsEditorClock {
     private(set) var scrubTime: TimeInterval?
     @ObservationIgnored private var playbackTime: TimeInterval = 0
     @ObservationIgnored private var playbackRanges: [ClosedRange<TimeInterval>?] = []
+    @ObservationIgnored private var frameObservers: [UUID: () -> Void] = [:]
+
+    /// Native surfaces consume frames directly, without invalidating SwiftUI layout.
+    func observeFrames(_ callback: @escaping () -> Void) -> UUID {
+        let token = UUID()
+        frameObservers[token] = callback
+        return token
+    }
+
+    func removeFrameObserver(_ token: UUID) { frameObservers[token] = nil }
 
     func sample(time: TimeInterval, playing: Bool, ranges: [ClosedRange<TimeInterval>?]) {
         playbackTime = time
@@ -42,9 +52,14 @@ final class LyricsEditorClock {
     }
 
     private func show(_ time: TimeInterval, in ranges: [ClosedRange<TimeInterval>?]) {
-        if abs(self.time - time) > 0.0005 { self.time = time }
+        let timeChanged = abs(self.time - time) > 0.0005
+        if timeChanged { self.time = time }
         let active = Self.lines(at: time, in: ranges)
-        if activeLines != active { activeLines = active }
+        let linesChanged = activeLines != active
+        if linesChanged { activeLines = active }
+        if timeChanged || linesChanged {
+            for callback in frameObservers.values { callback() }
+        }
     }
 
     private static func lines(at time: TimeInterval, in ranges: [ClosedRange<TimeInterval>?]) -> Set<Int> {

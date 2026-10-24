@@ -196,21 +196,29 @@ final class PopMenuController {
     func toggle(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, placement: PopMenuPlacement, matchesWidth: Bool) {
         if isOpen {
             close()
-        } else {
-            open(items: items, theme: theme, localization: localization, placement: placement, matchesWidth: matchesWidth)
+        } else if let anchor {
+            open(items: items, theme: theme, localization: localization, from: anchor.bounds, in: anchor, placement: placement, matchesWidth: matchesWidth)
         }
     }
 
-    private func open(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, placement: PopMenuPlacement, matchesWidth: Bool) {
+    /// Opens by a rect in an AppKit view rather than by a button: a context menu at the
+    /// pointer (an empty rect there) or the menu of a control the view draws itself.
+    func popUp(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, from rect: NSRect, in view: NSView) {
+        close()
+        open(items: items, theme: theme, localization: localization, from: rect, in: view, placement: .below, matchesWidth: false)
+    }
+
+    private func open(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, from rect: NSRect, in view: NSView,
+                      placement: PopMenuPlacement, matchesWidth: Bool) {
         let items = PopMenuItem.tidy(items)
-        guard !items.isEmpty, let anchor, let window = anchor.window, let screen = window.screen ?? NSScreen.main else { return }
+        guard !items.isEmpty, let window = view.window, let screen = window.screen ?? NSScreen.main else { return }
         Self.active?.close()
         Self.active = self
 
         // Laid out top-left (as SwiftUI lays the card out), in the screen's points.
         let top = screen.frame.maxY
         func flipped(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height) }
-        let anchorFrame = flipped(window.convertToScreen(anchor.convert(anchor.bounds, to: nil)))
+        let anchorFrame = flipped(window.convertToScreen(view.convert(rect, to: nil)))
         let measurer = PopMenuMeasurer(theme: theme)
         let root = PopMenuPage(title: nil, items: items, measurer: measurer)
         let layout = PopMenuLayout(anchor: anchorFrame, bounds: flipped(screen.visibleFrame), window: flipped(window.frame),

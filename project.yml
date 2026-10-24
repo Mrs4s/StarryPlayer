@@ -109,6 +109,11 @@ targets:
           - UTTypeIdentifier: moe.mrs4s.starry-player.tracks
             UTTypeDescription: Starry Player 歌曲
             UTTypeConformsTo: [public.data]
+          - UTTypeIdentifier: moe.mrs4s.starry-player.lyrics-project
+            UTTypeDescription: Starry Player 歌词工程
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [starrylyrics]
         NSSupportsAutomaticGraphicsSwitching: true
         NSHighResolutionCapable: true
     entitlements:

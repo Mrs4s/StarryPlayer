@@ -2,7 +2,6 @@ import AppKit
 import LyricsCore
 import LyricsProviders
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct LyricsEditorImport: View {
     let session: LyricsEditorSession
@@ -46,7 +45,7 @@ struct LyricsEditorImport: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("快速导入").font(.system(size: 18, weight: .semibold)).foregroundStyle(theme.onSurface)
-                Text("粘贴歌词或打开歌词文件，自动分好音节，接着就能跟着歌逐字打点。")
+                Text("粘贴或打开歌词开始打点，也可以打开保存过的工程继续编辑。")
                     .font(.system(size: 12.5))
                     .foregroundStyle(theme.onSurfaceVariant)
             }
@@ -55,6 +54,11 @@ struct LyricsEditorImport: View {
                     if let pasted = NSPasteboard.general.string(forType: .string) { text = pasted }
                 }
                 source("打开文件…", systemImage: "folder", action: openFile)
+                    .help("打开歌词文件，或接着编辑保存过的歌词工程（.\(LyricsProject.fileExtension)）")
+                source("打开工程…", systemImage: "doc.badge.clock") {
+                    model.openLyricsProject(into: session, onOpen: dismiss)
+                }
+                .help("打开歌词工程，恢复音节、时间和虚拟轨")
                 source(finding ? "正在查找…" : "这首歌的歌词", systemImage: "text.quote", action: findLyrics)
                     .disabled(finding)
                     .help("从歌词来源找这首歌的歌词，已有的时间会保留")
@@ -211,10 +215,15 @@ struct LyricsEditorImport: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = LyricsFile.extensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = AppModel.lyricsImportTypes
         panel.prompt = "打开"
         let read: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+            guard response == .OK, let url = panel.url else { return }
+            if url.pathExtension.lowercased() == LyricsProject.fileExtension {
+                if model.readLyricsProject(at: url, into: session) { dismiss() }
+                return
+            }
+            guard let data = try? Data(contentsOf: url) else { return }
             if let file = LyricsFile(name: url.lastPathComponent, data: data) {
                 text = file.text
             } else {

@@ -77,6 +77,23 @@
 			<key>UTTypeIdentifier</key>
 			<string>moe.mrs4s.starry-player.tracks</string>
 		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Starry Player 歌词工程</string>
+			<key>UTTypeIdentifier</key>
+			<string>moe.mrs4s.starry-player.lyrics-project</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>starrylyrics</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 </dict>
 </plist>
