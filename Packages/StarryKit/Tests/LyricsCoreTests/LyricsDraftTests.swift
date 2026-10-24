@@ -168,6 +168,82 @@ import Testing
         #expect(draft.lines[0].syllables[0].start == 0)
         #expect(draft.lines[0].syllables[0].end == 0.5)
     }
+
+    @Test func syllablesMovedToANewLineKeepTheirTimingAndLeaveNoEmptyLines() throws {
+        var draft = try LyricsDraftImport.draft(from: "我爱你\n再见\n\n好")
+        draft.lines[0].syllables[1].start = 1
+        draft.lines[1].singer = .secondary
+        #expect(draft.moveSyllablesToNewLine([.init(line: 0, syllable: 2), .init(line: 0, syllable: 1)]) == 1)
+        #expect(draft.lines.map(\.text) == ["我", "爱你", "再见", "好"])
+        #expect(draft.lines[1].syllables[0].start == 1)
+        #expect(draft.lines[1].singer == .primary)
+        #expect(draft.moveSyllablesToNewLine([.init(line: 1, syllable: 0), .init(line: 1, syllable: 1), .init(line: 2, syllable: 0)]) == 2)
+        #expect(draft.lines.map(\.text) == ["我", "见", "爱你再", "好"])
+        let before = draft
+        #expect(draft.moveSyllablesToNewLine([.init(line: 3, syllable: 0)]) == 3)
+        #expect(draft == before)
+        #expect(draft.moveSyllablesToNewLine([.init(line: 9, syllable: 0)]) == nil)
+    }
+
+    @Test func syllablesMoveIntoTheLinesAroundThemAndPassOnTheParagraph() throws {
+        var draft = try LyricsDraftImport.draft(from: "我\n\n你好\n再见")
+        #expect(draft.moveSyllables([.init(line: 1, syllable: 0), .init(line: 1, syllable: 1)], toLineBy: -1) == 0)
+        #expect(draft.lines.map(\.text) == ["我你好", "再见"])
+        #expect(draft.lines.map(\.isParagraphStart) == [true, true])
+        #expect(draft.moveSyllables([.init(line: 0, syllable: 2)], toLineBy: 1) == 1)
+        #expect(draft.lines.map(\.text) == ["我你", "好再见"])
+        #expect(draft.moveSyllables([.init(line: 0, syllable: 0)], toLineBy: -1) == nil)
+        #expect(draft.moveSyllables([.init(line: 1, syllable: 0)], toLineBy: 1) == nil)
+    }
+
+    @Test func wordsThatComeToTouchStayApart() throws {
+        var draft = try LyricsDraftImport.draft(from: "Hello world\nfoo bar")
+        draft.moveSyllables([.init(line: 0, syllable: 1)], toLineBy: 1)
+        #expect(draft.lines.map { $0.syllables.map(\.text) } == [["Hello "], ["world ", "foo ", "bar"]])
+        draft.moveSyllablesToNewLine([.init(line: 1, syllable: 2)])
+        draft.moveSyllables([.init(line: 2, syllable: 0)], toLineBy: -1)
+        #expect(draft.lines.map { $0.syllables.map(\.text) } == [["Hello "], ["world ", "foo ", "bar"]])
+        draft.removeSyllables([.init(line: 1, syllable: 1)])
+        #expect(draft.lines[1].syllables.map(\.text) == ["world ", "bar"])
+        var split = LyricsDraft(lines: [LyricsDraft.Line(syllables: LyricsDraftImport.syllables(in: "Hel|lo big world"))])
+        split.removeSyllables([.init(line: 0, syllable: 1)])
+        #expect(split.lines[0].syllables.map(\.text) == ["Hel ", "big ", "world"])
+        split.removeSyllables((0..<3).map { .init(line: 0, syllable: $0) })
+        #expect(split.lines.isEmpty)
+    }
+
+    @Test func linesMoveWithTheirBackgroundVocalsPastWholeLines() {
+        func line(_ text: String, background: Bool = false) -> LyricsDraft.Line {
+            LyricsDraft.Line(syllables: [.init(text: text)], isBackground: background)
+        }
+        var draft = LyricsDraft(lines: [line("A"), line("a", background: true), line("B"), line("C"), line("c", background: true)])
+        let texts = { draft.lines.map(\.text) }
+        #expect(draft.moveLine(at: 2, by: -1) == 0)
+        #expect(texts() == ["B", "A", "a", "C", "c"])
+        #expect(draft.moveLine(at: 1, by: 1) == 3)
+        #expect(texts() == ["B", "C", "c", "A", "a"])
+        #expect(draft.moveLine(at: 3, by: 1) == nil)
+        #expect(draft.moveLine(at: 0, by: -1) == nil)
+        #expect(draft.moveLine(at: 2, by: -1) == 1)
+        #expect(texts() == ["B", "c", "C", "A", "a"])
+        #expect(draft.moveLine(at: 1, by: 1) == 2)
+        #expect(draft.moveLine(at: 2, by: 1) == 3)
+        #expect(texts() == ["B", "C", "A", "c", "a"])
+    }
+
+    @Test func onlyARunOfSyllablesMergesAndLinesMergeWithTheirAnnotations() throws {
+        var draft = try LyricsDraftImport.draft(from: "我爱你\nsee you")
+        #expect(!LyricsDraft.isRun([.init(line: 0, syllable: 0), .init(line: 0, syllable: 2)]))
+        #expect(draft.mergeSyllables([.init(line: 0, syllable: 0), .init(line: 0, syllable: 2)]) == nil)
+        #expect(draft.mergeSyllables([.init(line: 0, syllable: 2), .init(line: 0, syllable: 1)]) == .init(line: 0, syllable: 1))
+        #expect(draft.lines[0].syllables.map(\.text) == ["我", "爱你"])
+        draft.lines[0].translation = "I love you"
+        draft.lines[1].translation = "再见"
+        draft.mergeLineWithNext(0)
+        #expect(draft.lines.count == 1)
+        #expect(draft.lines[0].syllables.map(\.text) == ["我", "爱你", "see ", "you"])
+        #expect(draft.lines[0].translation == "I love you 再见")
+    }
 }
 
 @Suite struct TTMLWriterTests {
