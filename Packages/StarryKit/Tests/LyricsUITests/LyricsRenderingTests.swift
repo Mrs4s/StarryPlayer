@@ -40,6 +40,27 @@ import Testing
         for (a, b) in zip(steps, steps.dropFirst()) { #expect(b.target >= a.target) }
     }
 
+    @Test func alignedRowsStartSweepingAtTheirFirstGlyph() throws {
+        let words = ["夜", "色", "把", "街"].enumerated().map { i, c in
+            LyricWord(start: Double(i) * 0.5, end: Double(i + 1) * 0.5, text: c)
+        }
+        let line = LyricLine(id: 0, start: 0, end: 2, words: words)
+        let f: CGFloat = 30
+        for alignment in [NSTextAlignment.left, .center, .right] {
+            let row = LineTextLayout.layout(line: line, font: font, width: 600, leading: 52, alignment: alignment, perSyllable: true).rows[0]
+            let steps = VoiceLayer.progressSteps(row: row, syllables: line.syllables, words: line.words,
+                                                wordOfSyllable: [0, 1, 2, 3], lastSyllableOfWord: [0, 1, 2, 3], feather: f)
+            let layer = RowLayer()
+            layer.configure(rect: CGRect(x: 0, y: 0, width: 600, height: 52), overflow: CGSize(width: 20, height: 20), feather: f, tint: CGColor.white,
+                            steps: steps, start: row.startX, words: [])
+            #expect(layer.startEdge == row.startX - f)
+            let ink = try #require(row.fragments[0].ink)
+            #expect(layer.edge(at: 0.25) + f > ink.lowerBound + 5)
+            #expect(layer.edge(at: 0.25) < ink.upperBound)
+        }
+        #expect(LineTextLayout.layout(line: line, font: font, width: 600, leading: 52, alignment: .right, perSyllable: true).rows[0].startX > 300)
+    }
+
     @Test func rowEdgeInterpolatesAndHolds() {
         let row = RowLayer()
         row.configure(rect: CGRect(x: 0, y: 0, width: 400, height: 52), overflow: CGSize(width: 20, height: 20), feather: 30, tint: CGColor.white,

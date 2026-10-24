@@ -33,6 +33,7 @@ struct LineTextLayout {
         var height: CGFloat { ascent + descent }
         var fragments: [Fragment]
         var baselineY: CGFloat { origin.y + ascent }
+        var startX: CGFloat { fragments.first?.rect.minX ?? 0 }
     }
 
     var rows: [Row]

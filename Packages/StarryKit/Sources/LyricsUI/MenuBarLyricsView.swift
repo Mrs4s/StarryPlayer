@@ -404,7 +404,7 @@ final class MenuBarSlotLayer: NoAnimationLayer {
                 lastSyllableOfWord.append(wordOfSyllable.count - 1)
             }
             let steps = VoiceLayer.progressSteps(row: row, syllables: lyric.syllables, words: lyric.words, wordOfSyllable: wordOfSyllable, lastSyllableOfWord: lastSyllableOfWord, feather: feather)
-            edgeTrack = MenuBarTrack.edge(steps: steps, startEdge: -feather, headstart: LyricsSpecs.windowed.animationHeadstart)
+            edgeTrack = MenuBarTrack.edge(steps: steps, startEdge: row.startX - feather, headstart: LyricsSpecs.windowed.animationHeadstart)
             line.addSublayer(progress)
         } else {
             edgeTrack = .constant(finalEdge)

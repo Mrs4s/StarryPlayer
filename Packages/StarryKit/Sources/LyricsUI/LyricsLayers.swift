@@ -408,6 +408,7 @@ final class RowLayer: NoAnimationLayer {
     private(set) var feather: CGFloat = 30
     private(set) var edge: CGFloat = 0
     private(set) var isTimed = true
+    private(set) var start: CGFloat = 0
     /// Syllables lift once they start; romanization rows do not.
     var liftsSyllables = true
 
@@ -427,14 +428,15 @@ final class RowLayer: NoAnimationLayer {
     override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { nil }
 
-    var finalEdge: CGFloat { steps.last?.target ?? -feather }
-    var startEdge: CGFloat { isTimed ? -feather : finalEdge }
+    var finalEdge: CGFloat { steps.last?.target ?? start - feather }
+    var startEdge: CGFloat { isTimed ? start - feather : finalEdge }
 
-    func configure(rect: CGRect, overflow: CGSize, feather: CGFloat, tint: CGColor, steps: [Step], timed: Bool = true, words: [WordLayer]) {
+    func configure(rect: CGRect, overflow: CGSize, feather: CGFloat, tint: CGColor, steps: [Step], timed: Bool = true, start: CGFloat = 0, words: [WordLayer]) {
         frame = rect
         self.feather = feather
         self.steps = steps
         isTimed = timed
+        self.start = start
         let area = bounds.insetBy(dx: -overflow.width, dy: -overflow.height)
         unsungLayer.frame = area
         unsungLayer.backgroundColor = tint
@@ -815,7 +817,7 @@ final class VoiceLayer: NoAnimationLayer {
                 : [RowLayer.Step(start: line.start, end: line.start, target: row.fragments.map(\.inkMaxX).max() ?? 0)]
             let rowLayer = RowLayer()
             rowLayer.liftsSyllables = lifts
-            rowLayer.configure(rect: CGRect(x: 0, y: row.origin.y, width: width, height: rowHeight), overflow: overflow, feather: feather, tint: rowTint, steps: steps, timed: timed, words: words)
+            rowLayer.configure(rect: CGRect(x: 0, y: row.origin.y, width: width, height: rowHeight), overflow: overflow, feather: feather, tint: rowTint, steps: steps, timed: timed, start: row.startX, words: words)
             result.append(rowLayer)
         }
         return result
@@ -960,12 +962,13 @@ final class VoiceLayer: NoAnimationLayer {
     /// Progress targets of one row. A syllable's end x is its inked max x, or the next word's inked
     /// min x when it ends a word that is followed on the same row (so the gap between words is sung
     /// with the word before it). The lead `k` decides how far the feather reaches past that point
-    /// when the syllable ends.
+    /// when the syllable ends. The sweep starts where the text does, so the first syllable of a
+    /// centred or right-aligned row is not spent crossing the empty space before it.
     static func progressSteps(row: LineTextLayout.Row, syllables: [LyricSyllable], words: [LyricWord], wordOfSyllable: [Int], lastSyllableOfWord: [Int], feather: CGFloat) -> [RowLayer.Step] {
         let fragments = row.fragments
         var steps: [RowLayer.Step] = []
-        var previous = -feather
-        var lastInkX: CGFloat = -feather
+        var previous = row.startX - feather
+        var lastInkX: CGFloat = row.startX - feather
         for (fi, fragment) in fragments.enumerated() {
             let si = fragment.syllable
             guard si < syllables.count else { continue }
