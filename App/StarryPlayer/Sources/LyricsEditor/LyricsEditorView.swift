@@ -13,6 +13,7 @@ struct LyricsEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock = LyricsEditorClock()
     @State private var panel: Panel?
+    @State private var showPreview = true
     @State private var focusPreview = false
     @State private var pendingAction: PendingAction?
     @State private var appeared = false
@@ -35,21 +36,22 @@ struct LyricsEditorView: View {
             header
             if audio.status != .ready { audioBanner.transition(.move(edge: .top).combined(with: .opacity)) }
             GeometryReader { geo in
-                let previewWidth = focusPreview ? geo.size.width - 24 : max(min(geo.size.width * 0.4, 520), 320)
+                let previewWidth = showPreview ? (focusPreview ? geo.size.width - 24 : max(min(geo.size.width * 0.4, 520), 320)) : 0
                 HStack(spacing: 0) {
                     LyricsEditorLineList(session: session, clock: clock, canPlay: audio.isReady, appeared: appeared) { position in
                         play(from: position, preroll: 1)
                     }
-                    .frame(width: max(geo.size.width - previewWidth - 12, 0))
+                    .frame(width: max(geo.size.width - previewWidth - (showPreview ? 12 : 0), 0))
                     .opacity(focusPreview ? 0 : 1)
                     .offset(x: focusPreview && !reduceMotion ? -40 : 0)
                     .allowsHitTesting(!focusPreview)
-                    LyricsEditorPreview(session: session, audio: audio, clock: clock, isFocused: focusPreview) {
-                        withAnimation(Motion.shelf) { focusPreview.toggle() }
+                    if showPreview {
+                        LyricsEditorPreview(session: session, audio: audio, clock: clock, isFocused: focusPreview, toggleFocus: togglePreviewFocus, close: togglePreview)
+                            .frame(width: previewWidth)
+                            .padding(.vertical, 12)
+                            .padding(.trailing, 12)
+                            .transition(.opacity)
                     }
-                    .frame(width: previewWidth)
-                    .padding(.vertical, 12)
-                    .padding(.trailing, 12)
                 }
             }
             LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) })
@@ -115,6 +117,20 @@ struct LyricsEditorView: View {
         withAnimation(Motion.popover) { self.panel = panel }
     }
 
+    private func togglePreview() {
+        withAnimation(Motion.shelf) {
+            showPreview.toggle()
+            focusPreview = false
+        }
+    }
+
+    private func togglePreviewFocus() {
+        withAnimation(Motion.shelf) {
+            showPreview = true
+            focusPreview.toggle()
+        }
+    }
+
     // MARK: Header
 
     private var header: some View {
@@ -136,8 +152,22 @@ struct LyricsEditorView: View {
             .frame(maxWidth: 240, alignment: .leading)
             LyricsEditorProgress(timed: session.draft.timedCount, total: session.draft.syllableCount)
             Spacer(minLength: 12)
-            IconButton(systemName: focusPreview ? "rectangle.split.2x1" : "rectangle.inset.filled", size: 30, iconSize: 13, isActive: focusPreview, help: focusPreview ? "回到编辑" : "全幅预览") {
-                withAnimation(Motion.shelf) { focusPreview.toggle() }
+            HStack(spacing: 2) {
+                IconButton(systemName: "arrow.uturn.backward", size: 30, iconSize: 13, help: "撤销（⌘Z）") { session.undo() }
+                    .disabled(!session.canUndo)
+                    .opacity(session.canUndo ? 1 : 0.4)
+                IconButton(systemName: "arrow.uturn.forward", size: 30, iconSize: 13, help: "重做（⇧⌘Z）") { session.redo() }
+                    .disabled(!session.canRedo)
+                    .opacity(session.canRedo ? 1 : 0.4)
+                IconButton(systemName: "keyboard", size: 30, iconSize: 13, help: "快捷键（?）") { show(.shortcuts) }
+            }
+            PillButton(title: "导入", systemName: "square.and.arrow.down", variant: .tertiary, height: 30) { show(.importer) }
+                .help("粘贴或打开歌词，快速分好音节")
+            moreMenu
+            HStack(spacing: 2) {
+                IconButton(systemName: "sidebar.right", size: 30, iconSize: 13, isActive: showPreview, help: showPreview ? "隐藏预览" : "显示预览", action: togglePreview)
+                    .accessibilityLabel(showPreview ? "隐藏预览" : "显示预览")
+                IconButton(systemName: focusPreview ? "rectangle.split.2x1" : "rectangle.inset.filled", size: 30, iconSize: 13, isActive: focusPreview, help: focusPreview ? "回到编辑" : "全幅预览", action: togglePreviewFocus)
             }
             PillButton(title: "导出 TTML…", systemName: "square.and.arrow.up", variant: .secondary, height: 30) { request(.export) }
                 .disabled(session.draft.isEmpty)

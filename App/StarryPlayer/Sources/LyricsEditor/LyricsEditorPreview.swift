@@ -8,6 +8,7 @@ struct LyricsEditorPreview: View {
     let clock: LyricsEditorClock
     var isFocused: Bool
     var toggleFocus: () -> Void
+    var close: () -> Void
     @Environment(AppModel.self) private var model
 
     private var isLive: Bool { audio.isReady }
@@ -16,7 +17,6 @@ struct LyricsEditorPreview: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                backdrop
                 let document = session.document
                 if document.isEmpty {
                     placeholder
@@ -27,15 +27,29 @@ struct LyricsEditorPreview: View {
                     .transition(.opacity)
                 }
             }
+            // A fill-scaled cover can report a size larger than the viewport. Keep it out
+            // of layout so resizing never pushes the lyrics or controls beyond the panel.
+            .frame(width: geo.size.width, height: geo.size.height)
+            .background { backdrop }
             .overlay(alignment: .topLeading) { badge }
             .overlay(alignment: .topTrailing) {
-                Button(action: toggleFocus) {
-                    Image(systemName: isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(tint)
+                HStack(spacing: 6) {
+                    Button(action: toggleFocus) {
+                        Image(systemName: isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(tint)
+                    }
+                    .help(isFocused ? "回到编辑" : "全幅预览")
+                    .accessibilityLabel(isFocused ? "回到编辑" : "全幅预览")
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(tint)
+                    }
+                    .help("隐藏预览")
+                    .accessibilityLabel("隐藏预览")
                 }
                 .buttonStyle(NowPlayingCircleButtonStyle(tint: tint, size: 28))
-                .help(isFocused ? "回到编辑" : "全幅预览")
                 .padding(12)
             }
             .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
