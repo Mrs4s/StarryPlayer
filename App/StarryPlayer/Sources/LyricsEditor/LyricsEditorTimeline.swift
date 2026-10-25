@@ -15,6 +15,8 @@ struct LyricsEditorTimeline: View {
     @AppStorage(LyricsEditorTimeline.vocalsOnlyKey) private var vocalsOnly = false
     @AppStorage("starry.lyricsEditor.onsetHints") private var onsetHints = false
     @AppStorage("starry.lyricsEditor.onsetSensitivity") private var sensitivity = VocalOnsetDetector.Sensitivity.medium
+    @AppStorage("starry.lyricsEditor.splitOnsetHints") private var splitHints = false
+    @AppStorage("starry.lyricsEditor.hintVoice") private var hintVoice = LyricsEditorAudio.HintVoice.all
 
     static let gainKey = "starry.lyricsEditor.spectrogramGain"
     static let vocalsOnlyKey = "starry.lyricsEditor.vocalsOnly"
@@ -26,10 +28,13 @@ struct LyricsEditorTimeline: View {
         var enabled: Bool
         var precise: Bool
         var vocalsReady: Bool
+        var split: Bool
     }
 
     private var onsets: [VocalOnset] {
-        onsetHints && audio.onsetStatus == .ready ? audio.onsets.filter { $0.strength >= sensitivity.minimumStrength } : []
+        guard onsetHints else { return [] }
+        let hints = splitHints ? audio.duetOnsets(for: hintVoice) : (audio.onsetStatus == .ready ? audio.onsets : [])
+        return hints.filter { $0.strength >= sensitivity.minimumStrength }
     }
 
     var body: some View {
@@ -38,7 +43,8 @@ struct LyricsEditorTimeline: View {
                 .fill(theme.onSurface.opacity(theme.isDark ? 0.05 : 0.035))
             if let lineIndex, let range = viewport.range(caretLine: lineIndex, in: session) {
                 if onSpectrogram {
-                    TimelineSpectrogram(audio: audio, range: range, gain: Float(gain), vocalsOnly: vocalsOnly && audio.vocals == .ready)
+                    TimelineSpectrogram(audio: audio, range: range, gain: Float(gain), vocalsOnly: vocalsOnly && audio.vocals == .ready,
+                                        voice: splitHints ? hintVoice : .all, splitReady: audio.duetStatus == .ready)
                         .padding(.top, 26)
                         .padding(.bottom, LyricsTimelineView.trayHeight)
                         .allowsHitTesting(false)
@@ -77,10 +83,19 @@ struct LyricsEditorTimeline: View {
         .task(id: vocalsOnly && audio.isPrecise) {
             if vocalsOnly, audio.isPrecise { audio.prepareVocals() }
         }
-        .task(id: OnsetRequest(enabled: onsetHints, precise: audio.isPrecise, vocalsReady: audio.vocals == .ready)) {
-            if onsetHints, audio.isPrecise { audio.prepareOnsets() }
+        .task(id: OnsetRequest(enabled: onsetHints, precise: audio.isPrecise, vocalsReady: audio.vocals == .ready, split: splitHints)) {
+            if onsetHints, audio.isPrecise {
+                if splitHints {
+                    audio.cancelOnsets()
+                    audio.prepareDuetOnsets()
+                } else {
+                    audio.cancelDuetOnsets()
+                    audio.prepareOnsets()
+                }
+            }
             else {
                 audio.cancelOnsets()
+                audio.cancelDuetOnsets()
                 if !vocalsOnly, case .separating = audio.vocals { audio.discardVocals() }
             }
         }
@@ -121,7 +136,7 @@ struct LyricsEditorTimeline: View {
     private var onsetSwitch: some View {
         Button { onsetHints.toggle() } label: {
             HStack(spacing: 5) {
-                if onsetHints && (audio.onsetStatus == .analyzing || audio.vocals.isSeparating) {
+                if onsetHints && (audio.vocals.isSeparating || (splitHints ? audio.duetStatus.isWorking : audio.onsetStatus == .analyzing)) {
                     ProgressView().controlSize(.mini)
                 } else {
                     Image(systemName: "waveform.path")
@@ -145,6 +160,15 @@ struct LyricsEditorTimeline: View {
     private var onsetLabel: String {
         guard onsetHints else { return "起字提示" }
         if case .failed = audio.vocals { return "起字提示不可用" }
+        if splitHints {
+            if case .failed = audio.duetStatus { return "分轨提示失败" }
+            if audio.vocals.isSeparating { return "准备人声…" }
+            switch audio.duetStatus {
+            case .separating(let progress): return "分轨 \(Int(progress * 100))%"
+            case .analyzing: return "分析起字点…"
+            default: return "分轨起字提示"
+            }
+        }
         if case .failed = audio.onsetStatus { return "起字提示失败" }
         if audio.vocals.isSeparating { return "准备人声…" }
         if audio.onsetStatus == .analyzing { return "分析起字点…" }
@@ -154,6 +178,14 @@ struct LyricsEditorTimeline: View {
     private var onsetHelp: String {
         if onsetHints {
             if case .failed(let message) = audio.vocals { return message + "；关闭再开启可重试" }
+            if splitHints {
+                if case .failed(let message) = audio.duetStatus { return message }
+                if audio.duetStatus.isWorking { return "正在本地分离两条人声并分析起字点；关闭提示可取消" }
+                if !audio.uncertainDuetOverlaps.isEmpty {
+                    return "\(audio.uncertainDuetOverlaps.count) 处片段的人声归属不够确定，请结合听音确认 A/B 提示"
+                }
+                return "分别分析两条人声的起字点；A/B 是自动分离编号，可在提示设置中切换"
+            }
             if case .failed(let message) = audio.onsetStatus { return message + "；关闭再开启可重试" }
             if audio.onsetStatus == .ready, onsets.isEmpty { return "未找到明显的起字点，可提高灵敏度" }
         }
@@ -166,15 +198,40 @@ struct LyricsEditorTimeline: View {
             PopMenuItem.option("低 · 只提示明显起点", selected: sensitivity == .low) { sensitivity = .low }
             PopMenuItem.option("中 · 标准", selected: sensitivity == .medium) { sensitivity = .medium }
             PopMenuItem.option("高 · 更多候选", selected: sensitivity == .high) { sensitivity = .high }
+            PopMenuItem.divider
+            PopMenuItem.option("分轨起字提示", selected: splitHints) { splitHints.toggle() }
+            if splitHints {
+                PopMenuItem.header("显示人声")
+                PopMenuItem.option("全部", selected: hintVoice == .all) { hintVoice = .all }
+                PopMenuItem.option("人声 A", selected: hintVoice == .a) { hintVoice = .a }
+                PopMenuItem.option("人声 B", selected: hintVoice == .b) { hintVoice = .b }
+                if audio.duetStatus.isWorking {
+                    PopMenuItem.divider
+                    PopMenuItem.button("取消分轨分析", systemImage: "xmark") {
+                        audio.cancelDuetOnsets()
+                        splitHints = false
+                    }
+                }
+                if case .failed = audio.duetStatus {
+                    PopMenuItem.divider
+                    PopMenuItem.button("重试分轨分析", systemImage: "arrow.clockwise") { audio.prepareDuetOnsets() }
+                }
+            }
         } label: {
-            Image(systemName: "slider.horizontal.3")
+            HStack(spacing: 4) {
+                Image(systemName: "slider.horizontal.3")
+                if splitHints { Text(hintVoice.title) }
+            }
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(theme.onSurfaceVariant)
-                .frame(width: 22, height: 20)
+                .padding(.horizontal, splitHints ? 7 : 0)
+                .frame(minWidth: 22)
+                .frame(height: 20)
                 .background(Capsule().fill(theme.surfaceAlt.opacity(0.95)))
         }
-        .help("起字提示灵敏度")
-        .accessibilityLabel("起字提示灵敏度")
+        .help("设置起字提示灵敏度，或启用分轨并选择人声 A/B/全部；仅人声频谱会跟随选择")
+        .accessibilityLabel("起字提示设置")
+        .accessibilityValue(splitHints ? hintVoice.title : "全部人声")
     }
 
     private var vocalsSwitch: some View {
@@ -259,6 +316,8 @@ private struct TimelineSpectrogram: View {
     var range: ClosedRange<TimeInterval>
     var gain: Float
     var vocalsOnly: Bool
+    var voice: LyricsEditorAudio.HintVoice
+    var splitReady: Bool
     @Environment(\.displayScale) private var displayScale
     @State private var picture: (image: CGImage, range: ClosedRange<TimeInterval>)?
 
@@ -268,6 +327,8 @@ private struct TimelineSpectrogram: View {
         var gain: Float
         var scale: CGFloat
         var vocalsOnly: Bool
+        var voice: LyricsEditorAudio.HintVoice
+        var splitReady: Bool
     }
 
     var body: some View {
@@ -284,12 +345,12 @@ private struct TimelineSpectrogram: View {
                         .offset(x: CGFloat(picture.range.lowerBound - range.lowerBound) * scale)
                 }
             }
-            .task(id: Request(range: range, size: geo.size, gain: gain, scale: displayScale, vocalsOnly: vocalsOnly)) {
+            .task(id: Request(range: range, size: geo.size, gain: gain, scale: displayScale, vocalsOnly: vocalsOnly, voice: voice, splitReady: splitReady)) {
                 // Spans change on every frame of a drag: draw once they settle.
                 try? await Task.sleep(for: .milliseconds(picture == nil ? 0 : 40))
                 guard !Task.isCancelled else { return }
                 let width = Int(geo.size.width * displayScale), height = Int(geo.size.height * displayScale)
-                guard let image = await audio.spectrogram(of: range, width: width, height: height, gain: gain, vocalsOnly: vocalsOnly), !Task.isCancelled else { return }
+                guard let image = await audio.spectrogram(of: range, width: width, height: height, gain: gain, vocalsOnly: vocalsOnly, voice: voice), !Task.isCancelled else { return }
                 picture = (image, range)
             }
         }

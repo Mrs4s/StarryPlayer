@@ -29,6 +29,42 @@ final class LyricsEditorAudio {
     private(set) var vocals = VocalsStatus.none
     private(set) var onsets: [VocalOnset] = []
     private(set) var onsetStatus = OnsetStatus.none
+    private(set) var duetStatus = DuetStatus.none
+    private(set) var uncertainDuetOverlaps: [TimeInterval] = []
+    private var duetHintsA: [VocalOnset] = []
+    private var duetHintsB: [VocalOnset] = []
+    private var duetHintsAll: [VocalOnset] = []
+
+    enum HintVoice: String, CaseIterable {
+        case all, a, b
+        var title: String {
+            switch self {
+            case .all: "全部"
+            case .a: "人声 A"
+            case .b: "人声 B"
+            }
+        }
+    }
+
+    enum DuetStatus: Equatable {
+        case none, separating(Double), analyzing, ready
+        case failed(String)
+        var isWorking: Bool {
+            switch self {
+            case .separating, .analyzing: true
+            default: false
+            }
+        }
+    }
+
+    struct DuetRequest: Sendable {
+        var input: URL
+        var first: URL
+        var second: URL
+        var model: URL
+        var progress: @Sendable (Double) -> Void
+    }
+    typealias DuetWork = @Sendable (DuetRequest) async throws -> VocalDuetSeparation
 
     enum OnsetStatus: Equatable {
         case none, analyzing, ready
@@ -71,8 +107,19 @@ final class LyricsEditorAudio {
     @ObservationIgnored private var vocalRequestID = UUID()
     @ObservationIgnored private var onsetTask: Task<Void, Never>?
     @ObservationIgnored private var onsetRequestID = UUID()
+    @ObservationIgnored private var duetTask: Task<Void, Never>?
+    @ObservationIgnored private var duetRequestID = UUID()
+    @ObservationIgnored private var duetFiles: VocalDuetSeparation?
+    @ObservationIgnored private let duetWork: DuetWork
+    @ObservationIgnored private let duetSeparator: VocalDuetSeparator?
 
-    init() {
+    init(duetWork: DuetWork? = nil) {
+        let separator = VocalDuetSeparator()
+        self.duetSeparator = duetWork == nil ? separator : nil
+        self.duetWork = duetWork ?? { request in
+            try await separator.separate(file: request.input, first: request.first, second: request.second,
+                                         model: request.model, progress: request.progress)
+        }
         engine.keepsDownloads = true
         engine.volume = VolumeCurve.gain(forLevel: volume)
         // Decoded songs left by an earlier run.
@@ -142,6 +189,7 @@ final class LyricsEditorAudio {
     }
 
     func discardVocals() {
+        discardDuet()
         vocalRequestID = UUID()
         vocalsTask?.cancel()
         vocalsTask = nil
@@ -194,15 +242,127 @@ final class LyricsEditorAudio {
         if onsetStatus == .analyzing { onsetStatus = .none }
     }
 
+    // MARK: Separate-voice hints
+
+    func duetOnsets(for voice: HintVoice) -> [VocalOnset] {
+        guard duetStatus == .ready else { return [] }
+        switch voice {
+        case .all: return duetHintsAll
+        case .a: return duetHintsA
+        case .b: return duetHintsB
+        }
+    }
+
+    func prepareDuetOnsets() {
+        guard isPrecise, !duetStatus.isWorking, duetStatus != .ready else { return }
+        guard vocals == .ready, let vocalsFile else {
+            prepareVocals()
+            return
+        }
+        guard let model = VocalDuetSeparator.bundledModel(in: .main) else {
+            duetStatus = .failed("未找到内置的分轨模型")
+            return
+        }
+        let requestID = UUID()
+        duetRequestID = requestID
+        let first = PCMPlayer.directory.appendingPathComponent("\(requestID)-voice-a.caf")
+        let second = PCMPlayer.directory.appendingPathComponent("\(requestID)-voice-b.caf")
+        duetStatus = .separating(0)
+        let report: @Sendable (Double) -> Void = { [weak self] value in
+            Task { @MainActor in
+                guard let self, self.duetRequestID == requestID, self.duetStatus.isWorking else { return }
+                if case .separating = self.duetStatus { self.duetStatus = .separating(value) }
+            }
+        }
+        let work = duetWork
+        let separator = duetSeparator
+        duetTask = Task { [weak self] in
+            var keepFiles = false
+            defer {
+                if !keepFiles {
+                    try? FileManager.default.removeItem(at: first)
+                    try? FileManager.default.removeItem(at: second)
+                }
+            }
+            do {
+                let result = try await work(DuetRequest(input: vocalsFile, first: first, second: second, model: model, progress: report))
+                if let separator { await separator.releaseResources() }
+                try Task.checkCancellation()
+                guard let self, self.duetRequestID == requestID else { return }
+                self.duetStatus = .analyzing
+                let worker = Task.detached(priority: .utility) {
+                    let a = try VocalOnsetDetector.analyze(file: result.first)
+                    let b = try VocalOnsetDetector.analyze(file: result.second)
+                    return (a, b)
+                }
+                let (a, b) = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: { worker.cancel() }
+                try Task.checkCancellation()
+                guard self.duetRequestID == requestID else { return }
+                self.duetHintsA = a
+                self.duetHintsB = b
+                self.duetHintsAll = Self.combinedHints(a, b)
+                self.duetFiles = result
+                self.uncertainDuetOverlaps = result.uncertainOverlaps
+                self.duetStatus = .ready
+                self.duetTask = nil
+                keepFiles = true
+            } catch {
+                if let separator { await separator.releaseResources() }
+                guard let self, self.duetRequestID == requestID, !Task.isCancelled else { return }
+                self.duetStatus = .failed("分轨起字分析没能完成，可在提示设置中重试")
+                self.duetTask = nil
+            }
+        }
+    }
+
+    func cancelDuetOnsets() {
+        duetRequestID = UUID()
+        duetTask?.cancel()
+        duetTask = nil
+        if duetStatus.isWorking { duetStatus = .none }
+        if let duetSeparator { Task { await duetSeparator.releaseResources() } }
+    }
+
+    private func discardDuet() {
+        cancelDuetOnsets()
+        if let duetFiles {
+            try? FileManager.default.removeItem(at: duetFiles.first)
+            try? FileManager.default.removeItem(at: duetFiles.second)
+        }
+        duetFiles = nil
+        duetHintsA = []; duetHintsB = []; duetHintsAll = []
+        uncertainDuetOverlaps = []
+        duetStatus = .none
+    }
+
+    /// Preserve close, distinct events from different voices. Only merge candidates
+    /// on effectively the same 10 ms analysis frame, keeping the stronger hint.
+    static func combinedHints(_ a: [VocalOnset], _ b: [VocalOnset]) -> [VocalOnset] {
+        var result: [VocalOnset] = []
+        for hint in (a + b).sorted(by: { $0.time < $1.time }) {
+            if let last = result.last, abs(last.time - hint.time) < 0.005 {
+                if hint.strength > last.strength { result[result.count - 1] = hint }
+            } else { result.append(hint) }
+        }
+        return result
+    }
+
     // MARK: Spectrogram
 
     /// Renders off the main thread; nil until decoded. Uses the full mix until vocals are ready.
-    func spectrogram(of range: ClosedRange<TimeInterval>, width: Int, height: Int, gain: Float, vocalsOnly: Bool = false) async -> CGImage? {
+    func spectrogram(of range: ClosedRange<TimeInterval>, width: Int, height: Int, gain: Float, vocalsOnly: Bool = false, voice: HintVoice = .all) async -> CGImage? {
         guard case .pcm(_, let song) = backend, width > 0, height > 0 else { return nil }
-        let file = vocalsOnly && vocals == .ready ? vocalsFile ?? song : song
+        var file = vocalsOnly && vocals == .ready ? vocalsFile ?? song : song
+        if vocalsOnly, duetStatus == .ready, let duetFiles {
+            if voice == .a { file = duetFiles.first }
+            if voice == .b { file = duetFiles.second }
+        }
+        let source = file
         let render = Task.detached(priority: .userInitiated) { () -> CGImage? in
             guard !Task.isCancelled else { return nil }
-            guard let (samples, rate) = Self.monoSamples(of: file, around: range) else { return nil }
+            guard let (samples, rate) = Self.monoSamples(of: source, around: range) else { return nil }
             return Spectrogram.image(samples: samples, sampleRate: rate, width: width, height: height, gain: gain)
         }
         return await withTaskCancellationHandler {

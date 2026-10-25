@@ -1,0 +1,22 @@
+{
+  "name": "UNMIXX",
+  "version": "coreml-explicit-resize-v2",
+  "source": "https://github.com/jihoojung0106/unmixx",
+  "sourceCommit": "8e750521b5942f4717656cac86a23cf0bd90dea5",
+  "sampleRate": 24000,
+  "sampleCount": 480000,
+  "fftSize": 960,
+  "hop": 240,
+  "frames": 2001,
+  "input": "spectrum",
+  "output": "separated",
+  "precision": "float32",
+  "computeUnits": "cpuAndGPU",
+  "conversion": "Real-valued spectral network; adaptive pooling as fixed averaging matrices; nearest resize as explicit gather indices to preserve CPU/GPU sampling semantics.",
+  "licenseStatus": "Upstream repository inspected without an explicit LICENSE; confirm distribution rights before public release.",
+  "files": {
+    "Manifest.json": "bf18bc98a0100f637ed417d2ee470a710ae247e412b5cd7b0eb8d20e508560da",
+    "Data/com.apple.CoreML/model.mlmodel": "40db7ee2f1c281c6bc8a7ff5c2300afd840de1c2727afa65e0f9d094701d9c2e",
+    "Data/com.apple.CoreML/weights/weight.bin": "8894dac96151a6605d5b86b4912fde0e0960d4aafcd5796de31b9ea8a24e8b25"
+  }
+}
