@@ -1,0 +1,12 @@
+{
+  "model": "starry-karaoke-zh",
+  "revision": "r4-multilingual-step8000",
+  "selected_step": 8000,
+  "training_steps": 12000,
+  "parameter_count": 7766082,
+  "sample_rate": 44100,
+  "channels": 2,
+  "weights_file": "weights/vi-nnet.weight.bin",
+  "weights_bytes": 15551232,
+  "weights_sha256": "9c17b176b997a832d5586d21a7ae3990ce11656cb44e1fe1b4020f8ac0d1cd4f"
+}

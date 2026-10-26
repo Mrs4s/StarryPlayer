@@ -16,6 +16,7 @@ public struct VocalOnset: Sendable, Equatable {
 /// the vibrato-suppression idea in Böck & Widmer (DAFx 2013); peak picking uses a local
 /// median/MAD baseline and energy gating. An independent high-band envelope catches
 /// unvoiced consonants; a following vowel can reinforce their earlier start.
+/// Broad spectral-envelope changes also reinforce boundaries between connected vowels.
 public enum VocalOnsetDetector {
     public enum Sensitivity: String, CaseIterable, Sendable {
         case low, medium, high
@@ -50,17 +51,29 @@ public enum VocalOnsetDetector {
         let count = activity.frameCount
         guard count >= 5, frameDuration > 0, frameDuration.isFinite,
               activity.flux.count == count, activity.valid.count == count else { return [] }
-        var peaks = pickPeaks(energy: activity.energy, flux: activity.flux, valid: activity.valid, frameDuration: frameDuration)
+        let combined = combinedFlux(in: activity)
+        // A longer context keeps a run of closely spaced attacks from becoming its
+        // own noise floor. The mixed cue uses the same UI salience range.
+        let radius = combined == nil ? 0.25 : 0.6
+        let salienceScale: Float = combined == nil ? 1 : 1.375
+        var peaks = pickPeaks(energy: activity.energy, flux: combined ?? activity.flux, valid: activity.valid,
+                              frameDuration: frameDuration, radius: radius, salienceScale: salienceScale)
         if activity.fricativeEnergy.count == count, activity.fricativeFlux.count == count {
             let fricatives = pickPeaks(energy: activity.fricativeEnergy, flux: activity.fricativeFlux,
-                                      valid: activity.valid, frameDuration: frameDuration)
+                                      valid: activity.valid, frameDuration: frameDuration, radius: radius, salienceScale: salienceScale)
                 .filter { isFricativeAttack($0.frame, in: activity, frameDuration: frameDuration) }
             for var fricative in fricatives {
                 if Task.isCancelled { return [] }
                 fricative.frame = fricativeStart(fricative.frame, in: activity, frameDuration: frameDuration)
+                let firstVowel = peaks.lazy.filter {
+                    Double($0.frame - fricative.frame) * frameDuration > 0.03
+                        && followsFricative($0.frame, start: fricative.frame, in: activity, frameDuration: frameDuration)
+                }.map(\.frame).min()
                 // Only join a later vowel when high-band sound continues to it and
-                // the lower band grows. A silent gap or another /s/ stays separate.
+                // the lower band grows. Limit reinforcement to its first attack:
+                // lingering frication must not consume the next distinct vowel.
                 peaks.removeAll { peak in
+                    if let firstVowel, Double(peak.frame - firstVowel) * frameDuration >= 0.08 { return false }
                     guard followsFricative(peak.frame, start: fricative.frame, in: activity, frameDuration: frameDuration) else { return false }
                     fricative.strength = max(fricative.strength, peak.strength)
                     return true
@@ -88,9 +101,31 @@ public enum VocalOnsetDetector {
         var strength: Float
     }
 
-    private static func pickPeaks(energy: [Float], flux: [Float], valid: [Bool], frameDuration: TimeInterval) -> [Peak] {
+    private static func combinedFlux(in activity: VocalActivity) -> [Float]? {
+        guard activity.shapeFlux.count == activity.frameCount else { return nil }
+        var spectral: [Float] = [], shape: [Float] = []
+        for i in 0..<activity.frameCount where activity.valid[i] {
+            if activity.flux[i].isFinite, activity.flux[i] > 0 { spectral.append(activity.flux[i]) }
+            if activity.shapeFlux[i].isFinite, activity.shapeFlux[i] > 0 { shape.append(activity.shapeFlux[i]) }
+        }
+        guard !spectral.isEmpty, !shape.isEmpty else { return nil }
+        func percentile90(_ values: [Float]) -> Float {
+            let sorted = values.sorted(), position = Double(values.count - 1) * 0.9
+            let lower = Int(position), upper = min(lower + 1, sorted.count - 1)
+            return sorted[lower] + Float(position - Double(lower)) * (sorted[upper] - sorted[lower])
+        }
+        let reference = percentile90(spectral), level = percentile90(shape)
+        guard reference > 1e-8, level > 1e-8 else { return nil }
+        let scale = reference / level
+        return zip(activity.flux, activity.shapeFlux).map { spectral, shape in
+            shape.isFinite && shape >= 0 ? (spectral + shape * scale) / 2 : spectral
+        }
+    }
+
+    private static func pickPeaks(energy: [Float], flux: [Float], valid: [Bool], frameDuration: TimeInterval,
+                                  radius seconds: TimeInterval, salienceScale: Float) -> [Peak] {
         let count = energy.count
-        let radius = max(2, Int((0.25 / frameDuration).rounded()))
+        let radius = max(2, Int((seconds / frameDuration).rounded()))
         var envelope = [Float](repeating: 0, count: count)
         for i in 1..<(count - 1) where valid[i] {
             guard ((i - 1)...(i + 1)).allSatisfy({ valid[$0] && flux[$0].isFinite }) else { continue }
@@ -113,7 +148,8 @@ public enum VocalOnsetDetector {
             let deviations = values.map { abs($0 - baseline) }.sorted()
             let contrast = (peak - baseline) / max(0.035, 3 * deviations[deviations.count / 2])
             guard contrast >= 1 else { continue }
-            peaks.append(Peak(frame: i, strength: contrast / (1 + contrast)))
+            let salience = contrast * salienceScale
+            peaks.append(Peak(frame: i, strength: salience / (1 + salience)))
         }
         return peaks
     }

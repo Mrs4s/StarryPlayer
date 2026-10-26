@@ -27,6 +27,7 @@ Package.resolved
 .idea/
 .vscode/
 *.swp
+.tmp
 
 # Plugin projects (built into build/plugins and the app by scripts/build-plugins.sh)
 node_modules/

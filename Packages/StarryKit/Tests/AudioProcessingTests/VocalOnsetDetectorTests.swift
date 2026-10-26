@@ -96,6 +96,84 @@ import Testing
         #expect(result.contains { abs($0.time - 1) < 0.045 }, "\(result)")
     }
 
+    @Test func spectralShapeCanReinforceAQuietBoundaryWithoutAnEnergyGap() {
+        var activity = VocalActivity(frameCount: 150)
+        activity.energy = .init(repeating: 10, count: 150)
+        activity.valid = .init(repeating: true, count: 150)
+        activity.flux[30] = 1
+        activity.flux[100] = 0.05
+        activity.shapeFlux[30] = 1
+        activity.shapeFlux[100] = 1
+        let result = VocalOnsetDetector.candidates(in: activity, frameDuration: 0.01, centerOffset: 0.02, duration: 1.5)
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        #expect(prominent.contains { abs($0.time - 1.01) < 0.02 }, "\(result)")
+    }
+
+    @Test func invalidShapeMeasurementsDoNotHideAnOtherwiseValidAttack() {
+        var activity = VocalActivity(frameCount: 150)
+        activity.energy = .init(repeating: 10, count: 150)
+        activity.valid = .init(repeating: true, count: 150)
+        for frame in [30, 100] {
+            activity.flux[frame] = 1
+            activity.shapeFlux[frame] = 1
+        }
+        activity.shapeFlux[100] = .nan
+        let result = VocalOnsetDetector.candidates(in: activity, frameDuration: 0.01, centerOffset: 0.02, duration: 1.5)
+        #expect(result.contains { abs($0.time - 1.01) < 0.02 }, "\(result)")
+        #expect(result.allSatisfy { $0.strength.isFinite })
+    }
+
+    @Test(arguments: [44_100.0, 48_000.0], [0.09, 0.12])
+    func consonantMergingPreservesTheNextVowelAttack(rate: Double, interval: Double) throws {
+        let secondStart = 0.58 + interval
+        let result = try analyze(seconds: 1.2, rate: rate) { t in
+            let consonant = frication(t, start: 0.5, duration: 0.24, amplitude: 0.008)
+            let first = pulse(t, start: 0.58, frequency: 700)
+            let second = pulse(t, start: secondStart, frequency: 1900)
+            return consonant + first + second
+        }
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        for start in [0.5, secondStart] {
+            #expect(prominent.contains { abs($0.time - start) < 0.045 }, "\(result)")
+        }
+        #expect(!prominent.contains { abs($0.time - 0.58) < 0.03 }, "\(result)")
+    }
+
+    @Test func aSustainedHarmonicVowelWithVibratoDoesNotProduceRepeatedHints() throws {
+        let fundamental = 220.0
+        var harmonics: [(Double, Double)] = (1...20).map { index in
+            let frequency = fundamental * Double(index)
+            let first = exp(-0.5 * pow((frequency - 650) / 150, 2))
+            let second = 0.5 * exp(-0.5 * pow((frequency - 1500) / 250, 2))
+            return (Double(index), (0.2 + first + second) / Double(index))
+        }
+        let level = sqrt(harmonics.reduce(0) { $0 + $1.1 * $1.1 })
+        harmonics = harmonics.map { ($0.0, $0.1 * 0.25 / level) }
+        let result = try analyze(seconds: 3) { t in
+            guard t >= 0.5 else { return 0 }
+            let phase = 2 * Double.pi * fundamental * t - fundamental * 0.02 / 6 * cos(2 * .pi * 6 * t)
+            let envelope = min((t - 0.5) / 0.02, 1)
+            return Float(envelope * harmonics.reduce(0) { $0 + $1.1 * sin($1.0 * phase) })
+        }
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        #expect(prominent.count == 1, "\(result)")
+        #expect(prominent.contains { abs($0.time - 0.5) < 0.045 }, "\(result)")
+    }
+
+    @Test func distinctAttacksOneHundredMillisecondsApartStaySeparate() throws {
+        let starts = [0.5, 0.6, 0.7]
+        let result = try analyze(seconds: 1.2) { t in
+            starts.enumerated().reduce(0) { value, entry in
+                let elapsed = t - entry.element
+                guard elapsed >= 0, elapsed < 0.06 else { return value }
+                let envelope = min(elapsed / 0.005, 1) * min((0.06 - elapsed) / 0.01, 1)
+                return value + Float(0.3 * envelope * sin(2 * .pi * (700 + Double(entry.offset) * 600) * t))
+            }
+        }
+        let prominent = result.filter { $0.strength >= VocalOnsetDetector.Sensitivity.medium.minimumStrength }
+        for start in starts { #expect(prominent.contains { abs($0.time - start) < 0.035 }, "\(result)") }
+    }
+
     @Test(arguments: [22_050.0, 44_100.0, 48_000.0, 96_000.0])
     func unvoicedFricativesHaveHintsWithoutAVowel(rate: Double) throws {
         let result = try analyze(seconds: 1, rate: rate) { frication($0, start: 0.5) }

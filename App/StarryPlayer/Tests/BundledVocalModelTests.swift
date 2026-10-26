@@ -1,10 +1,25 @@
 import AudioProcessing
 import CoreML
+import CryptoKit
 import AVFoundation
 import Foundation
 import Testing
 
 @Suite(.serialized) struct BundledVocalModelTests {
+    @Test func bundledVocalWeightsMatchTheirProvenance() throws {
+        let model = try #require(VocalSeparationModelLocator.bundledModel(in: .main))
+        let directory = try #require(model.directory)
+        let metadata = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent("provenance.json"))) as? [String: Any])
+        #expect(metadata["model"] as? String == model.name)
+        #expect((metadata["revision"] as? String)?.isEmpty == false)
+        let file = try #require(metadata["weights_file"] as? String)
+        #expect(file == "weights/vi-nnet.weight.bin")
+        let weights = try Data(contentsOf: directory.appendingPathComponent(file), options: .mappedIfSafe)
+        #expect(weights.count == metadata["weights_bytes"] as? Int)
+        let digest = SHA256.hash(data: weights).map { String(format: "%02x", $0) }.joined()
+        #expect(digest == metadata["weights_sha256"] as? String)
+    }
+
     @Test func duetServiceWritesCompleteReadableTracksOnItsBackgroundActor() async throws {
         let model = try #require(VocalDuetSeparator.bundledModel(in: .main))
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("duet-service-\(UUID().uuidString)")
