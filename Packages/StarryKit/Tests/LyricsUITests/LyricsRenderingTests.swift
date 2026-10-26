@@ -349,8 +349,8 @@ private final class Harness {
     }
 
     @Test func aLineReachedAsItGivesWayStillMoves() {
-        // Line 5 (10–10.1 s) is selected at 9.55 s as line 4 gives way, with 0.05 s left before
-        // it gives way itself: the change must not be squeezed into those 0.05 s.
+        // Line 5 (10–10.1 s) is selected at 10.05 s as line 4 ends, with 0.05 s left before
+        // it ends itself: the change must not be squeezed into those 0.05 s.
         let times = (0..<20).map { i -> (Double, Double) in
             switch i {
             case ..<5: (Double(i) * 2, Double(i) * 2 + 2)
@@ -361,9 +361,9 @@ private final class Harness {
         let h = Harness(document: Harness.timedDocument(times))
         h.setTime(8.05)
         h.settle()
-        h.advance(from: 8.05, to: 9.5)
+        h.advance(from: 8.05, to: 10.0)
         let before = Set(h.lags.map { ObjectIdentifier($0) })
-        h.setTime(9.55)
+        h.setTime(10.05)
         #expect(h.line(5)?.state == .selected)
         let added = h.lags.filter { !before.contains(ObjectIdentifier($0)) }
         #expect(!added.isEmpty)
@@ -379,12 +379,12 @@ private final class Harness {
         let times: [(Double, Double)] = (0..<5).map { (Double($0) * 2, Double($0) * 2 + 2) } + [(10, 13), (12, 13), (12.2, 13)] + (0..<10).map { (13 + Double($0) * 2, 15 + Double($0) * 2) }
         let h = Harness(size: CGSize(width: 700, height: 250), document: Harness.timedDocument(times, secondary: [6]))
         h.setTime(10.05)
-        h.advance(from: 10.05, to: 12.5)
+        h.advance(from: 10.05, to: 12.95)
         #expect([5, 6, 7].allSatisfy { h.line($0)?.state == .selected })
         h.settle()
         let before = h.visualTops()
         #expect((before[8] ?? 0) > h.view.bounds.height, "line 8 starts below the view")
-        h.setTime(12.55)
+        h.setTime(13.05)
         #expect(h.line(8)?.state == .selected)
         #expect(h.hasLagAnimations)
         #expect(h.maxJump(before, h.startTops()) < 1, "the move must start where the page was")
@@ -430,13 +430,13 @@ private final class Harness {
 
     @Test func theLastLineStaysPutAsItEnds() {
         let h = Harness()
-        h.setTime(77.55)
-        h.setTime(77.6)
+        h.setTime(78.05)
+        h.setTime(78.1)
         h.settle()
         #expect(h.line(39)?.state == .selected)
         let position = h.contentLayer.position.y
         // Played through in small steps (a seek would restart the selection and hide it).
-        var t = 77.6
+        var t = 78.1
         while t < 80.2 {
             t += 0.05
             h.setTime(t)
@@ -998,10 +998,82 @@ private final class Harness {
     }
 }
 
+@Suite(.serialized) @MainActor struct SyllableProgressClockTests {
+    // Timing from the reported TTML, shared by playback and the editor's draft preview.
+    private func document(throughDraft: Bool) throws -> LyricsDocument {
+        let document = try TTMLParser.parse("""
+        <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+          <p begin="00:35.593" end="00:37.153"><span begin="00:35.593" end="00:35.686">い</span><span begin="00:35.686" end="00:35.813">ら</span><span begin="00:35.813" end="00:36.166">な</span><span begin="00:36.166" end="00:36.483">い</span> <span begin="00:36.483" end="00:36.586">い</span><span begin="00:36.586" end="00:36.713">ら</span><span begin="00:36.713" end="00:36.920">な</span><span begin="00:36.920" end="00:37.153">い</span></p>
+          <p begin="00:37.343" end="00:39.776">Next line</p>
+        </div></body></tt>
+        """)
+        return throughDraft ? LyricsDraft(document: document).document() : document
+    }
+
+    @Test(arguments: [false, true], [0.0, 0.1])
+    func finalSyllablesFollowTheClockUntilTheyEnd(throughDraft: Bool, headstart: TimeInterval) throws {
+        let document = try document(throughDraft: throughDraft)
+        #expect(document.lines[0].syllables.count == 8)
+        #expect(document.lines[0].syllables.last?.end == 37.153)
+        let h = Harness(document: document)
+        h.view.specs.animationHeadstart = headstart
+        h.setTime(35.6)
+        let line = try #require(h.line(0))
+        let row = try #require(line.rows.first)
+        var previous = 35.6
+        for time in [36.3, 36.5, 36.8, 37.0, 37.153 - headstart - 0.001] {
+            h.advance(from: previous, to: time)
+            previous = time
+            #expect(line.state == .selected)
+            #expect(!line.main.ignoresProgress)
+            #expect(row.progressLayer.animation(forKey: "finish") == nil)
+            #expect(abs(row.edge - row.edge(at: time + h.view.specs.animationHeadstart)) < 1e-6)
+            #expect(row.edge < row.finalEdge)
+        }
+        h.setTime(37.16)
+        #expect(row.edge == row.finalEdge)
+        h.setTime(37.35)
+        #expect(h.line(1)?.state == .selected)
+    }
+
+    @Test func pausingNearTheEndDoesNotCompleteUnsungSyllables() throws {
+        let h = Harness(document: try document(throughDraft: true))
+        h.setTime(35.6)
+        h.advance(from: 35.6, to: 36.5)
+        let row = try #require(h.line(0)?.rows.first)
+        let expected = row.edge(at: 36.5 + h.view.specs.animationHeadstart)
+        h.spin(h.view.specs.lineFinishProgressAnimationDuration + 0.1)
+        #expect(abs(row.edge - expected) < 1e-6)
+        #expect(row.edge < row.finalEdge)
+        #expect(row.progressLayer.animation(forKey: "finish") == nil)
+    }
+
+    @Test func scrubbingUpdatesSyllableProgressInBothDirections() throws {
+        let h = Harness(document: try document(throughDraft: true))
+        h.setTime(36.0)
+        let row = try #require(h.line(0)?.rows.first)
+        for time in [36.5, 37.0, 36.8, 36.4] {
+            h.scrub(time)
+            #expect(abs(row.edge - row.edge(at: time + h.view.specs.animationHeadstart)) < 1e-6)
+            #expect(row.edge < row.finalEdge)
+        }
+        h.scrub(nil)
+        h.setTime(36.4)
+        #expect(abs(row.edge - row.edge(at: 36.4 + h.view.specs.animationHeadstart)) < 1e-6)
+    }
+
+    @Test func firstScrubAcrossANearbyLineBoundarySelectsTheNewLine() throws {
+        let h = Harness(document: try document(throughDraft: true))
+        h.setTime(37.0)
+        h.scrub(37.4)
+        #expect(h.line(0)?.state == .past)
+        #expect(h.line(1)?.state == .selected)
+    }
+}
+
 @Suite @MainActor struct LineFinishTests {
-    /// The finish comes up to 0.75 s before the line ends. A wrapped line must then sweep its
-    /// rows one after another rather than light an edge in every row at once: each run starts
-    /// when the previous one ends, and the runs share the finish duration by distance left.
+    /// The fallback finish for a voice leaving selection sweeps wrapped rows in reading order:
+    /// each run starts when the previous one ends and shares the duration by distance left.
     @Test func wrappedRowsFinishInReadingOrder() throws {
         let specs = LyricsSpecs.windowed.scaled()
         let chars = Array("タイムストッパーメイドのお出ましだ")

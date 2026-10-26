@@ -54,17 +54,23 @@ public final class LyricsView: NSView {
             endScrubbing()
             return
         }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         let now = CACurrentMediaTime()
         if !isScrubbing {
             let moved = abs(time - playerTime(at: now)) > 0.5 && now >= tapGuardUntil
             holdClock(at: time, now: now)
             if moved { reselect(at: now) }
             beginScrubbing()
+            if !moved { reselect(at: now) }
         } else if time != scrubTime {
             holdClock(at: time, now: now)
             reselect(at: now)
         }
         scrubTime = time
+        // Scrubbing pauses the display link; drive the syllable edge from the pointer instead.
+        updateProgress(at: lyricTime(at: now))
     }
 
     private enum Entry: Equatable {
@@ -384,11 +390,18 @@ public final class LyricsView: NSView {
         collapsedContentHeight = y
         if !keepingSelection {
             let entries = placements.map { p -> LyricsTimelineEntry in
-                let kind: LyricsTimelineEntry.Kind = switch p.entry {
-                case .line(let li): .line(li)
-                case .gap(let gi): .instrumental(gi)
+                let kind: LyricsTimelineEntry.Kind
+                let syllableEnd: TimeInterval?
+                switch p.entry {
+                case .line(let li):
+                    kind = .line(li)
+                    let line = document.lines[li]
+                    syllableEnd = s.perSyllableEnabled && line.hasSyllableTiming ? line.syllables.map(\.end).max() : nil
+                case .gap(let gi):
+                    kind = .instrumental(gi)
+                    syllableEnd = nil
                 }
-                return LyricsTimelineEntry(kind: kind, start: p.start, end: p.end, backgroundEnd: p.backgroundEnd)
+                return LyricsTimelineEntry(kind: kind, start: p.start, end: p.end, backgroundEnd: p.backgroundEnd, syllableEnd: syllableEnd)
             }
             selection = LyricsSelection(entries: entries, configuration: selectionConfiguration())
         }
@@ -899,18 +912,22 @@ public final class LyricsView: NSView {
         if result.changed || needsTapHandling {
             applyFocus(animated: true, gap: result.gap, time: t, followsPlayback: !result.jumped)
         }
-        let progressTime = t + effective.animationHeadstart
+        updateProgress(at: t)
+        updateOffscreenFlags()
+        if rate == 0, displayLink?.isPaused == false, now - baseHost > 2 {
+            displayLink?.isPaused = true
+        }
+    }
+
+    private func updateProgress(at time: TimeInterval) {
+        let progressTime = time + effective.animationHeadstart
         for pi in selectedPlacements {
             if let layer = lineLayers[pi] {
                 layer.updateSyllables(time: progressTime, specs: effective)
             } else if let gapLayer = gapLayers[pi] {
                 // Countdown uses playback time without the lyric progress headstart.
-                gapLayer.update(at: t)
+                gapLayer.update(at: time)
             }
-        }
-        updateOffscreenFlags()
-        if rate == 0, displayLink?.isPaused == false, now - baseHost > 2 {
-            displayLink?.isPaused = true
         }
     }
 

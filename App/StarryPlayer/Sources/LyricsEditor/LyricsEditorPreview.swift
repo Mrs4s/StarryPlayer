@@ -70,6 +70,8 @@ struct LyricsEditorPreview: View {
         var specs = LyricsSpecs.make(from: model.settings.settings.lyrics, fullscreen: isFocused, viewHeight: height)
         specs.selectedLinePosition = .topRelative(percentage: 34)
         specs.horizontalInset = 28
+        // Editing needs exact cursor alignment rather than playback's visual headstart.
+        specs.animationHeadstart = 0
         return specs
     }
 

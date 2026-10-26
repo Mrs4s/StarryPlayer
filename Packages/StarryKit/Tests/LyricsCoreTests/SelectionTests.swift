@@ -22,6 +22,41 @@ import Testing
         #expect(s.selected == [1])
     }
 
+    @Test func timedSyllablesHoldTheLineAndNeverFinishAheadOfTheClock() {
+        let doc = LyricsDocument(format: .ttml, lines: (0..<2).map { index in
+            let start = Double(index) * 2
+            return LyricLine(id: index, start: start, end: start + 2, words: [
+                LyricWord(start: start, end: start + 1, text: "a"),
+                LyricWord(start: start + 1, end: start + 2, text: "b"),
+            ])
+        })
+        let entries = LyricsSelection.entries(for: doc, gaps: [])
+        #expect(entries.map(\.syllableEnd) == [2, 4])
+        var s = selection(entries)
+        _ = s.jump(to: 0)
+        for time in [1.3, 1.55, 1.9, 1.99] {
+            #expect(s.update(at: time) == [])
+            #expect(s.selected == [0])
+        }
+        #expect(s.update(at: 2.01) == [.append(1), .deselect(0)])
+        #expect(s.update(at: 3.8) == [])
+        #expect(s.update(at: 4.1) == [])
+        #expect(s.selected == [1])
+    }
+
+    @Test func overlappingTimedLinesEachLeaveAtTheirOwnEnd() {
+        var s = selection([
+            LyricsTimelineEntry(kind: .line(0), start: 0, end: 1.9, syllableEnd: 1.9),
+            LyricsTimelineEntry(kind: .line(1), start: 1, end: 2, syllableEnd: 2),
+            LyricsTimelineEntry(kind: .line(2), start: 2.25, end: 4, syllableEnd: 4),
+        ])
+        _ = s.jump(to: 1.5)
+        #expect(s.selected == [0, 1])
+        #expect(s.update(at: 1.95) == [.deselect(0)])
+        #expect(s.selected == [1])
+        #expect(s.update(at: 2.05) == [.select(2, gap: 0.25)])
+    }
+
     @Test func overlappingLinesAreLitTogetherUntilTheOlderEnds() {
         var s = selection([entry(0, 0, 4), entry(1, 2, 5), entry(2, 5, 7)])
         _ = s.jump(to: 0)

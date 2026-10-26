@@ -11,12 +11,16 @@ public struct LyricsTimelineEntry: Sendable, Hashable {
     public var end: TimeInterval
     /// End of the line's background vocals (`LyricLine.background?.end`); nil without any.
     public var backgroundEnd: TimeInterval?
+    /// End of the main voice's timed syllables; nil for line-synced lyrics. These follow the
+    /// playback clock and must stay selected until sung, without an early finish animation.
+    public var syllableEnd: TimeInterval?
 
-    public init(kind: Kind, start: TimeInterval, end: TimeInterval, backgroundEnd: TimeInterval? = nil) {
+    public init(kind: Kind, start: TimeInterval, end: TimeInterval, backgroundEnd: TimeInterval? = nil, syllableEnd: TimeInterval? = nil) {
         self.kind = kind
         self.start = start
         self.end = end
         self.backgroundEnd = backgroundEnd
+        self.syllableEnd = syllableEnd
     }
 
     public var isInstrumental: Bool {
@@ -24,12 +28,9 @@ public struct LyricsTimelineEntry: Sendable, Hashable {
     }
 
     /// The time from which the entry may give way to the next: `margin` before its end, but
-    /// never while its background vocals are still sung. The main vocals are completed early
-    /// by `finish`; background vocals only follow the clock, so cutting them short would leave
-    /// them visibly unfinished.
+    /// never while timed syllables or background vocals are still sung.
     public func releaseTime(margin: TimeInterval) -> TimeInterval {
-        guard let backgroundEnd else { return end - margin }
-        return max(end - margin, backgroundEnd)
+        max(end - margin, backgroundEnd ?? end - margin, syllableEnd ?? end - margin)
     }
 }
 
@@ -84,7 +85,8 @@ public struct LyricsSelection: Sendable {
         }
         addGap(after: -1)
         for (index, line) in document.lines.enumerated() where !line.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            entries.append(LyricsTimelineEntry(kind: .line(index), start: line.start, end: line.end, backgroundEnd: line.background?.end))
+            entries.append(LyricsTimelineEntry(kind: .line(index), start: line.start, end: line.end, backgroundEnd: line.background?.end,
+                                              syllableEnd: line.hasSyllableTiming ? line.syllables.map(\.end).max() : nil))
             addGap(after: index)
         }
         return entries
@@ -136,19 +138,16 @@ public struct LyricsSelection: Sendable {
         let ahead = t + lead
         let byEnd = selected.sorted { entries[$0].end < entries[$1].end }
 
-        switch finishCheck(at: t + configuration.finishLineAnimationDuration, lead: lead, next: n, byEnd: byEnd) {
-        case .finish:
-            events += selected.map { .finish($0) }
-        case .none, .overlapping:
-            // Of lines lit together, each but the last to end leaves when its singing does. A
-            // line on its own gives way early so the page has moved on as the next is sung;
-            // here the lines still lit hold the page, and leaving early would fill the last
-            // syllables before they are sung and dim the line while its partners go on.
-            if selected.count >= 2, let last = selected.max(by: { singingEnd($0) < singingEnd($1) }) {
-                let done = selected.filter { $0 != last && singingEnd($0) <= t }
-                selected.removeAll { done.contains($0) }
-                events += done.map { .deselect($0) }
-            }
+        if case .finish = finishCheck(at: t + configuration.finishLineAnimationDuration, lead: lead, next: n, byEnd: byEnd) {
+            // A wall-clock finish would complete future syllables even while playback is paused.
+            events += selected.filter { entries[$0].syllableEnd == nil }.map { .finish($0) }
+        }
+        // Of lines lit together, each but the last to end leaves when its singing does,
+        // including when a later line is within the finish-animation window.
+        if selected.count >= 2, let last = selected.max(by: { singingEnd($0) < singingEnd($1) }) {
+            let done = selected.filter { $0 != last && singingEnd($0) <= t }
+            selected.removeAll { done.contains($0) }
+            events += done.map { .deselect($0) }
         }
 
         // Past the last line the cursor re-finds a line that is already selected; selecting it
