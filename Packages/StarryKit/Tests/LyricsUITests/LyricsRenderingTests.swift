@@ -118,6 +118,19 @@ private final class Harness {
         return doc
     }
 
+    static func rubyDocument() -> LyricsDocument {
+        var doc = romanizedDocument()
+        for i in doc.lines.indices {
+            for w in doc.lines[i].words.indices {
+                for s in doc.lines[i].words[w].syllables.indices {
+                    let syllable = doc.lines[i].words[w].syllables[s]
+                    doc.lines[i].words[w].syllables[s].ruby = LyricRuby.spread(["る", "び"], start: syllable.start, end: syllable.end)
+                }
+            }
+        }
+        return doc
+    }
+
     func setTime(_ t: TimeInterval) {
         view.update(time: t, rate: 0)
         CATransaction.flush()
@@ -775,6 +788,45 @@ private final class Harness {
         #expect(line.main.secondaryBlock(.romanization) === block)
         #expect(block!.frame.minY >= translation.frame.maxY - 0.5)
         #expect(line.contentHeight > withTranslation)
+    }
+
+    @Test func rubyGoesOverTheTextTogglesInPlaceAndLeavesRomanizationABlock() {
+        let h = Harness(document: Harness.rubyDocument())
+        h.setTime(4.05)
+        h.settle()
+        let line = h.line(2)!
+        #expect(line.main.layout.furigana != nil)
+        let rows = line.main.rows.count
+        #expect(line.main.rows.filter { !$0.liftsSyllables }.count * 2 == rows)
+        let rubyHeight = line.contentHeight
+
+        var specs = LyricsSpecs.windowed
+        specs.showRuby = false
+        var before = h.visualTops()
+        h.view.specs = specs
+        CATransaction.flush()
+        #expect(h.line(2) === line)
+        #expect(h.maxJump(before, h.startTops()) < 0.5)
+        #expect(line.main.layout.furigana == nil)
+        #expect(line.main.rows.count == rows / 2)
+        #expect(line.contentHeight < rubyHeight)
+
+        specs.showRomanization = true
+        h.view.specs = specs
+        CATransaction.flush()
+        #expect(line.main.layout.ruby != nil)
+        h.spin(1.5)
+        specs.showRuby = true
+        before = h.visualTops()
+        h.view.specs = specs
+        CATransaction.flush()
+        #expect(h.maxJump(before, h.startTops()) < 0.5)
+        #expect(line.main.layout.furigana != nil && line.main.layout.ruby == nil)
+        #expect(line.main.layout.romanization != nil)
+        #expect(line.main.rows.count == rows)
+        h.spin(1.5)
+        #expect(line.main.sublayers?.filter { $0 is RowLayer }.count == line.main.rows.count)
+        #expect(abs(space(h, 2, 3) - LyricsSpecs.windowed.lineSpacing) < 1)
     }
 
     @Test func alignedRomanizationToggleRebuildsRowsInPlace() {

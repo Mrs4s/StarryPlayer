@@ -16,6 +16,8 @@ final class LyricsEditorSession {
     /// Taps land this much earlier than they are pressed, for the time it takes to react.
     var tapLead: TimeInterval = 0
     var editingLine: UUID?
+    /// Bumped to move the keyboard focus to the inspector's ruby field.
+    private(set) var rubyFocusRequest = 0
     /// IDs preserve selection when syllables move between lines.
     private(set) var selection: Set<UUID> = []
     @ObservationIgnored private var selectionAnchor: UUID?
@@ -315,6 +317,15 @@ final class LyricsEditorSession {
             }
         }
     }
+
+    func clearRuby(_ positions: [Position]? = nil) {
+        let targets = positions ?? editTargets
+        edit { draft in
+            for position in targets where draft.contains(position) { draft[position].ruby = nil }
+        }
+    }
+
+    func focusRuby() { rubyFocusRequest += 1 }
 
     func delete(_ positions: [Position]? = nil) {
         let targets = positions ?? editTargets

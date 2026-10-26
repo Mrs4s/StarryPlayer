@@ -27,6 +27,7 @@ public struct LyricsDocument: Sendable, Hashable {
     public var hasTranslation: Bool { lines.contains { $0.translation?.isEmpty == false } }
     public var hasRomanization: Bool { lines.contains { $0.romanization?.isEmpty == false } }
     public var hasBackgroundVocals: Bool { lines.contains { $0.background != nil } }
+    public var hasRuby: Bool { lines.contains { $0.hasRuby } }
     public var hasDuet: Bool { lines.contains { $0.singer == .secondary } }
     /// More than one vocalist: lines are laid out narrower so alternating voices read as left /
     /// right.
@@ -125,6 +126,8 @@ public struct LyricLine: Sendable, Hashable, Identifiable {
     /// True when the line has usable sub-line timing (more than one timed unit).
     public var hasSyllableTiming: Bool { words.count > 1 || (words.first?.syllables.count ?? 0) > 1 }
 
+    public var hasRuby: Bool { syllables.contains { !$0.ruby.isEmpty } || (background?.syllables.contains { !$0.ruby.isEmpty } ?? false) }
+
     public static func plain(id: Int, start: TimeInterval, end: TimeInterval, text: String, translation: String? = nil) -> LyricLine {
         LyricLine(id: id, start: start, end: end, words: [LyricWord(start: start, end: end, text: text)], translation: translation)
     }
@@ -187,6 +190,25 @@ public struct LyricSyllable: Sendable, Hashable {
     public var start: TimeInterval
     public var end: TimeInterval
     public var text: String
+    /// Ruby over the syllable (furigana, TTML `tts:ruby`), in reading order; empty for none.
+    /// The text stays the base alone.
+    public var ruby: [LyricRuby]
+
+    public init(start: TimeInterval, end: TimeInterval, text: String, ruby: [LyricRuby] = []) {
+        self.start = start
+        self.end = end
+        self.text = text
+        self.ruby = ruby
+    }
+
+    public var duration: TimeInterval { max(0, end - start) }
+}
+
+/// A piece of ruby text, sung over part of its syllable.
+public struct LyricRuby: Sendable, Hashable {
+    public var start: TimeInterval
+    public var end: TimeInterval
+    public var text: String
 
     public init(start: TimeInterval, end: TimeInterval, text: String) {
         self.start = start
@@ -195,4 +217,16 @@ public struct LyricSyllable: Sendable, Hashable {
     }
 
     public var duration: TimeInterval { max(0, end - start) }
+
+    /// `texts` sharing `start…end` one after another by length.
+    public static func spread(_ texts: [String], start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
+        let weights = texts.map { Double(max($0.count, 1)) }
+        let total = weights.reduce(0, +)
+        let length = max(end - start, 0)
+        var offset = 0.0
+        return zip(texts, weights).map { text, weight in
+            defer { offset += weight }
+            return LyricRuby(start: start + length * offset / total, end: start + length * (offset + weight) / total, text: text)
+        }
+    }
 }

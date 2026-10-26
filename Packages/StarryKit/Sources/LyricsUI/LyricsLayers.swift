@@ -663,8 +663,9 @@ struct VoiceLayout {
     var translation: TextBlockLayout?
     var romanization: TextBlockLayout? = nil
     var ruby: RubyLayout? = nil
+    var furigana: FuriganaLayout? = nil
 
-    var textHeight: CGFloat { max(text.size.height, ruby?.text.size.height ?? 0) }
+    var textHeight: CGFloat { max(text.size.height, ruby?.text.size.height ?? 0, furigana?.text.size.height ?? 0) }
 
     enum Secondary: CaseIterable { case translation, romanization }
 
@@ -747,6 +748,7 @@ final class VoiceLayer: NoAnimationLayer {
     private func makeRows(specs: LyricsSpecs) -> [RowLayer] {
         var result = rowLayers(textLayout, line: line, lifts: true, specs: specs)
         if let ruby = layout.ruby { result += rowLayers(ruby.text, line: ruby.line, lifts: false, specs: specs) }
+        if let furigana = layout.furigana { result += rowLayers(furigana.text, line: furigana.line, lifts: false, specs: specs) }
         return result
     }
 
@@ -823,7 +825,7 @@ final class VoiceLayer: NoAnimationLayer {
         return result
     }
 
-    /// The text layout changed (aligned romanization switched on or off): new rows take over the
+    /// The text layout changed (aligned romanization or ruby switched on or off): new rows take over the
     /// colours and progress and cross-fade with the old ones — 0.15 s, the new rows 0.1 s later,
     /// like a translation block whose text changes.
     private func replaceRows(specs: LyricsSpecs, animated: Bool) {
@@ -894,7 +896,7 @@ final class VoiceLayer: NoAnimationLayer {
         layout = new
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if (old.ruby == nil) != (new.ruby == nil) { replaceRows(specs: specs, animated: animated) }
+        if (old.ruby == nil) != (new.ruby == nil) || (old.furigana == nil) != (new.furigana == nil) { replaceRows(specs: specs, animated: animated) }
         for kind in VoiceLayout.Secondary.allCases {
             let top = new.top(of: kind, specs: specs)
             switch (blocks[kind], new.block(kind)) {
@@ -1045,7 +1047,7 @@ final class VoiceLayer: NoAnimationLayer {
     }
 
     /// Finish wrapped rows sequentially at one edge speed, then ignore the clock.
-    /// Aligned romanization sweeps alongside the main rows.
+    /// Aligned romanization and ruby sweep alongside the main rows.
     func finishProgress(duration: TimeInterval) {
         guard !ignoresProgress else { return }
         ignoresProgress = true

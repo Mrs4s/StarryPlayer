@@ -8,8 +8,10 @@ import SwiftUI
 final class LyricsEditorTranslationState {
     enum Step { case prompt, result }
     var step: Step = .prompt
+    var fields: LyricsTranslation.Fields = .translation
     var language = "简体中文"
     var style: LyricsTranslation.Style = .accurate
+    var rubyScript = "平假名"
     var instructions = ""
     var response = ""
     var overwrite = false
@@ -17,11 +19,11 @@ final class LyricsEditorTranslationState {
 
 extension LyricsEditorSession {
     @discardableResult
-    func applyTranslation(_ response: String, overwrite: Bool = false) throws -> Int {
+    func applyTranslation(_ response: String, fields: LyricsTranslation.Fields = .translation, overwrite: Bool = false) throws -> LyricsTranslation.Changes {
         var next = draft
-        let updated = try LyricsTranslation.apply(response, to: &next, overwrite: overwrite)
+        let changes = try LyricsTranslation.apply(response, to: &next, fields: fields, overwrite: overwrite)
         edit { $0 = next }
-        return updated
+        return changes
     }
 }
 
@@ -42,14 +44,14 @@ struct LyricsEditorTranslation: View {
 
     private var prompt: Result<String, Error> {
         Result {
-            try LyricsTranslation.prompt(for: session.draft, language: state.language, style: state.style,
+            try LyricsTranslation.prompt(for: session.draft, fields: state.fields, language: state.language, style: state.style, rubyScript: state.rubyScript,
                                          instructions: state.instructions, title: session.track.title, artist: session.track.artistText)
         }
     }
 
     private var result: Result<[LyricsTranslation.Entry], Error>? {
         guard !state.response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return Result { try LyricsTranslation.parse(state.response, for: session.draft) }
+        return Result { try LyricsTranslation.parse(state.response, for: session.draft, fields: state.fields) }
     }
 
     private var entries: [LyricsTranslation.Entry] {
@@ -57,17 +59,14 @@ struct LyricsEditorTranslation: View {
         return entries
     }
 
-    private var changes: [LyricsTranslation.Entry] {
-        let current = Dictionary(session.draft.lines.map { ($0.id, $0.translation) }, uniquingKeysWith: { first, _ in first })
-        return entries.filter {
-            guard let existing = current[$0.id] else { return false }
-            return (state.overwrite || existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) && existing != $0.translation
-        }
+    private var changes: LyricsTranslation.Changes {
+        var preview = session.draft
+        return LyricsTranslation.apply(entries, to: &preview, overwrite: state.overwrite)
     }
 
     var body: some View {
-        EditorPanel(title: "AI 翻译", subtitle: "复制 Prompt 给你使用的 AI，再将它的完整回复粘贴回来。", width: 720, close: close) {
-            SegmentSwitch(selection: $state.step, options: [(.prompt, "1 · 复制 Prompt"), (.result, "2 · 粘贴译文")])
+        EditorPanel(title: "AI 翻译与注音", subtitle: "复制 Prompt 给你使用的 AI，再将它的完整回复粘贴回来。", width: 720, close: close) {
+            SegmentSwitch(selection: $state.step, options: [(.prompt, "1 · 复制 Prompt"), (.result, "2 · 粘贴结果")])
             if state.step == .prompt {
                 promptSettings
                 promptPreview
@@ -77,10 +76,10 @@ struct LyricsEditorTranslation: View {
                 translationPreview
                 HStack(spacing: 8) {
                     SettingsSwitch(isOn: $state.overwrite)
-                        .accessibilityLabel("覆盖已有翻译")
-                    Text("覆盖已有翻译")
+                        .accessibilityLabel("覆盖已有内容")
+                    Text("覆盖已有内容")
                         .font(.system(size: 12.5))
-                    Text("关闭时只补全空白译文")
+                    Text("关闭时只补全空白的翻译、音译和注音")
                         .font(.system(size: 12))
                         .foregroundStyle(theme.onSurfaceVariant)
                     Spacer(minLength: 0)
@@ -97,22 +96,47 @@ struct LyricsEditorTranslation: View {
 
     private var promptSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                Text("目标语言").font(.system(size: 12, weight: .medium))
-                TextField("例如：简体中文、English", text: $state.language)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .padding(8)
-                    .frame(width: 190)
-                    .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel("目标语言")
+            HStack(spacing: 16) {
+                Text("生成").font(.system(size: 12, weight: .medium))
+                fieldToggle(.translation, "翻译")
+                fieldToggle(.romanization, "音译")
+                fieldToggle(.ruby, "注音")
                 Spacer(minLength: 0)
-                SegmentSwitch(selection: $state.style, options: LyricsTranslation.Style.allCases.map { ($0, $0.title) })
             }
-            Text(state.style.guidance)
-                .font(.system(size: 12))
-                .foregroundStyle(theme.onSurfaceVariant)
-                .fixedSize(horizontal: false, vertical: true)
+            if state.fields.contains(.translation) {
+                HStack(spacing: 14) {
+                    Text("目标语言").font(.system(size: 12, weight: .medium))
+                    TextField("例如：简体中文、English", text: $state.language)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(8)
+                        .frame(width: 190)
+                        .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                        .accessibilityLabel("目标语言")
+                    Spacer(minLength: 0)
+                    SegmentSwitch(selection: $state.style, options: LyricsTranslation.Style.allCases.map { ($0, $0.title) })
+                }
+                Text(state.style.guidance)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if state.fields.contains(.ruby) {
+                HStack(spacing: 14) {
+                    Text("注音用字").font(.system(size: 12, weight: .medium))
+                    TextField("例如：平假名、带声调拼音", text: $state.rubyScript)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(8)
+                        .frame(width: 190)
+                        .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                        .accessibilityLabel("注音用字")
+                    Text("只为含汉字的音节生成注音")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.onSurfaceVariant)
+                    Spacer(minLength: 0)
+                }
+            }
             TextField("补充要求（可选），例如：保留人名原文、用词简洁", text: $state.instructions)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -121,6 +145,16 @@ struct LyricsEditorTranslation: View {
                 .accessibilityLabel("补充翻译要求")
         }
         .foregroundStyle(theme.onSurface)
+    }
+
+    private func fieldToggle(_ field: LyricsTranslation.Fields, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            SettingsSwitch(isOn: Binding { state.fields.contains(field) } set: { on in
+                if on { state.fields.insert(field) } else { state.fields.remove(field) }
+            })
+            .accessibilityLabel("生成\(title)")
+            Text(title).font(.system(size: 12.5))
+        }
     }
 
     private var promptPreview: some View {
@@ -145,7 +179,7 @@ struct LyricsEditorTranslation: View {
     private var responseEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(copied ? "Prompt 已复制，交给 AI 翻译后把完整回复粘贴到这里。" : "粘贴 AI 的完整回复，然后核对下方译文。")
+                Text(copied ? "Prompt 已复制，交给 AI 处理后把完整回复粘贴到这里。" : "粘贴 AI 的完整回复，然后核对下方结果。")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.onSurfaceVariant)
                 Spacer(minLength: 0)
@@ -168,7 +202,7 @@ struct LyricsEditorTranslation: View {
                 .frame(height: 140)
                 .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: Radius.menu))
                 .overlay(RoundedRectangle(cornerRadius: Radius.menu).strokeBorder(theme.primary.opacity(responseFocused ? 0.35 : 0), lineWidth: 1))
-                .accessibilityLabel("AI 翻译结果")
+                .accessibilityLabel("AI 返回的结果")
         }
     }
 
@@ -176,7 +210,8 @@ struct LyricsEditorTranslation: View {
     private var responseSummary: some View {
         switch result {
         case .success(let entries):
-            Label("已匹配 \(entries.count) 行 · 将更新 \(changes.count) 行译文", systemImage: "checkmark.circle")
+            let changes = changes
+            Label("已匹配 \(entries.count) 行 · \(changes.isEmpty ? "没有需要更新的内容" : "将更新 \(changes.summary)")", systemImage: "checkmark.circle")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(theme.primary)
         case .failure(let error):
@@ -185,14 +220,15 @@ struct LyricsEditorTranslation: View {
                 .foregroundStyle(theme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         case nil:
-            Text("原文会自动逐行匹配，粘贴后可预览译文。")
+            Text("原文会自动逐行匹配，粘贴后可预览结果。")
                 .font(.system(size: 12))
                 .foregroundStyle(theme.onSurfaceVariant)
         }
     }
 
     private var translationPreview: some View {
-        let updatedIDs = Set(changes.map(\.id))
+        let updatedIDs = changes.lines
+        let lines = Dictionary(session.draft.lines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 ForEach(entries) { entry in
@@ -203,12 +239,16 @@ struct LyricsEditorTranslation: View {
                             .foregroundStyle(theme.onSurfaceVariant)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(entry.source).foregroundStyle(theme.onSurfaceVariant)
-                            Text(entry.translation).foregroundStyle(theme.onSurface)
+                            if let translation = entry.translation { Text(translation).foregroundStyle(theme.onSurface) }
+                            if let romanization = entry.romanization, !romanization.isEmpty {
+                                Text(romanization).italic().foregroundStyle(theme.onSurface.opacity(0.8))
+                            }
+                            if let ruby = rubyText(entry, line: lines[entry.id]) { Text(ruby).foregroundStyle(theme.onSurface.opacity(0.8)) }
                         }
                         .font(.system(size: 12.5))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         if !updatedIDs.contains(entry.id) {
-                            Text("保留现有译文").font(.system(size: 11)).foregroundStyle(theme.onSurfaceVariant)
+                            Text("保留现有内容").font(.system(size: 11)).foregroundStyle(theme.onSurfaceVariant)
                         }
                     }
                 }
@@ -220,9 +260,15 @@ struct LyricsEditorTranslation: View {
         .background(theme.onSurface.opacity(0.03), in: RoundedRectangle(cornerRadius: Radius.menu))
     }
 
+    private func rubyText(_ entry: LyricsTranslation.Entry, line: LyricsDraft.Line?) -> String? {
+        guard let ruby = entry.ruby, let line, ruby.count == line.syllables.count else { return nil }
+        let pairs = zip(line.syllables, ruby).filter { !$1.isEmpty }.map { "\($0.text.trimmingCharacters(in: .whitespaces))(\($1))" }
+        return pairs.isEmpty ? nil : "注音：" + pairs.joined(separator: "  ")
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
-            Text(state.step == .prompt ? "Prompt 包含整首歌词的原文与逐行格式。" : "只更新翻译，保留打点、音译和分轨；可撤销。")
+            Text(state.step == .prompt ? "Prompt 包含整首歌词的原文与逐行格式。" : "只更新勾选的内容，保留打点和分轨；可撤销。")
                 .font(.system(size: 11.5))
                 .foregroundStyle(theme.onSurfaceVariant)
             Spacer(minLength: 0)
@@ -231,10 +277,10 @@ struct LyricsEditorTranslation: View {
                 PillButton(title: "复制 Prompt", systemName: "doc.on.doc", variant: .filled, height: 32, action: copyPrompt)
                     .disabled(promptText == nil)
             } else {
-                PillButton(title: "应用翻译", systemName: "checkmark", variant: .filled, height: 32, action: apply)
+                PillButton(title: "应用", systemName: "checkmark", variant: .filled, height: 32, action: apply)
                     .disabled(changes.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .help("应用翻译（⌘↩）")
+                    .help("应用（⌘↩）")
             }
         }
     }
@@ -257,8 +303,8 @@ struct LyricsEditorTranslation: View {
 
     private func apply() {
         do {
-            let updated = try session.applyTranslation(state.response, overwrite: state.overwrite)
-            session.flash("已应用 \(updated) 行翻译，可用 ⌘Z 撤销")
+            let changes = try session.applyTranslation(state.response, fields: state.fields, overwrite: state.overwrite)
+            session.flash("已应用 \(changes.summary)，可用 ⌘Z 撤销")
             close()
         } catch {
             actionError = error.localizedDescription

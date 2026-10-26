@@ -218,6 +218,7 @@ struct SettingsCatalog {
             },
             toggle("translation", "显示翻译", "外文歌词下方显示中文翻译", \.lyrics.showTranslation, keywords: "译文"),
             toggle("romanization", "显示音译", "为日语、韩语等歌词标注读音", \.lyrics.showRomanization, keywords: "注音 罗马音 拼音 读音"),
+            toggle("ruby", "显示注音", "在汉字上方显示歌词自带的假名、拼音等注音", \.lyrics.showRuby, keywords: "振假名 假名 拼音 读音 ruby"),
             toggle("perSyllable", "逐字点亮", "随演唱进度一个字一个字亮起（需要逐字歌词）", \.lyrics.perSyllable, keywords: "逐字 卡拉ok"),
             SettingsEntry("blurLines", "模糊其他行", detail: "只让正在唱的那一行保持清晰", keywords: "模糊 聚焦") {
                 SettingsSwitch(isOn: Binding { store.settings.lyrics.blurMode != .off } set: { store.settings.lyrics.blurMode = $0 ? .both : .off })

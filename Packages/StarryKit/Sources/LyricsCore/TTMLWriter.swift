@@ -5,7 +5,8 @@ public enum TTMLWriter {
     /// the document's own, sorted by key. `duration` is the song's length for `<body dur>`.
     public static func write(_ document: LyricsDocument, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil, translationLanguage: String? = nil) -> String {
         let lines = document.lines.filter { !$0.words.isEmpty }
-        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">"#
+        let styling = document.hasRuby ? #" xmlns:tts="http://www.w3.org/ns/ttml#styling""# : ""
+        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)>"#
         out += "<head><metadata>"
         out += #"<ttm:agent type="person" xml:id="v1"/>"#
         if lines.contains(where: { $0.singer == .secondary }) { out += #"<ttm:agent type="person" xml:id="v2"/>"# }
@@ -58,13 +59,29 @@ public enum TTMLWriter {
             for syllable in word.syllables {
                 let text = syllable.text.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
-                // A zero-length syllable at 0 would read as an unset placeholder.
-                let end = syllable.start <= 0 && syllable.end <= 0 ? 0.001 : syllable.end
-                out += #"<span begin="\#(timestamp(syllable.start))" end="\#(timestamp(max(end, syllable.start)))">\#(escape(text))</span>"#
+                let ruby = syllable.ruby.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+                if ruby.isEmpty {
+                    out += #"<span \#(times(syllable.start, syllable.end))>\#(escape(text))</span>"#
+                } else {
+                    // Ruby may cover only part of the base syllable's duration.
+                    let timing = ruby.map(\.start).min() == syllable.start && ruby.map(\.end).max() == syllable.end
+                        ? "" : " " + times(syllable.start, syllable.end)
+                    out += #"<span tts:ruby="container"\#(timing)><span tts:ruby="base">\#(escape(text))</span><span tts:ruby="textContainer">"#
+                    for r in ruby {
+                        out += #"<span tts:ruby="text" \#(times(r.start, r.end))>\#(escape(r.text.trimmingCharacters(in: .whitespaces)))</span>"#
+                    }
+                    out += "</span></span>"
+                }
             }
             if index < words.count - 1, word.text.last?.isWhitespace == true { out += " " }
         }
         return out
+    }
+
+    private static func times(_ start: TimeInterval, _ end: TimeInterval) -> String {
+        // A zero-length span at 0 would read as an unset placeholder.
+        let end = start <= 0 && end <= 0 ? 0.001 : end
+        return #"begin="\#(timestamp(start))" end="\#(timestamp(max(end, start)))""#
     }
 
     private static func extras(translation: String?, romanization: String?, language: String?) -> String {

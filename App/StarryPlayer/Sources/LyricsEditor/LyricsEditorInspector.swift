@@ -29,6 +29,7 @@ struct LyricsEditorInspector: View {
                     TimeField(value: syllable.end, placeholder: "结束") { set(\.end, $0, at: position) }
                 }
                 .frame(height: 28)
+                LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
                 HStack(spacing: 10) {
                     SegmentSwitch(selection: Binding { line.singer } set: { singer in setLine(\.singer, singer, at: position.line) }, options: [(.primary, "主唱"), (.secondary, "对唱"), (.duet, "合唱")])
                         .controlSize(.small)
@@ -36,9 +37,9 @@ struct LyricsEditorInspector: View {
                     Text("背景").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                     SettingsSwitch(isOn: Binding { line.isBackground } set: { setLine(\.isBackground, $0, at: position.line) })
                 }
-                LineTextField(placeholder: "翻译", value: line.translation, lineID: line.id) { setLine(\.translation, $0, at: position.line) }
+                LineTextField(placeholder: "翻译", value: line.translation, id: line.id) { setLine(\.translation, $0, at: position.line) }
                 HStack(spacing: 6) {
-                    LineTextField(placeholder: "音译", value: line.romanization, lineID: line.id) { setLine(\.romanization, $0, at: position.line) }
+                    LineTextField(placeholder: "音译", value: line.romanization, id: line.id) { setLine(\.romanization, $0, at: position.line) }
                     IconButton(systemName: "wand.and.stars", size: 26, iconSize: 12, help: "为这一行生成日语罗马音（替换已有音译，可撤销）") {
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         Task { await session.generateJapaneseRomanization(for: line.id, overwrite: true) }
@@ -47,7 +48,7 @@ struct LyricsEditorInspector: View {
                     .accessibilityLabel("生成这一行的日语音译")
                 }
             } else {
-                Text("选中一个音节，在这里细调它的时间和所在行")
+                Text("选中一个音节，在这里细调它的时间、注音和所在行")
                     .font(.system(size: 12.5))
                     .foregroundStyle(theme.onSurfaceVariant)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -60,6 +61,13 @@ struct LyricsEditorInspector: View {
         session.edit { draft in
             guard draft.contains(position) else { return }
             draft[position][keyPath: key] = value
+        }
+    }
+
+    private func setRuby(_ text: String, at position: LyricsDraft.Position) {
+        session.edit { draft in
+            guard draft.contains(position) else { return }
+            draft.setRuby(text, at: position)
         }
     }
 
@@ -113,7 +121,8 @@ private struct TimeField: View {
 private struct LineTextField: View {
     var placeholder: String
     var value: String
-    var lineID: UUID
+    var id: UUID
+    var focusRequest = 0
     var commit: (String) -> Void
     @Environment(\.theme) private var theme
     @State private var text = ""
@@ -126,7 +135,8 @@ private struct LineTextField: View {
             .focused($focused)
             .onSubmit(apply)
             .onChange(of: focused) { _, isFocused in if !isFocused { apply() } }
-            .onChange(of: lineID) { _, _ in text = value }
+            .onChange(of: id) { _, _ in text = value }
+            .onChange(of: focusRequest) { _, _ in focused = true }
             .onChange(of: value) { _, new in if !focused { text = new } }
             .onAppear { text = value }
             .padding(.horizontal, 8)

@@ -141,8 +141,9 @@ struct RubyLayout {
                 RubyLayout(line: rubyLine, text: LineTextLayout(rows: rubyRows, size: CGSize(width: width, height: y), font: m.rubyFont)))
     }
 
-    /// A line's text measured as one unbroken Core Text line, with UTF-16 ranges of its words.
-    private struct Measured {
+    /// A line's text measured as one unbroken Core Text line, with UTF-16 ranges of its words
+    /// and syllables.
+    struct Measured {
         let text: NSString
         let syllableForOffset: [Int]
         let typesetter: CTTypesetter
@@ -150,6 +151,8 @@ struct RubyLayout {
         /// UTF-16 start of each word, plus the text length at the end.
         let wordStarts: [Int]
         let syllableStarts: [Int]
+        /// UTF-16 start of each syllable, plus the text length at the end.
+        let syllableOffsets: [Int]
 
         init(line: LyricLine, font: NSFont) {
             let (attributed, syllableForOffset) = LineTextLayout.attributedText(line.syllables, font: font)
@@ -164,6 +167,9 @@ struct RubyLayout {
             }
             wordStarts = starts
             syllableStarts = syllables
+            var offsets = [0]
+            for syllable in line.syllables { offsets.append(offsets[offsets.count - 1] + syllable.text.utf16.count) }
+            syllableOffsets = offsets
         }
 
         func start(of word: Int) -> Int { wordStarts[word] }
@@ -182,11 +188,24 @@ struct RubyLayout {
         func visibleWidth(words: ClosedRange<Int>) -> CGFloat { x(trimmedEnd(of: words)) - x(start(of: words.lowerBound)) }
 
         func ink(words: ClosedRange<Int>) -> ClosedRange<CGFloat> {
-            let start = self.start(of: words.lowerBound), end = trimmedEnd(of: words)
-            guard end > start else { return 0...0 }
-            let bounds = CTLineGetImageBounds(line(start..<end), nil)
-            guard !bounds.isNull, bounds.width > 0 else { return 0...(x(end) - x(start)) }
+            ink(start(of: words.lowerBound)..<trimmedEnd(of: words))
+        }
+
+        /// Inked extent of `range` set on its own, from its pen position.
+        func ink(_ range: Range<Int>) -> ClosedRange<CGFloat> {
+            guard !range.isEmpty else { return 0...0 }
+            let bounds = CTLineGetImageBounds(line(range), nil)
+            guard !bounds.isNull, bounds.width > 0 else { return 0...(x(range.upperBound) - x(range.lowerBound)) }
             return bounds.minX...bounds.maxX
+        }
+
+        /// The syllable's UTF-16 range without surrounding whitespace.
+        func trimmed(syllable s: Int) -> Range<Int> {
+            var start = syllableOffsets[s], end = syllableOffsets[s + 1]
+            func isSpace(_ offset: Int) -> Bool { Unicode.Scalar(text.character(at: offset))?.properties.isWhitespace ?? false }
+            while start < end, isSpace(start) { start += 1 }
+            while end > start, isSpace(end - 1) { end -= 1 }
+            return start..<end
         }
         func advance(words: ClosedRange<Int>) -> CGFloat { x(end(of: words.upperBound)) - x(start(of: words.lowerBound)) }
 

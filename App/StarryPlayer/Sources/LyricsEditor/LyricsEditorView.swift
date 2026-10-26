@@ -203,7 +203,7 @@ struct LyricsEditorView: View {
             PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
-            PopMenuItem.button("AI 翻译…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
+            PopMenuItem.button("AI 翻译与注音…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 show(.translation)
             }

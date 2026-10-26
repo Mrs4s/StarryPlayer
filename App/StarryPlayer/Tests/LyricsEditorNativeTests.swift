@@ -116,6 +116,33 @@ struct LyricsEditorNativeTests {
         #expect(layout.romanization!.maxY < layout.height)
     }
 
+    @Test func rubySitsInABandOverTheChipsThatTheRowLinesUpWith() {
+        let plain = LyricsDraft.Line(syllables: [.init(text: "所"), .init(text: "詮")])
+        var annotated = plain
+        annotated.syllables[0].ruby = [.init(text: "しょ")]
+        annotated.syllables[1].ruby = [.init(text: "せ"), .init(text: "ん")]
+        let a = LyricsEditorLineLayout(input: .init(line: plain, width: 500, paragraph: false, editing: false))
+        let b = LyricsEditorLineLayout(input: .init(line: annotated, width: 500, paragraph: false, editing: false))
+        #expect(b.input.rubies == ["しょ", "せん"])
+        #expect(a.rubyBand == 0 && b.rubyBand > 0)
+        #expect(b.chips[0].height == a.chips[0].height + b.rubyBand)
+        #expect(b.chips[0].width > a.chips[0].width)
+        #expect(b.height == a.height + b.rubyBand)
+        #expect(b.play.minY == a.play.minY + b.rubyBand)
+        #expect(LyricsEditorLineLayout(input: .init(line: annotated, width: 500, paragraph: false, editing: true)).rubyBand == 0)
+    }
+
+    @Test func rubyIsClearedAndRestoredByUndo() {
+        let session = session()
+        let at = LyricsDraft.Position(line: 0, syllable: 1)
+        session.edit { $0.setRuby("に", at: at) }
+        #expect(session.draft[at].ruby == [.init(text: "に")])
+        session.clearRuby([at])
+        #expect(session.draft[at].ruby == nil)
+        session.undo()
+        #expect(session.draft[at].ruby == [.init(text: "に")])
+    }
+
     @Test func leavingAnEditorDoesNotCancelAnotherRowsEditingSession() {
         let row = LyricsEditorRowView()
         let line = session().draft.lines[0]

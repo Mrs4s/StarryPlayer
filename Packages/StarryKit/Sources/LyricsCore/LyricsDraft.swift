@@ -21,16 +21,56 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         public var text: String
         public var start: TimeInterval?
         public var end: TimeInterval?
+        public var ruby: [Ruby]?
 
-        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil) {
+        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil, ruby: [Ruby]? = nil) {
             self.id = id
             self.text = text
             self.start = start
             self.end = end
+            self.ruby = ruby
         }
 
         public var isTimed: Bool { start != nil }
         var weight: Double { Double(max(text.trimmingCharacters(in: .whitespaces).count, 1)) }
+    }
+
+    /// A piece of ruby text (furigana). Timed relative to its syllable, so it follows whatever
+    /// retimes the syllable.
+    public struct Ruby: Sendable, Hashable, Codable {
+        public var text: String
+        /// Where it is sung within the syllable, 0 at its start and 1 at its end. Unless every
+        /// piece of a syllable has one, they share the syllable by length.
+        public var span: ClosedRange<Double>?
+
+        public init(text: String, span: ClosedRange<Double>? = nil) {
+            self.text = text
+            self.span = span
+        }
+
+        static func relative(_ ruby: [LyricRuby], start: TimeInterval, end: TimeInterval) -> [Ruby]? {
+            guard !ruby.isEmpty else { return nil }
+            let length = end - start
+            return ruby.map { r in
+                guard length > 0 else { return Ruby(text: r.text) }
+                return Ruby(text: r.text, span: clamped((r.start - start) / length, (r.end - start) / length))
+            }
+        }
+
+        static func absolute(_ ruby: [Ruby]?, start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
+            guard let ruby, !ruby.isEmpty else { return [] }
+            let spans = ruby.compactMap(\.span)
+            guard spans.count == ruby.count else { return LyricRuby.spread(ruby.map(\.text), start: start, end: end) }
+            let length = max(end - start, 0)
+            return zip(ruby, spans).map { r, span in
+                LyricRuby(start: start + length * span.lowerBound, end: start + length * span.upperBound, text: r.text)
+            }
+        }
+
+        static func clamped(_ lower: Double, _ upper: Double) -> ClosedRange<Double> {
+            let lower = min(max(lower, 0), 1)
+            return lower...min(max(upper, lower), 1)
+        }
     }
 
     public struct Line: Sendable, Hashable, Identifiable, Codable {
@@ -165,7 +205,9 @@ extension LyricsDraft {
     }
 
     private static func syllables(of words: [LyricWord]) -> [Syllable] {
-        words.flatMap(\.syllables).filter { !$0.text.isEmpty }.map { Syllable(text: $0.text, start: $0.start, end: $0.end) }
+        words.flatMap(\.syllables).filter { !$0.text.isEmpty }.map {
+            Syllable(text: $0.text, start: $0.start, end: $0.end, ruby: Ruby.relative($0.ruby, start: $0.start, end: $0.end))
+        }
     }
 }
 
@@ -344,7 +386,7 @@ extension LyricsDraft {
         for (k, syllable) in syllables.enumerated() {
             let start = max(syllable.start ?? time(at: offsets[k], preferLate: true), floor)
             let end = max(syllable.end ?? time(at: offsets[k + 1], preferLate: false), start)
-            result.append(LyricSyllable(start: start, end: end, text: syllable.text))
+            result.append(LyricSyllable(start: start, end: end, text: syllable.text, ruby: Ruby.absolute(syllable.ruby, start: start, end: end)))
             floor = start
         }
         return result
@@ -365,7 +407,7 @@ extension LyricsDraft {
     }
 
     /// Replaces a line's text, split again (`LyricsDraftImport.syllables(in:)`). Syllables that
-    /// stay the same at the start and at the end of the line keep their timing.
+    /// stay the same at the start and at the end of the line keep their timing and ruby.
     public mutating func setText(_ text: String, ofLine index: Int) {
         let old = lines[index].syllables
         var new = LyricsDraftImport.syllables(in: text)
@@ -374,6 +416,7 @@ extension LyricsDraft {
         while head < min(old.count, new.count), key(old[head]) == key(new[head]) {
             new[head].start = old[head].start
             new[head].end = old[head].end
+            new[head].ruby = old[head].ruby
             new[head].id = old[head].id
             head += 1
         }
@@ -382,14 +425,36 @@ extension LyricsDraft {
             let o = old[old.count - 1 - tail]
             new[new.count - 1 - tail].start = o.start
             new[new.count - 1 - tail].end = o.end
+            new[new.count - 1 - tail].ruby = o.ruby
             new[new.count - 1 - tail].id = o.id
             tail += 1
         }
         lines[index].syllables = new
     }
 
+    public static func editableRuby(of syllable: Syllable) -> String {
+        (syllable.ruby ?? []).map(\.text).joined(separator: "|")
+    }
+
+    /// Replaces a syllable's ruby with `text` split at `|` (or `｜`), each piece trimmed; blank
+    /// text removes it. With as many pieces as before, each keeps its timing; otherwise they
+    /// share the syllable by length.
+    public mutating func setRuby(_ text: String, at position: Position) {
+        let pieces = text.split(whereSeparator: { $0 == "|" || $0 == "｜" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let old = self[position].ruby ?? []
+        guard !pieces.isEmpty else {
+            self[position].ruby = nil
+            return
+        }
+        self[position].ruby = pieces.enumerated().map { k, piece in
+            Ruby(text: piece, span: pieces.count == old.count ? old[k].span : nil)
+        }
+    }
+
     /// Splits a syllable into its characters (a word's trailing space stays on the last one),
-    /// sharing its timing evenly.
+    /// sharing its timing evenly. Its ruby cannot be split with it and is dropped.
     public mutating func splitSyllable(at position: Position) {
         let syllable = self[position]
         let body = syllable.text.trimmingCharacters(in: .whitespaces)
@@ -410,8 +475,36 @@ extension LyricsDraft {
         guard contains(next) else { return }
         let a = self[position]
         let b = self[next]
-        let merged = Syllable(id: a.id, text: a.text + b.text, start: a.start ?? b.start, end: b.end ?? b.start ?? a.end)
+        var merged = Syllable(id: a.id, text: a.text + b.text, start: a.start ?? b.start, end: b.end ?? b.start ?? a.end)
+        merged.ruby = Self.ruby(merging: [a, b], into: merged)
         lines[position.line].syllables.replaceSubrange(position.syllable...next.syllable, with: [merged])
+    }
+
+    /// The ruby of `parts` over their merge, where a part without ruby reads as its own text;
+    /// nil when no part has ruby.
+    private static func ruby(merging parts: [Syllable], into merged: Syllable) -> [Ruby]? {
+        guard parts.contains(where: { !($0.ruby ?? []).isEmpty }) else { return nil }
+        var result: [Ruby] = []
+        for part in parts {
+            let own: [Ruby]
+            if let ruby = part.ruby, !ruby.isEmpty {
+                own = ruby
+            } else {
+                let text = part.text.trimmingCharacters(in: .whitespaces)
+                own = text.isEmpty ? [] : [Ruby(text: text, span: 0...1)]
+            }
+            guard let start = merged.start, let end = merged.end, end > start, let ps = part.start, let pe = part.end,
+                  own.allSatisfy({ $0.span != nil }) else {
+                result += own.map { Ruby(text: $0.text) }
+                continue
+            }
+            result += own.map { r in
+                let span = r.span!
+                return Ruby(text: r.text, span: Ruby.clamped((ps + (pe - ps) * span.lowerBound - start) / (end - start),
+                                                             (ps + (pe - ps) * span.upperBound - start) / (end - start)))
+            }
+        }
+        return result.contains { $0.span == nil } ? result.map { Ruby(text: $0.text) } : result
     }
 
     public mutating func shift(by delta: TimeInterval) {

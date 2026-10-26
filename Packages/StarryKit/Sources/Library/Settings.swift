@@ -122,10 +122,41 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var blurMax: Double = 4
         public var showTranslation = true
         public var showRomanization = false
+        public var showRuby = true
         public var hoverHighlight = true
         /// 0 uses the preset value.
         public var inactiveOpacity: Double = 0
         public init() {}
+
+        private enum CodingKeys: String, CodingKey {
+            case windowedScale, fullscreenScale, autoScale, fontSize, lineSpacing, anchor, alignment, perSyllable, spring, lift, emphasis, glow
+            case blurMode, blurRadius, blurMax, showTranslation, showRomanization, showRuby, hoverHighlight, inactiveOpacity
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = Lyrics()
+            windowedScale = try c.decodeIfPresent(Double.self, forKey: .windowedScale) ?? d.windowedScale
+            fullscreenScale = try c.decodeIfPresent(Double.self, forKey: .fullscreenScale) ?? d.fullscreenScale
+            autoScale = try c.decodeIfPresent(Bool.self, forKey: .autoScale) ?? d.autoScale
+            fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? d.fontSize
+            lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? d.lineSpacing
+            anchor = (try? c.decodeIfPresent(Anchor.self, forKey: .anchor)) ?? d.anchor
+            alignment = (try? c.decodeIfPresent(Alignment.self, forKey: .alignment)) ?? d.alignment
+            perSyllable = try c.decodeIfPresent(Bool.self, forKey: .perSyllable) ?? d.perSyllable
+            spring = try c.decodeIfPresent(Bool.self, forKey: .spring) ?? d.spring
+            lift = try c.decodeIfPresent(Bool.self, forKey: .lift) ?? d.lift
+            emphasis = try c.decodeIfPresent(Bool.self, forKey: .emphasis) ?? d.emphasis
+            glow = try c.decodeIfPresent(Bool.self, forKey: .glow) ?? d.glow
+            blurMode = (try? c.decodeIfPresent(BlurMode.self, forKey: .blurMode)) ?? d.blurMode
+            blurRadius = try c.decodeIfPresent(Double.self, forKey: .blurRadius) ?? d.blurRadius
+            blurMax = try c.decodeIfPresent(Double.self, forKey: .blurMax) ?? d.blurMax
+            showTranslation = try c.decodeIfPresent(Bool.self, forKey: .showTranslation) ?? d.showTranslation
+            showRomanization = try c.decodeIfPresent(Bool.self, forKey: .showRomanization) ?? d.showRomanization
+            showRuby = try c.decodeIfPresent(Bool.self, forKey: .showRuby) ?? d.showRuby
+            hoverHighlight = try c.decodeIfPresent(Bool.self, forKey: .hoverHighlight) ?? d.hoverHighlight
+            inactiveOpacity = try c.decodeIfPresent(Double.self, forKey: .inactiveOpacity) ?? d.inactiveOpacity
+        }
     }
 
     public struct MenuBarLyrics: Codable, Sendable, Equatable {

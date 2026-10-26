@@ -367,6 +367,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             .button("合并成一个音节", systemImage: "link", disabled: !session.canMergeSelection) { session.mergeSelection() },
             .divider,
             .button("清除时间", systemImage: "eraser", disabled: !selected.contains { session.draft[$0].isTimed }) { session.clearTiming() },
+            .button("清除注音", systemImage: "xmark.circle", disabled: !selected.contains { !(session.draft[$0].ruby ?? []).isEmpty }) { session.clearRuby() },
             .button("删除", systemImage: "trash", role: .destructive) { session.delete() }.shortcut("⌫"),
             .divider,
             .button("取消选择", systemImage: "xmark") { session.clearSelection() }.shortcut("Esc"),
@@ -387,6 +388,11 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             .divider,
             .button("拆成单字", systemImage: "scissors", disabled: text.count <= 1) { session.edit { $0.splitSyllable(at: position) } },
             .button("与后一个合并", systemImage: "link", disabled: syllable + 1 >= line.syllables.count) { session.edit { $0.mergeWithNext(at: position) } },
+            .button("编辑注音…", systemImage: "character.textbox") {
+                session.select(position)
+                session.focusRuby()
+            },
+            .button("清除注音", systemImage: "xmark.circle", disabled: (line.syllables[syllable].ruby ?? []).isEmpty) { session.clearRuby([position]) },
             .button("从这里断成新的一行", systemImage: "return", disabled: syllable == 0) { session.moveToNewLine() }.shortcut("⌘↩"),
             .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: index == 0) { session.moveToLine(by: -1, [position]) }.shortcut("⌘↑"),
             .button("移到下一行开头", systemImage: "arrow.down.to.line", disabled: index + 1 >= lines.count) { session.moveToLine(by: 1, [position]) }.shortcut("⌘↓"),

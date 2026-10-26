@@ -206,7 +206,7 @@ public final class LyricsView: NSView {
 
     /// Spec changes rebuild everything; during a live window resize (auto-scale follows the
     /// height) they wait for the end of the resize instead of rebuilding every frame. Switching
-    /// translation / romanization on or off animates instead.
+    /// translation / romanization / ruby on or off animates instead.
     private func specsChanged(from old: LyricsSpecs) {
         var others = old
         others.selectedLinePosition = specs.selectedLinePosition
@@ -218,9 +218,11 @@ public final class LyricsView: NSView {
         others = old
         others.showTranslation = specs.showTranslation
         others.showRomanization = specs.showRomanization
+        others.showRuby = specs.showRuby
         if others == specs, !inLiveResize, !pendingSpecs, document != nil, !placements.isEmpty {
             effective = specs.scaled()
-            let switchedOn = specs.showTranslation != old.showTranslation ? specs.showTranslation : specs.showRomanization
+            let switchedOn = specs.showTranslation != old.showTranslation ? specs.showTranslation
+                : specs.showRomanization != old.showRomanization ? specs.showRomanization : specs.showRuby
             secondaryTextChanged(switchedOn: switchedOn)
             return
         }
@@ -375,9 +377,9 @@ public final class LyricsView: NSView {
             }
             let align = alignment(for: line)
             let old = previous[index]
-            let main = voiceLayout(line, translation: line.translation, romanization: line.romanization, romanizationWords: line.romanizationWords, font: s.font, secondaryFont: s.translationFont, rubyFont: s.romanizationFont, leading: s.fontLeading, alignment: align, old: old?.main)
+            let main = voiceLayout(line, translation: line.translation, romanization: line.romanization, romanizationWords: line.romanizationWords, font: s.font, secondaryFont: s.translationFont, romanizationFont: s.romanizationFont, rubyFont: s.rubyFont, leading: s.fontLeading, alignment: align, old: old?.main)
             let background = line.background.map { bg in
-                voiceLayout(LyricLine(id: index, start: bg.start, end: bg.end, words: bg.words), translation: bg.translation, romanization: bg.romanization, romanizationWords: bg.romanizationWords, font: s.backgroundVocalsFont, secondaryFont: s.translationBackgroundVocalsFont, rubyFont: s.romanizationBackgroundVocalsFont, leading: nil, alignment: align, old: old?.background)
+                voiceLayout(LyricLine(id: index, start: bg.start, end: bg.end, words: bg.words), translation: bg.translation, romanization: bg.romanization, romanizationWords: bg.romanizationWords, font: s.backgroundVocalsFont, secondaryFont: s.translationBackgroundVocalsFont, romanizationFont: s.romanizationBackgroundVocalsFont, rubyFont: s.rubyBackgroundVocalsFont, leading: nil, alignment: align, old: old?.background)
             }
             voiceLayouts[index] = (main, background)
             let height = main.height(specs: s)
@@ -408,26 +410,38 @@ public final class LyricsView: NSView {
         updateContentBounds()
     }
 
-    private func voiceLayout(_ voice: LyricLine, translation: String?, romanization: String?, romanizationWords: [LyricWord]?, font: NSFont, secondaryFont: NSFont, rubyFont: NSFont, leading: CGFloat?, alignment: NSTextAlignment, old: VoiceLayout? = nil) -> VoiceLayout {
+    /// Ruby goes over the text, and then romanization stays a block under it rather than being
+    /// aligned word by word.
+    private func voiceLayout(_ voice: LyricLine, translation: String?, romanization: String?, romanizationWords: [LyricWord]?, font: NSFont, secondaryFont: NSFont, romanizationFont: NSFont, rubyFont: NSFont, leading: CGFloat?, alignment: NSTextAlignment, old: VoiceLayout? = nil) -> VoiceLayout {
         let s = effective
         let perSyllable = s.perSyllableEnabled && voice.hasSyllableTiming
         var text: LineTextLayout?
         var ruby: RubyLayout?
-        if s.showRomanization, perSyllable, let romanizationWords, !romanizationWords.isEmpty {
+        var furigana: FuriganaLayout?
+        if s.showRuby, voice.hasRuby {
+            if let old, let oldFurigana = old.furigana {
+                (text, furigana) = (old.text, oldFurigana)
+            } else {
+                let metrics = FuriganaLayout.Metrics(font: font, rubyFont: rubyFont, width: lineWidth, leading: leading, alignment: alignment,
+                                                     minSpacing: s.rubyMinSpacing, lineHeightAdjustment: s.rubyLineHeightAdjustment)
+                if let built = FuriganaLayout.layout(line: voice, metrics: metrics) { (text, furigana) = (built.text, built.furigana) }
+            }
+        }
+        if furigana == nil, s.showRomanization, perSyllable, let romanizationWords, !romanizationWords.isEmpty {
             if let old, let oldRuby = old.ruby {
                 (text, ruby) = (old.text, oldRuby)
             } else {
-                let metrics = RubyLayout.Metrics(font: font, rubyFont: rubyFont, width: lineWidth, leading: leading, alignment: alignment,
+                let metrics = RubyLayout.Metrics(font: font, rubyFont: romanizationFont, width: lineWidth, leading: leading, alignment: alignment,
                                                  minWordSpacing: s.romanizationMinWordSpacing, lineHeightAdjustment: s.romanizationLineHeightAdjustment)
                 if let built = RubyLayout.layout(line: voice, romanization: romanizationWords, metrics: metrics) { (text, ruby) = (built.text, built.ruby) }
             }
         }
-        let mainText = text ?? (old?.ruby == nil ? old?.text : nil) ?? LineTextLayout.layout(line: voice, font: font, width: lineWidth, leading: leading, alignment: alignment, perSyllable: perSyllable)
+        let mainText = text ?? (old?.ruby == nil && old?.furigana == nil ? old?.text : nil) ?? LineTextLayout.layout(line: voice, font: font, width: lineWidth, leading: leading, alignment: alignment, perSyllable: perSyllable)
         func block(_ string: String?, shown: Bool) -> TextBlockLayout? {
             guard shown, let string, !string.isEmpty else { return nil }
             return TextBlockLayout.layout(text: string, font: secondaryFont, width: lineWidth, alignment: alignment)
         }
-        return VoiceLayout(voice: voice, text: mainText, translation: block(translation, shown: s.showTranslation), romanization: block(romanization, shown: s.showRomanization && ruby == nil), ruby: ruby)
+        return VoiceLayout(voice: voice, text: mainText, translation: block(translation, shown: s.showTranslation), romanization: block(romanization, shown: s.showRomanization && ruby == nil), ruby: ruby, furigana: furigana)
     }
 
     private func selectionConfiguration() -> LyricsSelection.Configuration {

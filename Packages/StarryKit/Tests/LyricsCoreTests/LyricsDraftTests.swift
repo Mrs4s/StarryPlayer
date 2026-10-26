@@ -151,6 +151,66 @@ import Testing
         #expect(draft.lines[0].syllables[2].end == 4)
     }
 
+    @Test func rubyKeepsItsTimingThroughTheDraftAndFollowsItsSyllable() throws {
+        let document = try TTMLParser.parse(TTMLTests.ruby)
+        var draft = LyricsDraft(document: document)
+        let sen = draft.lines[0].syllables[1]
+        #expect(sen.ruby?.map(\.text) == ["せ", "ん"])
+        let back = try #require(draft.document().lines.first).syllables
+        for (a, b) in zip(back.flatMap(\.ruby), document.lines[0].syllables.flatMap(\.ruby)) {
+            #expect(a.text == b.text && abs(a.start - b.start) < 1e-9 && abs(a.end - b.end) < 1e-9)
+        }
+        draft.lines[0].syllables[1].start = 30
+        draft.lines[0].syllables[1].end = 31.3
+        let moved = try #require(draft.document().lines.first).syllables[1].ruby
+        #expect(abs(moved[0].start - 30) < 1e-9 && abs(moved[0].end - 30.6) < 1e-9)
+        #expect(abs(moved[1].start - 30.6) < 1e-9 && abs(moved[1].end - 31.3) < 1e-9)
+    }
+
+    @Test func untimedRubySharesItsSyllableByLength() throws {
+        let draft = LyricsDraft(lines: [LyricsDraft.Line(syllables: [
+            .init(text: "未来", start: 1, end: 4, ruby: [.init(text: "み"), .init(text: "らい", span: 0.5...1)]),
+        ])])
+        let ruby = try #require(draft.document().lines.first).syllables[0].ruby
+        #expect(ruby == [LyricRuby(start: 1, end: 2, text: "み"), LyricRuby(start: 2, end: 4, text: "らい")])
+    }
+
+    @Test func editingTextSplittingAndMergingHandleRuby() {
+        var draft = LyricsDraft(lines: [LyricsDraft.Line(syllables: [
+            .init(text: "来", start: 1, end: 2, ruby: [.init(text: "く", span: 0...1)]), .init(text: "る", start: 2, end: 3),
+            .init(text: "未来", start: 3, end: 4, ruby: [.init(text: "みらい")]),
+        ])])
+        draft.setText("来|る|よ|未来", ofLine: 0)
+        #expect(draft.lines[0].syllables.map { $0.ruby?.map(\.text) } == [["く"], nil, nil, ["みらい"]])
+        draft.mergeWithNext(at: .init(line: 0, syllable: 0))
+        #expect(draft.lines[0].syllables[0].text == "来る")
+        #expect(draft.lines[0].syllables[0].ruby == [.init(text: "く", span: 0...0.5), .init(text: "る", span: 0.5...1)])
+        draft.mergeWithNext(at: .init(line: 0, syllable: 1))
+        #expect(draft.lines[0].syllables[1].ruby == [.init(text: "よ"), .init(text: "みらい")])
+        draft.mergeWithNext(at: .init(line: 0, syllable: 0))
+        #expect(draft.lines[0].syllables[0].ruby?.map(\.text) == ["く", "る", "よ", "みらい"])
+        draft.splitSyllable(at: .init(line: 0, syllable: 0))
+        #expect(draft.lines[0].syllables.allSatisfy { $0.ruby == nil })
+    }
+
+    @Test func rubyIsEditedAsPiecesSplitByBars() {
+        var draft = LyricsDraft(lines: [LyricsDraft.Line(syllables: [
+            .init(text: "詮", start: 1, end: 2, ruby: [.init(text: "せ", span: 0...0.3), .init(text: "ん", span: 0.3...1)]),
+        ])])
+        let at = LyricsDraft.Position(line: 0, syllable: 0)
+        #expect(LyricsDraft.editableRuby(of: draft[at]) == "せ|ん")
+        draft.setRuby(" ぜ | ん ", at: at)
+        #expect(draft[at].ruby == [.init(text: "ぜ", span: 0...0.3), .init(text: "ん", span: 0.3...1)])
+        draft.setRuby("せ｜ん|||", at: at)
+        #expect(draft[at].ruby == [.init(text: "せ", span: 0...0.3), .init(text: "ん", span: 0.3...1)])
+        draft.setRuby("せん", at: at)
+        #expect(draft[at].ruby == [.init(text: "せん")])
+        #expect(LyricsDraft.editableRuby(of: draft[at]) == "せん")
+        draft.setRuby(" | ", at: at)
+        #expect(draft[at].ruby == nil)
+        #expect(LyricsDraft.editableRuby(of: draft[at]) == "")
+    }
+
     @Test func positionsWalkAcrossLinesSkippingEmptyOnes() {
         let draft = LyricsDraft(lines: [
             LyricsDraft.Line(syllables: [.init(text: "a"), .init(text: "b")]),
@@ -276,6 +336,26 @@ import Testing
         #expect(parsed.lines[0].romanization == "rokku")
         #expect(parsed.metadata["musicName"] == "Song \"A\"")
         #expect(parsed.lines[0].start < parsed.lines[1].start)
+    }
+
+    @Test(arguments: [false, true])
+    func rubyTimingSurvivesTTMLExport(coversPartOfSyllable: Bool) throws {
+        var original = try TTMLParser.parse(TTMLTests.ruby)
+        if coversPartOfSyllable {
+            original.lines[0].words[0].syllables[0].ruby[0].start += 0.02
+            original.lines[0].words[0].syllables[0].ruby[0].end -= 0.02
+        }
+        let written = TTMLWriter.write(original)
+        let parsed = try TTMLParser.parse(written)
+        let before = original.lines[0].syllables
+        let after = parsed.lines[0].syllables
+        #expect(after.map(\.text) == before.map(\.text))
+        #expect(after.map(\.start) == before.map(\.start))
+        #expect(after.map(\.end) == before.map(\.end))
+        #expect(after.flatMap(\.ruby).count == before.flatMap(\.ruby).count)
+        for (a, b) in zip(after.flatMap(\.ruby), before.flatMap(\.ruby)) {
+            #expect(a.text == b.text && abs(a.start - b.start) < 1e-9 && abs(a.end - b.end) < 1e-9)
+        }
     }
 
     @Test func timestampsUseMinutesAndHours() {

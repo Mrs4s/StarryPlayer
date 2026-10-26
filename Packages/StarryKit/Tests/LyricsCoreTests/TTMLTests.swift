@@ -152,6 +152,64 @@ import Testing
         #expect(line.background?.start == 10)
     }
 
+    static let ruby = """
+    <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>
+      <p begin="00:27.690" end="00:28.300"><span tts:ruby="container"><span tts:ruby="base">所</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:27.690" end="00:27.820">しょ</span></span></span><span tts:ruby="container"><span tts:ruby="base">詮</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:27.820" end="00:27.880">せ</span><span tts:ruby="text" begin="00:27.880" end="00:27.950">ん</span></span></span><span begin="00:27.950" end="00:28.300">は</span></p>
+    </div></body></tt>
+    """
+
+    @Test func rubyBasesAreTheTextAndRubyTextsTimeThem() throws {
+        let doc = try TTMLParser.parse(Self.ruby)
+        let line = try #require(doc.lines.first)
+        #expect(line.text == "所詮は")
+        let syllables = line.syllables
+        #expect(syllables.map(\.text) == ["所", "詮", "は"])
+        #expect(syllables[0].ruby == [LyricRuby(start: 27.69, end: 27.82, text: "しょ")])
+        #expect(syllables[1].ruby == [LyricRuby(start: 27.82, end: 27.88, text: "せ"), LyricRuby(start: 27.88, end: 27.95, text: "ん")])
+        #expect(syllables[1].start == 27.82 && syllables[1].end == 27.95)
+        #expect(syllables[2].ruby.isEmpty)
+        #expect(line.hasSyllableTiming)
+        #expect(doc.hasRuby && line.hasRuby)
+        #expect(try !TTMLParser.parse(Self.sample).hasRuby)
+    }
+
+    @Test func untimedRubySharesItsContainerAndIndentationIsNotText() throws {
+        let ttml = """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>
+          <p begin="00:01.000" end="00:04.000"><span tts:ruby="container" begin="00:01.000" end="00:02.000">
+              <span tts:ruby="base">未来</span>
+              <span tts:ruby="textContainer">
+                <span tts:ruby="text">み</span>
+                <span tts:ruby="text">らい</span>
+              </span>
+            </span><span begin="00:02.000" end="00:03.000">へ</span><span ttm:role="x-bg"><span tts:ruby="container"><span tts:ruby="base">(空)</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:03.000" end="00:03.500">そら</span></span></span></span></p>
+        </div></body></tt>
+        """
+        let line = try #require(try TTMLParser.parse(ttml).lines.first)
+        #expect(line.text == "未来へ")
+        let mirai = line.syllables[0]
+        #expect(mirai.start == 1 && mirai.end == 2)
+        #expect(mirai.ruby.map(\.text) == ["み", "らい"])
+        #expect(mirai.ruby.map(\.start) == [1, 1 + 1.0 / 3] && mirai.ruby.map(\.end) == [1 + 1.0 / 3, 2])
+        let bg = try #require(line.background)
+        #expect(bg.text == "(空)")
+        #expect(bg.syllables.first?.ruby == [LyricRuby(start: 3, end: 3.5, text: "そら")])
+        #expect(bg.start == 3 && bg.end == 3.5)
+        #expect(line.hasRuby)
+    }
+
+    @Test func placeholderRubyIsRetimedWithItsSyllable() throws {
+        let ttml = """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>
+          <p begin="00:05.000" end="00:07.000"><span begin="00:05.000" end="00:06.000">君</span><span tts:ruby="container"><span tts:ruby="base">達</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:00.000" end="00:00.000">た</span><span tts:ruby="text" begin="00:00.000" end="00:00.000">ち</span></span></span></p>
+        </div></body></tt>
+        """
+        let syllables = try #require(try TTMLParser.parse(ttml).lines.first).syllables
+        #expect(syllables.map(\.text) == ["君", "達"])
+        #expect(syllables[1].start == 6 && syllables[1].end == 7)
+        #expect(syllables[1].ruby == [LyricRuby(start: 6, end: 6.5, text: "た"), LyricRuby(start: 6.5, end: 7, text: "ち")])
+    }
+
     @Test func instrumentalGapsNeedMoreThanSevenSeconds() throws {
         let doc = try TTMLParser.parse(Self.sample)
         // Breaks longer than 7 s; a break after a line starts 0.1 s after its end.
