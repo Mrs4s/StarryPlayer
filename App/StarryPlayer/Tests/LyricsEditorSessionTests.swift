@@ -297,7 +297,7 @@ struct LyricsEditorSessionTests {
         #expect(viewport.manual == 0...100)
     }
 
-    @Test func timelineViewportFollowsSelectionUnlessManuallyPositioned() throws {
+    @Test func timelineViewportDerivesAnInitialRangeAndRespectsManualPositioning() throws {
         let session = try session("我爱\n你好")
         let viewport = LyricsTimelineViewport()
         #expect(viewport.range(caretLine: nil, in: session) == nil)
@@ -309,5 +309,28 @@ struct LyricsEditorSessionTests {
         session.edit { $0.lines[0].syllables = [] }
         #expect(viewport.range(caretLine: 0, in: session) == nil)
         #expect(viewport.range(caretLine: 9, in: session) == nil)
+    }
+
+    @Test func theInitialViewStaysFixedWhenTimingChangesAfterSelection() throws {
+        let session = try session("[00:02.00]我爱你")
+        let viewport = LyricsTimelineViewport()
+        viewport.selectionChanged(from: nil, to: 0, in: session)
+        let initial = try #require(viewport.range(caretLine: 0, in: session))
+        session.tap(at: 2.1)
+        session.tap(at: 2.7)
+        session.tap(at: 3.1)
+        session.release(at: 3.8)
+        session.edit { $0.lines[0].start = nil; $0.lines[0].end = nil }
+        #expect(viewport.range(caretLine: 0, in: session) == initial)
+    }
+
+    @Test func selectingALongerLyricLineKeepsTheInitialViewWidth() throws {
+        let session = try session("[00:02.00]我\n[00:03.00]这一行很长\n[01:00.00]再见")
+        let viewport = LyricsTimelineViewport()
+        let previous = try #require(viewport.range(caretLine: 0, in: session))
+        session.selectLine(1)
+        viewport.selectionChanged(from: 0, to: 1, in: session)
+        let current = try #require(viewport.range(caretLine: 1, in: session))
+        #expect(current == previous)
     }
 }

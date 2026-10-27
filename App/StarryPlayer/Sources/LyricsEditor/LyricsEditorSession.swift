@@ -27,6 +27,8 @@ final class LyricsEditorSession {
     private(set) var lastTapped: UUID?
     private(set) var tapSerial = 0
     private(set) var revision = 0
+    /// Undo/redo/import invalidate asynchronous edits even if a line later looks identical.
+    @ObservationIgnored private(set) var historyEpoch = 0
     private var savedRevision = 0
     private(set) var flashText: String?
     var isGeneratingRomanization = false
@@ -158,6 +160,7 @@ final class LyricsEditorSession {
     }
 
     func replace(with draft: LyricsDraft) {
+        historyEpoch += 1
         edit { $0 = draft }
         staged = [:]
         caret = draft.firstUntimed ?? draft.firstPosition(fromLine: 0)
@@ -166,6 +169,7 @@ final class LyricsEditorSession {
 
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
+        historyEpoch += 1
         redoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
@@ -176,6 +180,7 @@ final class LyricsEditorSession {
 
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
+        historyEpoch += 1
         undoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
@@ -472,6 +477,7 @@ final class LyricsEditorSession {
 
     func stepBack() {
         guard let target = lastStarted else { return }
+        historyEpoch += 1
         edit { draft in
             draft[target].start = nil
             draft[target].end = nil

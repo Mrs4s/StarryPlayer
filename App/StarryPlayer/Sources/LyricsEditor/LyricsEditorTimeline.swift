@@ -77,8 +77,11 @@ struct LyricsEditorTimeline: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .onChange(of: lineIndex) { _, line in
-            if viewport.interactionRange == nil, !viewport.keepsSpan(movingTo: line) { viewport.manual = nil }
+        .onAppear {
+            if let visible = viewport.range(caretLine: lineIndex, in: session) { viewport.hold(visible) }
+        }
+        .onChange(of: lineIndex) { previous, line in
+            viewport.selectionChanged(from: previous, to: line, in: session)
         }
         .task(id: vocalsOnly && audio.isPrecise) {
             if vocalsOnly, audio.isPrecise { audio.prepareVocals() }

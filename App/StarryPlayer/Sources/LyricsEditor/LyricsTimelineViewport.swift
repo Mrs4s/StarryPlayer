@@ -3,11 +3,10 @@ import Observation
 
 @MainActor @Observable
 final class LyricsTimelineViewport {
-    /// Picked by dragging or resizing the overview's frame; nil follows the caret's line.
+    /// The current pan/zoom range; nil derives the initial view.
     var manual: ClosedRange<TimeInterval>?
     /// Frozen while AppKit owns a drag, including when clicking selects a different line.
     var interactionRange: ClosedRange<TimeInterval>?
-    @ObservationIgnored private var heldLine: Int?
 
     func range(caretLine line: Int?, in session: LyricsEditorSession) -> ClosedRange<TimeInterval>? {
         if let interactionRange { return interactionRange }
@@ -20,16 +19,14 @@ final class LyricsTimelineViewport {
         return start...(start + span)
     }
 
-    /// A drop moves the caret without scrolling away from where the lyrics landed.
-    func hold(_ range: ClosedRange<TimeInterval>, line: Int) {
+    func hold(_ range: ClosedRange<TimeInterval>) {
         manual = range
-        heldLine = line
     }
 
-    /// Consumes the hold on the next caret move.
-    func keepsSpan(movingTo line: Int?) -> Bool {
-        defer { heldLine = nil }
-        return line != nil && line == heldLine
+    /// Freeze the previous initial range before selection can derive a new one.
+    func selectionChanged(from previous: Int?, to line: Int?, in session: LyricsEditorSession) {
+        guard previous != line else { return }
+        if let visible = range(caretLine: previous, in: session) ?? range(caretLine: line, in: session) { manual = visible }
     }
 
     static let minimumSpan: TimeInterval = 1

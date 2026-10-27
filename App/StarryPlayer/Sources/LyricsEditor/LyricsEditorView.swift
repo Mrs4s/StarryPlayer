@@ -56,6 +56,8 @@ struct LyricsEditorView: View {
             }
             LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) })
         }
+        .disabled(panel != nil)
+        .accessibilityHidden(panel != nil)
         .frame(minWidth: 960, idealWidth: Self.defaultContentSize.width, maxWidth: .infinity, minHeight: 680, idealHeight: Self.defaultContentSize.height, maxHeight: .infinity)
         .background(theme.surface.ignoresSafeArea())
         .overlay { panelView }
