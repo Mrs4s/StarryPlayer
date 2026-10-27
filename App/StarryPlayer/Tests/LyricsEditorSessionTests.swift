@@ -31,6 +31,42 @@ struct LyricsEditorSessionTests {
         #expect(times(session, line: 1)[0] == [4, nil])
     }
 
+    @Test func aManuallyTimedLineCompletesOnlyWhenItsLastEndIsRecorded() throws {
+        let session = try session("我爱你\n再见")
+        let first = session.draft.lines[0].id
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.tap(at: 1.5) == nil)
+        #expect(session.tap(at: 2) == nil)
+        #expect(session.release(at: 2.5) == first)
+        #expect(session.release(at: 2.6) == nil)
+        #expect(session.tap(at: 3) == nil)
+    }
+
+    @Test func startingTheNextLineCanCompleteThePreviousLineExactlyOnce() throws {
+        let session = try session("你好\n再见")
+        let first = session.draft.lines[0].id, second = session.draft.lines[1].id
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.tap(at: 1.5) == nil)
+        #expect(session.tap(at: 3) == first)
+        #expect(session.draft.lines[0].syllables.last?.end == 3)
+        #expect(session.tap(at: 3.5) == nil)
+        #expect(session.release(at: 4) == second)
+        #expect(session.release(at: 4.1) == nil)
+    }
+
+    @Test func incompleteRowsAndOtherVoicesAreNotReportedAsCompleted() throws {
+        let session = try session("你好\n再见")
+        session.select(.init(line: 0, syllable: 1))
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.release(at: 1.5) == nil)
+        session.select(.init(line: 0, syllable: 0))
+        session.tap(at: 2)
+        session.tap(at: 2.5)
+        session.edit { $0.lines[1].singer = .secondary }
+        #expect(session.tap(at: 3) == nil)
+        #expect(session.draft.lines[0].syllables.last?.end == nil)
+    }
+
     @Test func selectedSyllablesStaySelectedThroughQuickEdits() throws {
         let session = try session("我爱你\n再见")
         let texts = { session.draft.lines.map(\.text) }

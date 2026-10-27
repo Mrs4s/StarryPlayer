@@ -66,6 +66,11 @@ struct LyricsEditorAudioTests {
         #expect(b.contains { abs($0.time - 1.5) < 0.05 })
         #expect(!a.contains { abs($0.time - 1.5) < 0.05 })
         #expect(audio.duetOnsets(for: .all).count == a.count + b.count)
+        let alignmentA = try await audio.alignmentAnalysis(in: 0.2...2.3, voice: .a)
+        let alignmentB = try await audio.alignmentAnalysis(in: 0.2...2.3, voice: .b)
+        #expect(alignmentA.onsets.contains { abs($0.time - 0.4) < 0.05 })
+        #expect(!alignmentA.onsets.contains { abs($0.time - 1.5) < 0.05 })
+        #expect(alignmentB.onsets.contains { abs($0.time - 1.5) < 0.05 })
         audio.cancelDuetOnsets()
         audio.prepareDuetOnsets()
         #expect(audio.duetStatus == .ready)
@@ -119,6 +124,22 @@ struct LyricsEditorAudioTests {
         try await waitUntil { audio.duetStatus == .ready }
         #expect(await gate.count == 2)
         #expect(!audio.duetOnsets(for: .a).isEmpty && !audio.duetOnsets(for: .b).isEmpty)
+    }
+
+    @Test func lineAlignmentPreparesVocalsAndRetainsAbsoluteActivityTimes() async throws {
+        let source = try Self.makeSource()
+        let audio = LyricsEditorAudio()
+        defer { audio.stop(); try? FileManager.default.removeItem(at: source) }
+        audio.setVolume(0)
+        audio.resolve = { _ in PlayableAsset(url: source, container: .wav, tier: QualityTier(.default)) }
+        audio.load(Track(id: TrackRef(source: .local, id: UUID().uuidString), title: "Alignment fixture", artists: [], album: nil, duration: 3))
+        try await waitUntil { audio.isPrecise }
+        #expect(audio.vocals == .none)
+        let result = try await audio.alignmentAnalysis(in: 0.2...1.2)
+        #expect(audio.vocals == .ready)
+        #expect(result.activity.valid[60])
+        #expect(!result.activity.valid[250])
+        #expect(result.frameDuration > 0 && result.centerOffset > 0)
     }
 
     private func prepare(_ audio: LyricsEditorAudio, source: URL) async throws {

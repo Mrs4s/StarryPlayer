@@ -8,6 +8,7 @@ struct LyricsEditorDock: View {
     var tap: () -> Void
     var release: () -> Void
     var manageTracks: () -> Void
+    var alignLine: () -> Void
     @Environment(\.theme) private var theme
     @State private var viewport = LyricsTimelineViewport()
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
@@ -28,7 +29,7 @@ struct LyricsEditorDock: View {
             VStack(spacing: 10) {
                 VStack(spacing: 8) {
                     LyricsEditorOverview(session: session, audio: audio, clock: clock, viewport: viewport)
-                    LyricsEditorTimeline(session: session, audio: audio, clock: clock, viewport: viewport, manageTracks: manageTracks)
+                    LyricsEditorTimeline(session: session, audio: audio, clock: clock, viewport: viewport, manageTracks: manageTracks, alignLine: alignLine)
                         .frame(height: CGFloat(min(max(timelineHeight, Self.timelineHeights.lowerBound), Self.timelineHeights.upperBound)))
                 }
                 transport

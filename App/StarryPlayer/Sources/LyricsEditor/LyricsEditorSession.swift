@@ -444,13 +444,15 @@ final class LyricsEditorSession {
     }
 
     /// Tap lead is measured in real time, so slower playback needs a smaller song-time offset.
-    func tap(at time: TimeInterval, rate: Double = 1) {
-        guard let caret, draft.contains(caret) else { return }
+    @discardableResult
+    func tap(at time: TimeInterval, rate: Double = 1) -> UUID? {
+        guard let caret, draft.contains(caret) else { return nil }
         let time = max(0, time - tapLead * rate)
         // Another voice may still be singing when this one starts.
         let previous = draft.position(before: caret).flatMap { previous in
             Self.sameVoice(draft.lines[previous.line], draft.lines[caret.line]) ? previous : nil
         }
+        let wasComplete = previous.map { Self.hasCompleteTiming(draft.lines[$0.line]) } ?? true
         edit { draft in
             if let previous, let start = draft[previous].start, start < time, (draft[previous].end ?? .infinity) > time {
                 draft[previous].end = time
@@ -462,17 +464,30 @@ final class LyricsEditorSession {
         lastTapped = draft[caret].id
         tapSerial += 1
         self.caret = draft.position(after: caret)
+        guard let previous, !wasComplete, Self.hasCompleteTiming(draft.lines[previous.line]) else { return nil }
+        return draft.lines[previous.line].id
     }
 
     static func sameVoice(_ a: LyricsDraft.Line, _ b: LyricsDraft.Line) -> Bool {
         a.id == b.id || (a.singer == b.singer && a.isBackground == b.isBackground)
     }
 
-    func release(at time: TimeInterval, rate: Double = 1) {
-        guard let target = lastStarted, let start = draft[target].start else { return }
+    @discardableResult
+    func release(at time: TimeInterval, rate: Double = 1) -> UUID? {
+        guard let target = lastStarted, let start = draft[target].start else { return nil }
         let time = max(0, time - tapLead * rate)
-        guard time > start else { return }
+        guard time > start else { return nil }
+        let wasComplete = Self.hasCompleteTiming(draft.lines[target.line])
         edit { $0[target].end = time }
+        guard !wasComplete, Self.hasCompleteTiming(draft.lines[target.line]) else { return nil }
+        return draft.lines[target.line].id
+    }
+
+    static func hasCompleteTiming(_ line: LyricsDraft.Line) -> Bool {
+        !line.syllables.isEmpty && line.syllables.allSatisfy {
+            guard let start = $0.start, let end = $0.end else { return false }
+            return start.isFinite && end.isFinite && start >= 0 && end > start
+        }
     }
 
     func stepBack() {

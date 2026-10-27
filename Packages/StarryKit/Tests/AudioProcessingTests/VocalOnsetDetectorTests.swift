@@ -42,6 +42,47 @@ import Testing
         #expect(try analyze(seconds: 1) { _ in 0 }.isEmpty)
     }
 
+    @Test func rangeAnalysisKeepsAbsoluteTimesAndActivityForPhraseEndings() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("vocal-range-\(UUID().uuidString).caf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100 * 5)!
+        buffer.frameLength = buffer.frameCapacity
+        for i in 0..<Int(buffer.frameLength) {
+            let time = Double(i) / 44_100
+            buffer.floatChannelData![0][i] = pulse(time, start: 0.5) + pulse(time, start: 3)
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+        }
+        let result = try VocalOnsetDetector.analysis(file: url, range: 2.8...4)
+        #expect(result.onsets.contains { abs($0.time - 3) < 0.045 })
+        #expect(!result.onsets.contains { abs($0.time - 0.5) < 0.1 })
+        #expect(result.activity.valid[310])
+        #expect(!result.activity.valid[50])
+        #expect(result.activity.energy[310] > result.activity.energy[390] + 20)
+    }
+
+    @Test func boundaryActivityIncludesAQuietConsonantBeforeItsVowel() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("vocal-consonant-activity-\(UUID().uuidString).caf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100)!
+            buffer.frameLength = buffer.frameCapacity
+            for i in 0..<Int(buffer.frameLength) {
+                let time = Double(i) / 44_100
+                buffer.floatChannelData![0][i] = frication(time, start: 0.5, amplitude: 0.008) + pulse(time, start: 0.65)
+            }
+            try file.write(from: buffer)
+        }
+        let result = try VocalOnsetDetector.analysis(file: url)
+        #expect(result.activity.boundaryEnergy[54] > result.activity.energy[54] + 15)
+        #expect(result.onsets.contains { abs($0.time - 0.5) < 0.045 })
+    }
+
     @Test(arguments: [22_050.0, 44_100.0, 48_000.0, 96_000.0])
     func isolatedAttacksKeepTheirAudioTimesAcrossSampleRates(rate: Double) throws {
         let starts = [0.5, 1.2, 2.0]
