@@ -1,3 +1,4 @@
+import AppKit
 import LyricsCore
 import SwiftUI
 
@@ -256,8 +257,17 @@ struct LyricsEditorMetadata: View {
     let session: LyricsEditorSession
     var close: () -> Void
     @Environment(\.theme) private var theme
+    @State private var searching = false
 
     var body: some View {
+        if searching {
+            LyricsEditorMetadataSearch(session: session) { searching = false }
+        } else {
+            metadataPanel
+        }
+    }
+
+    private var metadataPanel: some View {
         EditorPanel(title: "歌曲信息", subtitle: "导出和应用时写进 TTML，AMLL 歌词库靠这些找到歌曲。", width: 600, close: close) {
             VStack(alignment: .leading, spacing: 6) {
                 if session.metadata.isEmpty {
@@ -290,6 +300,10 @@ struct LyricsEditorMetadata: View {
                             .frame(height: 30)
                     }
                     .buttonStyle(VariantButtonStyle(variant: .tertiary, isPill: true))
+                    PillButton(title: "AI 搜索…", systemName: "sparkle.magnifyingglass", variant: .tertiary, height: 30) {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        searching = true
+                    }
                     Spacer()
                     PillButton(title: "完成", variant: .filled, height: 32, action: close)
                 }
@@ -333,6 +347,8 @@ private struct MetadataRow: View {
                 .focused($focused)
                 .onSubmit(apply)
                 .onChange(of: focused) { _, isFocused in if !isFocused { apply() } }
+                .onChange(of: entry.value) { _, value in if !focused { text = value } }
+                .onDisappear(perform: apply)
                 .onAppear {
                     text = entry.value
                     if entry.value.isEmpty { focused = true }

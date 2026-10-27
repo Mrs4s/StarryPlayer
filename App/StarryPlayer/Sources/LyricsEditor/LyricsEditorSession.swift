@@ -31,6 +31,7 @@ final class LyricsEditorSession {
     private(set) var flashText: String?
     var isGeneratingRomanization = false
     let translation = LyricsEditorTranslationState()
+    let metadataSearch = LyricsEditorMetadataSearchState()
     @ObservationIgnored private var flashTask: Task<Void, Never>?
     private var undoStack: [Snapshot] = []
     private var redoStack: [Snapshot] = []
@@ -49,6 +50,7 @@ final class LyricsEditorSession {
     private struct Snapshot {
         var draft: LyricsDraft
         var caret: Position?
+        var metadata: [MetadataEntry]? = nil
     }
 
     struct MetadataEntry: Identifiable, Hashable {
@@ -146,6 +148,15 @@ final class LyricsEditorSession {
         pruneSelection()
     }
 
+    func editMetadata(_ entries: [MetadataEntry]) {
+        guard entries != metadata else { return }
+        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: metadata))
+        if undoStack.count > 300 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        metadata = entries
+        revision += 1
+    }
+
     func replace(with draft: LyricsDraft) {
         edit { $0 = draft }
         staged = [:]
@@ -155,18 +166,20 @@ final class LyricsEditorSession {
 
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
-        redoStack.append(Snapshot(draft: draft, caret: caret))
+        redoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
     }
 
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
-        undoStack.append(Snapshot(draft: draft, caret: caret))
+        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
     }
