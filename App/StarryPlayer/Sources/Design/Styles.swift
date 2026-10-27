@@ -153,14 +153,26 @@ struct GlassPanel: ViewModifier {
 }
 
 struct PageTitle: View {
-    var title: String
+    var title: DisplayText
     var stat: String? = nil
     var statIcon: String? = nil
     @Environment(\.theme) private var theme
 
+    init(title: String, stat: String? = nil, statIcon: String? = nil) {
+        self.title = .verbatim(title)
+        self.stat = stat
+        self.statIcon = statIcon
+    }
+
+    init(localizedTitle: LocalizedStringResource, stat: String? = nil, statIcon: String? = nil) {
+        title = .localized(localizedTitle)
+        self.stat = stat
+        self.statIcon = statIcon
+    }
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(title).font(.system(size: 30, weight: .bold)).foregroundStyle(theme.onSurface)
+            DisplayTextView(text: title).font(.system(size: 30, weight: .bold)).foregroundStyle(theme.onSurface)
             if let stat {
                 HStack(spacing: 4) {
                     if let statIcon { Image(systemName: statIcon).font(.system(size: 12)) }

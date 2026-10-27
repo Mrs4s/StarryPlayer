@@ -765,6 +765,40 @@ struct WireProfile: Decodable {
     }
 }
 
+struct WireRecommendationStyleCategory: Decodable {
+    struct Style: Decodable {
+        var id: String
+        var name: String
+
+        private enum CodingKeys: String, CodingKey { case id, name }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeLenientString(forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+        }
+    }
+
+    var id: String
+    var name: String
+    var styles: [Style]
+    var selectedStyleIDs: [String]
+
+    private enum CodingKeys: String, CodingKey { case id, name, styles, selectedStyleIDs }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeLenientString(forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        styles = try container.decode([Style].self, forKey: .styles)
+        selectedStyleIDs = try container.decodeIfPresent([String].self, forKey: .selectedStyleIDs) ?? []
+    }
+
+    var category: RecommendationStyleCategory {
+        RecommendationStyleCategory(id: id, name: name, styles: styles.map { RecommendationStyle(id: $0.id, name: $0.name) }, selectedStyleIDs: selectedStyleIDs)
+    }
+}
+
 struct WireHomeShelf: Decodable {
     var id: String?
     var title: String

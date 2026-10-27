@@ -510,6 +510,8 @@ const settings: SettingsSection[] = [{
 | 用户歌单 | `userPlaylists`、`likedPlaylistID` | 自己创建的列表标 `isOwned`，有喜欢歌单时将其放在前面 |
 | 歌单编辑 | `createPlaylist`、`editPlaylist`、`deletePlaylist`、`addToPlaylist`、`removeFromPlaylist`、`reorderPlaylist` | `playlistOptions` 声明描述、隐私、名字长度等能力 |
 | 每日推荐与电台 | `dailyRecommendations`、`dailyPlaylists`、`personalFM`、`skipFM`、`trashFM` | `personalFM` 每次返回少量歌曲，注意 `firstFetch` 的新会话语义 |
+| 风格推荐 | `recommendationStyles`、`styleRecommendations`、`setRecommendationStyles` | 三个接口都导出时，在每日推荐中显示风格入口；分类返回 `styles` 和 `selectedStyleIDs`；应用后重新读取配置，以平台返回的选中项为准 |
+| 历史日推 | `dailyRecommendationDates`、`dailyRecommendationHistory` | 两个接口都导出时显示历史日推入口；日期使用服务端提供的 `YYYY-MM-DD` 字符串，最新在前，详情返回 `Track[]` |
 | 全部歌曲 | `allMedia(page)` | 可返回数组或 `{ songs, total, hasMore, nextOffset }`；过滤后要正确推进原始分页位置 |
 | 资料库网格 | `libraryAlbums`、`libraryArtists`、`libraryGenres` | 适合自建曲库；流派页要求同时有专辑页，`albumSorts` 第一项为默认排序 |
 | 用户主页 | `user`、`playlistsOfUser`、`listeningRanking`、`follows`、`followers`、`setUserFollowed` | 先实现 `user`，关注列表能力需要 `follows` 和 `followers`；隐私状态用专门错误码 |

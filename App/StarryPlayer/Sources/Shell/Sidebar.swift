@@ -24,7 +24,7 @@ struct Sidebar: View {
     private var discover: [SidebarEntry] {
         var entries = [SidebarEntry(key: "home", title: "首页", icon: "house", route: .home)]
         if model.hasDailyRecommendations {
-            entries.append(SidebarEntry(key: "daily", title: "每日推荐", icon: "calendar", route: .daily, origin: .dailyRecommendation, ofSource: true))
+            entries.append(SidebarEntry(key: "daily", title: model.localization.string(LocalizedStringResource("daily.sidebarTitle", defaultValue: "每日推荐")), icon: "calendar", route: .daily, origin: .dailyRecommendation, ofSource: true))
         }
         return entries
     }
@@ -55,7 +55,7 @@ struct Sidebar: View {
     private var selectedKey: String? {
         switch model.route {
         case .home: "home"
-        case .daily: "daily"
+        case .daily, .dailyStyles, .dailyHistory: "daily"
         case .liked: "liked"
         case .history: "history"
         case .allMedia: "allMedia"

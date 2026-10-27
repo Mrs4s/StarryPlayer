@@ -215,7 +215,8 @@ export function logSource(context: PlaybackReport['context']): { source: string;
     case 'search':
       return { source: 'search', id, type: 'track' };
     case 'dailyRecommendation':
-      return { source: 'dailySongRecommend', id, type: 'dailyRecommend' };
+      // Style and history context IDs are local; NetEase daily lists have no playlist ID.
+      return { source: 'dailySongRecommend', id: '', type: 'dailyRecommend' };
     case 'allMedia':
       return { source: 'cloud', id, type: 'cloudTrack' };
     case 'local':

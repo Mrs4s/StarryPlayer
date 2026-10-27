@@ -6,11 +6,12 @@ import StarryCore
 /// `capability(_:)` only for the ones the plugin exports, so the UI shows what the plugin does and
 /// nothing else.
 public final class PluginSource: MusicSource, SearchableSource, CatalogSource, RecommendationSource, ConfigurableSource, AccountSource,
-    UserLibrarySource, CollectionSource, DailyRecommendationSource, RadioSource, CommentSource, ScrobblingSource, AllMediaSource,
-    UserSource, ListeningRankingSource, UserFollowSource, HomeShelfSource, PlaylistEditingSource, LibraryBrowsingSource {
+    UserLibrarySource, CollectionSource, DailyRecommendationSource, StyleRecommendationSource, DailyRecommendationHistorySource,
+    RadioSource, CommentSource, ScrobblingSource, AllMediaSource, UserSource, ListeningRankingSource, UserFollowSource,
+    HomeShelfSource, PlaylistEditingSource, LibraryBrowsingSource {
     enum Capability {
-        case search, catalog, recommendation, settings, account, library, collection, daily, radio, comments, scrobbling, allMedia
-        case users, ranking, follows, homeShelves, playlistEditing, libraryBrowsing
+        case search, catalog, recommendation, settings, account, library, collection, daily, recommendationStyles, dailyHistory
+        case radio, comments, scrobbling, allMedia, users, ranking, follows, homeShelves, playlistEditing, libraryBrowsing
     }
 
     private static let gates: [ObjectIdentifier: Capability] = [
@@ -22,6 +23,8 @@ public final class PluginSource: MusicSource, SearchableSource, CatalogSource, R
         ObjectIdentifier((any UserLibrarySource).self): .library,
         ObjectIdentifier((any CollectionSource).self): .collection,
         ObjectIdentifier((any DailyRecommendationSource).self): .daily,
+        ObjectIdentifier((any StyleRecommendationSource).self): .recommendationStyles,
+        ObjectIdentifier((any DailyRecommendationHistorySource).self): .dailyHistory,
         ObjectIdentifier((any RadioSource).self): .radio,
         ObjectIdentifier((any CommentSource).self): .comments,
         ObjectIdentifier((any ScrobblingSource).self): .scrobbling,
@@ -36,6 +39,7 @@ public final class PluginSource: MusicSource, SearchableSource, CatalogSource, R
 
     private static let catalogFunctions = ["songs", "album", "artist", "artistSongs", "artistAlbums", "similarArtists", "playlist"]
     private static let recommendationFunctions = ["recommendedPlaylists", "newSongs", "newAlbums", "topArtists"]
+    private static let styleRecommendationFunctions = ["recommendationStyles", "styleRecommendations", "setRecommendationStyles"]
     private static let libraryFunctions = ["userPlaylists", "likedTrackIDs", "setLiked"]
     private static let playlistEditingFunctions = ["createPlaylist", "editPlaylist", "deletePlaylist", "addToPlaylist", "removeFromPlaylist", "reorderPlaylist"]
 
@@ -112,6 +116,8 @@ public final class PluginSource: MusicSource, SearchableSource, CatalogSource, R
         if Self.libraryFunctions.contains(where: { plugin.has("source.\($0)") }) { capabilities.insert(.library) }
         if plugin.has("source.setCollected"), !collectableKinds.isEmpty { capabilities.insert(.collection) }
         if plugin.has("source.dailyRecommendations") { capabilities.insert(.daily) }
+        if Self.styleRecommendationFunctions.allSatisfy({ plugin.has("source.\($0)") }) { capabilities.insert(.recommendationStyles) }
+        if plugin.has("source.dailyRecommendationDates"), plugin.has("source.dailyRecommendationHistory") { capabilities.insert(.dailyHistory) }
         if plugin.has("source.personalFM") { capabilities.insert(.radio) }
         if plugin.has("source.comments") || plugin.has("source.commentThread") { capabilities.insert(.comments) }
         if plugin.has("source.reportPlayback") { capabilities.insert(.scrobbling) }
@@ -355,6 +361,34 @@ public final class PluginSource: MusicSource, SearchableSource, CatalogSource, R
         guard plugin.has("source.dailyPlaylists") else { return [] }
         let playlists: [WirePlaylist] = try await plugin.call("source.dailyPlaylists")
         return playlists.map { $0.playlist(source: id) }
+    }
+
+    public func recommendationStyles() async throws -> [RecommendationStyleCategory] {
+        try require("recommendationStyles", "推荐风格")
+        let categories: [WireRecommendationStyleCategory] = try await plugin.call("source.recommendationStyles")
+        return categories.map(\.category)
+    }
+
+    public func styleRecommendations() async throws -> [Track] {
+        try require("styleRecommendations", "风格推荐")
+        let tracks: [WireTrack] = try await plugin.call("source.styleRecommendations")
+        return tracks.map { $0.track(source: id) }
+    }
+
+    public func setRecommendationStyles(categoryID: String, styleIDs: [String]) async throws {
+        try require("setRecommendationStyles", "设置推荐风格")
+        let _: JSONValue = try await plugin.call("source.setRecommendationStyles", categoryID, styleIDs)
+    }
+
+    public func dailyRecommendationDates() async throws -> [String] {
+        try require("dailyRecommendationDates", "历史日推")
+        return try await plugin.call("source.dailyRecommendationDates")
+    }
+
+    public func dailyRecommendationHistory(date: String) async throws -> [Track] {
+        try require("dailyRecommendationHistory", "历史日推")
+        let tracks: [WireTrack] = try await plugin.call("source.dailyRecommendationHistory", date)
+        return tracks.map { $0.track(source: id) }
     }
 
     public func personalFM(mode: RadioMode, firstFetch: Bool) async throws -> [Track] {

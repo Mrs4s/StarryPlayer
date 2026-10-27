@@ -19,11 +19,19 @@ struct SongList: View {
             if showHeader {
                 SongColumns {
                     Text("#").frame(width: SongColumns.indexWidth)
-                    Text("标题").frame(maxWidth: .infinity, alignment: .leading).columnWeight(3)
-                    if showAlbum { Text("专辑").frame(maxWidth: .infinity, alignment: .leading).columnWeight(2) }
+                    DisplayTextView(text: .localized(LocalizedStringResource("songs.title", defaultValue: "标题")))
+                        .frame(maxWidth: .infinity, alignment: .leading).columnWeight(3)
+                    if showAlbum {
+                        DisplayTextView(text: .localized(LocalizedStringResource("songs.album", defaultValue: "专辑")))
+                            .frame(maxWidth: .infinity, alignment: .leading).columnWeight(2)
+                    }
                     Color.clear.frame(width: SongColumns.likeWidth, height: 1)
-                    Text("时长").frame(width: SongColumns.durationWidth, alignment: .leading)
-                    if showPopularity { Text("热度").frame(width: SongColumns.popularityWidth, alignment: .leading) }
+                    DisplayTextView(text: .localized(LocalizedStringResource("songs.duration", defaultValue: "时长")))
+                        .frame(width: SongColumns.durationWidth, alignment: .leading)
+                    if showPopularity {
+                        DisplayTextView(text: .localized(LocalizedStringResource("songs.popularity", defaultValue: "热度")))
+                            .frame(width: SongColumns.popularityWidth, alignment: .leading)
+                    }
                 }
                 .font(.system(size: 13))
                 .foregroundStyle(theme.onSurfaceVariant)

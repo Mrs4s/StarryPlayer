@@ -21,7 +21,7 @@ struct QueuePanel: View {
                     .foregroundStyle(tint.opacity(0.5))
                 Spacer(minLength: 12 * k)
                 if let context = player.context, let name = context.originName, !name.isEmpty {
-                    QueueOriginLink(name: name, tint: tint, k: k, action: model.canOpenPlaybackOrigin(context) ? { model.openPlaybackOrigin(context) } : nil)
+                    QueueOriginLink(context: context, tint: tint, k: k, action: model.canOpenPlaybackOrigin(context) ? { model.openPlaybackOrigin(context) } : nil)
                 }
             }
             .padding(.leading, leading)
@@ -130,16 +130,29 @@ private struct NowPlayingQueueRow: View {
 /// `来自 <origin>`: the name underlines and brightens on hover and opens the page, with a
 /// chevron saying so; an origin with no page stays plain text.
 private struct QueueOriginLink: View {
-    var name: String
+    var context: PlaybackContext
     var tint: Color
     var k: CGFloat
     var action: (() -> Void)?
+    @Environment(LocalizationStore.self) private var localization
     @State private var hovering = false
+
+    private var name: DisplayText {
+        if context.originType == .dailyRecommendation {
+            if context.originID == "style" { return .localized(DailyRecommendationsModel.Kind.styles.title) }
+            if let id = context.originID, id.hasPrefix("history:") {
+                let date = String(id.dropFirst("history:".count))
+                return .localized(LocalizedStringResource("daily.history.origin", defaultValue: "历史日推 · \(date)"))
+            }
+            if context.originID == nil || context.originID == "" { return .localized(DailyRecommendationsModel.Kind.today.title) }
+        }
+        return .verbatim(context.originName ?? "")
+    }
 
     var body: some View {
         let label = HStack(spacing: 4 * k) {
-            Text("来自")
-            Text(name)
+            DisplayTextView(text: .localized(LocalizedStringResource("queue.from", defaultValue: "来自")))
+            DisplayTextView(text: name)
                 .underline(hovering)
                 .foregroundStyle(tint.opacity(hovering ? 0.95 : 0.6))
                 .lineLimit(1)
@@ -157,7 +170,7 @@ private struct QueueOriginLink: View {
                 .onHover { hovering = $0 }
                 .animation(Motion.hover, value: hovering)
                 .linkPointer()
-                .help("打开「\(name)」")
+                .help(localization.string(LocalizedStringResource("queue.openOrigin", defaultValue: "打开「\(localization.string(name))」")))
         } else {
             label
         }

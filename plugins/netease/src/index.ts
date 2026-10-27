@@ -4,6 +4,7 @@ import * as catalog from './catalog';
 import * as library from './library';
 import * as lyrics from './lyrics';
 import * as playlists from './playlists';
+import * as recommendations from './recommendations';
 import { qualityTiers, resolve } from './playback';
 import { reportPlayback } from './scrobble';
 import * as users from './users';
@@ -109,6 +110,11 @@ const plugin: Plugin = {
     reorderPlaylist: playlists.reorderPlaylist,
     dailyRecommendations: library.dailyRecommendations,
     dailyPlaylists: library.dailyPlaylists,
+    recommendationStyles: recommendations.recommendationStyles,
+    styleRecommendations: recommendations.styleRecommendations,
+    setRecommendationStyles: recommendations.setRecommendationStyles,
+    dailyRecommendationDates: recommendations.dailyRecommendationDates,
+    dailyRecommendationHistory: recommendations.dailyRecommendationHistory,
     personalFM: library.personalFM,
     skipFM: library.skipFM,
     trashFM: library.trashFM,

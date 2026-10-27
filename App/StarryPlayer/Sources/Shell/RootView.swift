@@ -482,6 +482,8 @@ private struct PageContent: View {
         case .liked: LikedPage()
         case .history: HistoryPage()
         case .daily: DailyPage()
+        case .dailyStyles: DailyPage(kind: .styles)
+        case .dailyHistory(let date): DailyPage(kind: .history, initialDate: date)
         case .allMedia: AllMediaPage()
         case .collection(let playlist): PlaylistPage(playlist: playlist)
         case .album(let album): AlbumPage(album: album)
