@@ -31,6 +31,42 @@ struct LyricsEditorSessionTests {
         #expect(times(session, line: 1)[0] == [4, nil])
     }
 
+    @Test func aManuallyTimedLineCompletesOnlyWhenItsLastEndIsRecorded() throws {
+        let session = try session("我爱你\n再见")
+        let first = session.draft.lines[0].id
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.tap(at: 1.5) == nil)
+        #expect(session.tap(at: 2) == nil)
+        #expect(session.release(at: 2.5) == first)
+        #expect(session.release(at: 2.6) == nil)
+        #expect(session.tap(at: 3) == nil)
+    }
+
+    @Test func startingTheNextLineCanCompleteThePreviousLineExactlyOnce() throws {
+        let session = try session("你好\n再见")
+        let first = session.draft.lines[0].id, second = session.draft.lines[1].id
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.tap(at: 1.5) == nil)
+        #expect(session.tap(at: 3) == first)
+        #expect(session.draft.lines[0].syllables.last?.end == 3)
+        #expect(session.tap(at: 3.5) == nil)
+        #expect(session.release(at: 4) == second)
+        #expect(session.release(at: 4.1) == nil)
+    }
+
+    @Test func incompleteRowsAndOtherVoicesAreNotReportedAsCompleted() throws {
+        let session = try session("你好\n再见")
+        session.select(.init(line: 0, syllable: 1))
+        #expect(session.tap(at: 1) == nil)
+        #expect(session.release(at: 1.5) == nil)
+        session.select(.init(line: 0, syllable: 0))
+        session.tap(at: 2)
+        session.tap(at: 2.5)
+        session.edit { $0.lines[1].singer = .secondary }
+        #expect(session.tap(at: 3) == nil)
+        #expect(session.draft.lines[0].syllables.last?.end == nil)
+    }
+
     @Test func selectedSyllablesStaySelectedThroughQuickEdits() throws {
         let session = try session("我爱你\n再见")
         let texts = { session.draft.lines.map(\.text) }
@@ -297,7 +333,7 @@ struct LyricsEditorSessionTests {
         #expect(viewport.manual == 0...100)
     }
 
-    @Test func timelineViewportFollowsSelectionUnlessManuallyPositioned() throws {
+    @Test func timelineViewportDerivesAnInitialRangeAndRespectsManualPositioning() throws {
         let session = try session("我爱\n你好")
         let viewport = LyricsTimelineViewport()
         #expect(viewport.range(caretLine: nil, in: session) == nil)
@@ -309,5 +345,28 @@ struct LyricsEditorSessionTests {
         session.edit { $0.lines[0].syllables = [] }
         #expect(viewport.range(caretLine: 0, in: session) == nil)
         #expect(viewport.range(caretLine: 9, in: session) == nil)
+    }
+
+    @Test func theInitialViewStaysFixedWhenTimingChangesAfterSelection() throws {
+        let session = try session("[00:02.00]我爱你")
+        let viewport = LyricsTimelineViewport()
+        viewport.selectionChanged(from: nil, to: 0, in: session)
+        let initial = try #require(viewport.range(caretLine: 0, in: session))
+        session.tap(at: 2.1)
+        session.tap(at: 2.7)
+        session.tap(at: 3.1)
+        session.release(at: 3.8)
+        session.edit { $0.lines[0].start = nil; $0.lines[0].end = nil }
+        #expect(viewport.range(caretLine: 0, in: session) == initial)
+    }
+
+    @Test func selectingALongerLyricLineKeepsTheInitialViewWidth() throws {
+        let session = try session("[00:02.00]我\n[00:03.00]这一行很长\n[01:00.00]再见")
+        let viewport = LyricsTimelineViewport()
+        let previous = try #require(viewport.range(caretLine: 0, in: session))
+        session.selectLine(1)
+        viewport.selectionChanged(from: 0, to: 1, in: session)
+        let current = try #require(viewport.range(caretLine: 1, in: session))
+        #expect(current == previous)
     }
 }

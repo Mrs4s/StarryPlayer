@@ -19,6 +19,11 @@ struct LyricsEditorView: View {
     @State private var appeared = false
     @State private var keyMonitor: Any?
     @State private var findingLyrics = false
+    @State private var autoAlignment = LyricsEditorAutoAlignment()
+    @State private var aiTiming = LyricsEditorAITimingState()
+    @AppStorage("starry.lyricsEditor.autoAlignAfterTiming") private var autoAlignAfterTiming = false
+    @AppStorage("starry.lyricsEditor.splitOnsetHints") private var splitOnsetHints = false
+    @AppStorage("starry.lyricsEditor.hintVoice") private var hintVoice = LyricsEditorAudio.HintVoice.all
     @AppStorage(LyricsEditorTimeline.gainKey) private var spectrogramGain = 3.0
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
 
@@ -27,8 +32,9 @@ struct LyricsEditorView: View {
         var id: Self { self }
     }
 
-    enum Panel {
-        case importer, metadata, tracks, shortcuts, translation
+    enum Panel: Equatable {
+        case importer, metadata, tracks, shortcuts, translation, aiTiming
+        case alignment(UUID)
     }
 
     var body: some View {
@@ -54,8 +60,10 @@ struct LyricsEditorView: View {
                     }
                 }
             }
-            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) })
+            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) }, alignLine: alignCurrentLine)
         }
+        .disabled(panel != nil)
+        .accessibilityHidden(panel != nil)
         .frame(minWidth: 960, idealWidth: Self.defaultContentSize.width, maxWidth: .infinity, minHeight: 680, idealHeight: Self.defaultContentSize.height, maxHeight: .infinity)
         .background(theme.surface.ignoresSafeArea())
         .overlay { panelView }
@@ -93,7 +101,21 @@ struct LyricsEditorView: View {
             if session.draft.isEmpty { panel = .importer }
             withAnimation(Motion.reveal) { appeared = true }
         }
-        .onDisappear(perform: removeKeys)
+        .onChange(of: autoAlignAfterTiming) { _, enabled in
+            if enabled, audio.isPrecise { audio.prepareVocals() }
+            else { autoAlignment.cancelAll() }
+        }
+        .onAppear {
+            if autoAlignAfterTiming, audio.isPrecise { audio.prepareVocals() }
+        }
+        .onChange(of: audio.isPrecise) { _, precise in
+            if precise, autoAlignAfterTiming { audio.prepareVocals() }
+        }
+        .onDisappear {
+            removeKeys()
+            autoAlignment.cancelAll()
+            aiTiming.dispose()
+        }
     }
 
     @ViewBuilder
@@ -110,13 +132,28 @@ struct LyricsEditorView: View {
             LyricsEditorShortcuts(close: close).transition(.opacity).zIndex(3)
         case .translation:
             LyricsEditorTranslation(session: session, close: close).transition(.opacity).zIndex(3)
+        case .aiTiming:
+            LyricsEditorAITiming(session: session, audio: audio, state: aiTiming, close: close)
+                .transition(.opacity).zIndex(3)
+        case .alignment(let id):
+            if let line = session.draft.lines.first(where: { $0.id == id }) {
+                LyricsEditorAlignment(session: session, audio: audio, line: line, close: close)
+                    .id(id).transition(.opacity).zIndex(3)
+            }
         case nil:
             EmptyView()
         }
     }
 
     private func show(_ panel: Panel) {
+        if panel == .aiTiming { autoAlignment.cancelAll() }
         withAnimation(Motion.popover) { self.panel = panel }
+    }
+
+    private func alignCurrentLine() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        guard let position = session.caret ?? session.lastStarted, session.draft.contains(position) else { return }
+        show(.alignment(session.draft.lines[position.line].id))
     }
 
     private func togglePreview() {
@@ -163,6 +200,12 @@ struct LyricsEditorView: View {
                     .opacity(session.canRedo ? 1 : 0.4)
                 IconButton(systemName: "keyboard", size: 30, iconSize: 13, help: "快捷键（?）") { show(.shortcuts) }
             }
+            PillButton(title: "AI 打轴", systemName: "wand.and.stars", variant: .tertiary, height: 30) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                show(.aiTiming)
+            }
+            .disabled(session.draft.isEmpty)
+            .help("使用外置本地模型生成整首逐字时间")
             PillButton(title: "导入", systemName: "square.and.arrow.down", variant: .tertiary, height: 30) { show(.importer) }
                 .help("粘贴或打开歌词，快速分好音节")
             moreMenu
@@ -203,7 +246,7 @@ struct LyricsEditorView: View {
             PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
-            PopMenuItem.button("AI 翻译…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
+            PopMenuItem.button("AI 翻译与注音…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 show(.translation)
             }
@@ -222,6 +265,10 @@ struct LyricsEditorView: View {
             PopMenuItem.divider
             PopMenuItem.button("整体提前 0.1 秒", systemImage: "backward") { session.edit { $0.shift(by: -0.1) } }
             PopMenuItem.button("整体延后 0.1 秒", systemImage: "forward") { session.edit { $0.shift(by: 0.1) } }
+            PopMenuItem.option("打完一行后自动排字", selected: autoAlignAfterTiming) {
+                autoAlignAfterTiming.toggle()
+                if !autoAlignAfterTiming { autoAlignment.cancelAll() }
+            }
             PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(session.tapLead)) {
                 for lead in [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2] {
                     PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(session.tapLead - lead) < 0.001) { session.tapLead = lead }
@@ -336,12 +383,22 @@ struct LyricsEditorView: View {
 
     private func tap(_ event: NSEvent? = nil) {
         guard audio.isReady else { return session.flash("音频载入后才能跟着打点") }
-        session.tap(at: time(of: event), rate: audio.rate)
+        if let line = session.tap(at: time(of: event), rate: audio.rate) { alignCompletedLine(line, endedByNextLine: true) }
     }
 
     private func release(_ event: NSEvent? = nil) {
         guard audio.isReady else { return session.flash("音频载入后才能跟着打点") }
-        session.release(at: time(of: event), rate: audio.rate)
+        if let line = session.release(at: time(of: event), rate: audio.rate) { alignCompletedLine(line) }
+    }
+
+    private func alignCompletedLine(_ line: UUID, endedByNextLine: Bool = false) {
+        guard autoAlignAfterTiming else { return }
+        guard audio.isPrecise else { return session.flash("本曲暂时无法自动排字，已保留人工打点") }
+        let voice = splitOnsetHints ? hintVoice : .all
+        let editorAudio = audio
+        autoAlignment.schedule(lineID: line, in: session, duration: audio.duration, endedByNextLine: endedByNextLine) {
+            try await editorAudio.alignmentAnalysis(in: $0, voice: voice)
+        }
     }
 
     private func play(from position: LyricsDraft.Position, preroll: TimeInterval = 0) {

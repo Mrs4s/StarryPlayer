@@ -16,6 +16,8 @@ final class LyricsEditorSession {
     /// Taps land this much earlier than they are pressed, for the time it takes to react.
     var tapLead: TimeInterval = 0
     var editingLine: UUID?
+    /// Bumped to move the keyboard focus to the inspector's ruby field.
+    private(set) var rubyFocusRequest = 0
     /// IDs preserve selection when syllables move between lines.
     private(set) var selection: Set<UUID> = []
     @ObservationIgnored private var selectionAnchor: UUID?
@@ -25,10 +27,13 @@ final class LyricsEditorSession {
     private(set) var lastTapped: UUID?
     private(set) var tapSerial = 0
     private(set) var revision = 0
+    /// Undo/redo/import invalidate asynchronous edits even if a line later looks identical.
+    @ObservationIgnored private(set) var historyEpoch = 0
     private var savedRevision = 0
     private(set) var flashText: String?
     var isGeneratingRomanization = false
     let translation = LyricsEditorTranslationState()
+    let metadataSearch = LyricsEditorMetadataSearchState()
     @ObservationIgnored private var flashTask: Task<Void, Never>?
     private var undoStack: [Snapshot] = []
     private var redoStack: [Snapshot] = []
@@ -47,6 +52,7 @@ final class LyricsEditorSession {
     private struct Snapshot {
         var draft: LyricsDraft
         var caret: Position?
+        var metadata: [MetadataEntry]? = nil
     }
 
     struct MetadataEntry: Identifiable, Hashable {
@@ -144,7 +150,17 @@ final class LyricsEditorSession {
         pruneSelection()
     }
 
+    func editMetadata(_ entries: [MetadataEntry]) {
+        guard entries != metadata else { return }
+        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: metadata))
+        if undoStack.count > 300 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        metadata = entries
+        revision += 1
+    }
+
     func replace(with draft: LyricsDraft) {
+        historyEpoch += 1
         edit { $0 = draft }
         staged = [:]
         caret = draft.firstUntimed ?? draft.firstPosition(fromLine: 0)
@@ -153,18 +169,22 @@ final class LyricsEditorSession {
 
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
-        redoStack.append(Snapshot(draft: draft, caret: caret))
+        historyEpoch += 1
+        redoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
     }
 
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
-        undoStack.append(Snapshot(draft: draft, caret: caret))
+        historyEpoch += 1
+        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
     }
@@ -316,6 +336,15 @@ final class LyricsEditorSession {
         }
     }
 
+    func clearRuby(_ positions: [Position]? = nil) {
+        let targets = positions ?? editTargets
+        edit { draft in
+            for position in targets where draft.contains(position) { draft[position].ruby = nil }
+        }
+    }
+
+    func focusRuby() { rubyFocusRequest += 1 }
+
     func delete(_ positions: [Position]? = nil) {
         let targets = positions ?? editTargets
         guard !targets.isEmpty else { return }
@@ -415,13 +444,15 @@ final class LyricsEditorSession {
     }
 
     /// Tap lead is measured in real time, so slower playback needs a smaller song-time offset.
-    func tap(at time: TimeInterval, rate: Double = 1) {
-        guard let caret, draft.contains(caret) else { return }
+    @discardableResult
+    func tap(at time: TimeInterval, rate: Double = 1) -> UUID? {
+        guard let caret, draft.contains(caret) else { return nil }
         let time = max(0, time - tapLead * rate)
         // Another voice may still be singing when this one starts.
         let previous = draft.position(before: caret).flatMap { previous in
             Self.sameVoice(draft.lines[previous.line], draft.lines[caret.line]) ? previous : nil
         }
+        let wasComplete = previous.map { Self.hasCompleteTiming(draft.lines[$0.line]) } ?? true
         edit { draft in
             if let previous, let start = draft[previous].start, start < time, (draft[previous].end ?? .infinity) > time {
                 draft[previous].end = time
@@ -433,21 +464,35 @@ final class LyricsEditorSession {
         lastTapped = draft[caret].id
         tapSerial += 1
         self.caret = draft.position(after: caret)
+        guard let previous, !wasComplete, Self.hasCompleteTiming(draft.lines[previous.line]) else { return nil }
+        return draft.lines[previous.line].id
     }
 
     static func sameVoice(_ a: LyricsDraft.Line, _ b: LyricsDraft.Line) -> Bool {
         a.id == b.id || (a.singer == b.singer && a.isBackground == b.isBackground)
     }
 
-    func release(at time: TimeInterval, rate: Double = 1) {
-        guard let target = lastStarted, let start = draft[target].start else { return }
+    @discardableResult
+    func release(at time: TimeInterval, rate: Double = 1) -> UUID? {
+        guard let target = lastStarted, let start = draft[target].start else { return nil }
         let time = max(0, time - tapLead * rate)
-        guard time > start else { return }
+        guard time > start else { return nil }
+        let wasComplete = Self.hasCompleteTiming(draft.lines[target.line])
         edit { $0[target].end = time }
+        guard !wasComplete, Self.hasCompleteTiming(draft.lines[target.line]) else { return nil }
+        return draft.lines[target.line].id
+    }
+
+    static func hasCompleteTiming(_ line: LyricsDraft.Line) -> Bool {
+        !line.syllables.isEmpty && line.syllables.allSatisfy {
+            guard let start = $0.start, let end = $0.end else { return false }
+            return start.isFinite && end.isFinite && start >= 0 && end > start
+        }
     }
 
     func stepBack() {
         guard let target = lastStarted else { return }
+        historyEpoch += 1
         edit { draft in
             draft[target].start = nil
             draft[target].end = nil

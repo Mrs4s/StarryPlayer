@@ -39,7 +39,7 @@ let package = Package(
         .testTarget(name: "LyricsCoreTests", dependencies: ["LyricsCore"]),
         .testTarget(name: "LyricsProvidersTests", dependencies: ["LyricsProviders"]),
         .testTarget(name: "PluginHostTests", dependencies: ["PluginHost", "LyricsProviders", "LyricsCore", "MusicSources", "StarryCore", "PlaybackEngine"]),
-        .testTarget(name: "LyricsSyncTests", dependencies: ["LyricsSync", "AudioProcessing", "LyricsCore"]),
+        .testTarget(name: "LyricsSyncTests", dependencies: ["LyricsSync", "AudioProcessing", "LyricsCore"], resources: [.process("Fixtures")]),
         .testTarget(name: "LyricsUITests", dependencies: ["LyricsUI"]),
         .testTarget(name: "AudioProcessingTests", dependencies: ["AudioProcessing"]),
         .testTarget(name: "PlaybackEngineTests", dependencies: ["PlaybackEngine"]),

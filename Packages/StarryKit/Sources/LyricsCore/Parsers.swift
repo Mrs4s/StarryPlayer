@@ -177,7 +177,7 @@ public enum YRCParser: LyricsParser {
     }
 }
 
-/// AMLL TTML parser with syllables, singers, background vocals and timed romanization.
+/// AMLL TTML parser with syllables, singers, background vocals, timed romanization and ruby.
 /// Invalid zero timestamps inherit neighbouring timing rather than starting at zero.
 public enum TTMLParser: LyricsParser {
     public static let format: LyricsDocument.Format = .ttml
@@ -253,11 +253,23 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     private var transliterationBackground: [LyricSyllable] = []
     private var transliterations: [String: (main: [LyricSyllable], background: [LyricSyllable])] = [:]
 
-    private enum SpanKind { case syllable(start: TimeInterval, end: TimeInterval), placeholder, background, translation, roman, other }
+    private enum SpanKind {
+        case syllable(start: TimeInterval, end: TimeInterval), placeholder, background, translation, roman, other
+        case ruby(start: TimeInterval?, end: TimeInterval?), rubyBase, rubyTexts, rubyText(start: TimeInterval?, end: TimeInterval?)
+    }
     private var spanStack: [SpanKind] = []
     private var spanText = ""
     private var pendingWordBreak = false
     private var inBackground: Bool { spanStack.contains { if case .background = $0 { return true } else { return false } } }
+    private var inRuby: Bool { spanStack.contains { if case .ruby = $0 { return true } else { return false } } }
+
+    struct PendingRuby {
+        var text: String
+        var start: TimeInterval?
+        var end: TimeInterval?
+    }
+    private var rubyBase = ""
+    private var rubyTexts: [PendingRuby] = []
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
         let local = name.split(separator: ":").last.map(String.init) ?? name
@@ -320,6 +332,18 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             pendingWordBreak = false
         case "span":
             guard inParagraph else { return }
+            let begin = attributes["begin"].flatMap(TTMLParser.parseTime)
+            let end = attributes["end"].flatMap(TTMLParser.parseTime)
+            if inRuby {
+                switch Self.rubyRole(attributes) {
+                case "base": spanStack.append(.rubyBase)
+                case "textContainer": spanStack.append(.rubyTexts)
+                case "text": spanStack.append(.rubyText(start: begin, end: end))
+                default: spanStack.append(.other)
+                }
+                spanText = ""
+                return
+            }
             flushLooseText()
             if let top = spanStack.last, case .background = top, !spanText.isEmpty {
                 appendSyllable(text: spanText, start: nil, end: nil)
@@ -327,21 +351,27 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             }
             let role = attributes["ttm:role"] ?? attributes["role"] ?? ""
             let kind: SpanKind
-            switch role {
-            case "x-bg":
-                kind = .background
-                if let b = attributes["begin"].flatMap(TTMLParser.parseTime) {
-                    let e = attributes["end"].flatMap(TTMLParser.parseTime) ?? b
-                    if !isPlaceholder(begin: b, end: e) { backgroundSpan = (b, max(b, e)) }
-                }
-            case "x-translation": kind = .translation
-            case "x-roman": kind = .roman
-            default:
-                if let b = attributes["begin"].flatMap(TTMLParser.parseTime) {
-                    let e = attributes["end"].flatMap(TTMLParser.parseTime) ?? b
-                    kind = isPlaceholder(begin: b, end: e) ? .placeholder : .syllable(start: b, end: e)
-                } else {
-                    kind = .other
+            if Self.rubyRole(attributes) == "container" {
+                kind = .ruby(start: begin, end: end)
+                rubyBase = ""
+                rubyTexts = []
+            } else {
+                switch role {
+                case "x-bg":
+                    kind = .background
+                    if let b = begin {
+                        let e = end ?? b
+                        if !isPlaceholder(begin: b, end: e) { backgroundSpan = (b, max(b, e)) }
+                    }
+                case "x-translation": kind = .translation
+                case "x-roman": kind = .roman
+                default:
+                    if let b = begin {
+                        let e = end ?? b
+                        kind = isPlaceholder(begin: b, end: e) ? .placeholder : .syllable(start: b, end: e)
+                    } else {
+                        kind = .other
+                    }
                 }
             }
             spanStack.append(kind)
@@ -414,7 +444,16 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
                 let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if backgroundWords.isEmpty, !t.isEmpty { backgroundPlain = t }
             case .other:
-                if !text.isEmpty { appendSyllable(text: text, start: nil, end: nil) }
+                if !text.isEmpty, !inRuby { appendSyllable(text: text, start: nil, end: nil) }
+            case .rubyBase:
+                rubyBase += text
+            case .rubyText(let start, let end):
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { rubyTexts.append(PendingRuby(text: t, start: start, end: end)) }
+            case .rubyTexts:
+                break
+            case .ruby(let start, let end):
+                appendRuby(start: start, end: end)
             }
         case "p":
             guard inParagraph else { return }
@@ -442,6 +481,40 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         return KaraokeLine.make(id: 0, start: first.start, end: last.end, syllables: syllables)?.words
     }
 
+    private static func rubyRole(_ attributes: [String: String]) -> String? {
+        attributes["tts:ruby"] ?? attributes.first { $0.key == "ruby" || $0.key.hasSuffix(":ruby") }?.value
+    }
+
+    /// A ruby container is one syllable, its base: timed by the container, or else by its ruby
+    /// texts, whose own times are kept.
+    private func appendRuby(start: TimeInterval?, end: TimeInterval?) {
+        let base = rubyBase, texts = rubyTexts
+        rubyBase = ""
+        rubyTexts = []
+        guard !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let begin = start ?? texts.compactMap(\.start).min() else {
+            appendSyllable(text: base, start: nil, end: nil, ruby: texts)
+            return
+        }
+        let finish = max(begin, end ?? texts.compactMap { $0.end ?? $0.start }.max() ?? begin)
+        if isPlaceholder(begin: begin, end: finish) {
+            appendSyllable(text: base, start: nil, end: nil, placeholder: true, ruby: texts)
+        } else {
+            appendSyllable(text: base, start: begin, end: finish, ruby: texts)
+        }
+    }
+
+    /// Ruby texts keep their own times, within the syllable, when they all have one; otherwise
+    /// they share the syllable by length.
+    static func ruby(_ texts: [PendingRuby], start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
+        guard !texts.isEmpty else { return [] }
+        guard texts.allSatisfy({ $0.start != nil }) else { return LyricRuby.spread(texts.map(\.text), start: start, end: end) }
+        return texts.map { text in
+            let s = min(max(text.start!, start), end)
+            return LyricRuby(start: s, end: min(max(text.end ?? s, s), end), text: text.text)
+        }
+    }
+
     private func flushLooseText() {
         guard spanStack.isEmpty, !spanText.isEmpty else { return }
         appendSyllable(text: spanText, start: nil, end: nil)
@@ -455,13 +528,13 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         begin <= 0 && (end <= 0 || lineStart > 0 || (mainWords.last?.end ?? 0) > 0 || (backgroundEnd ?? 0) > 0)
     }
 
-    private func appendSyllable(text rawText: String, start: TimeInterval?, end: TimeInterval?, placeholder: Bool = false) {
+    private func appendSyllable(text rawText: String, start: TimeInterval?, end: TimeInterval?, placeholder: Bool = false, ruby: [PendingRuby] = []) {
         let text = rawText.replacingOccurrences(of: "\n", with: "")
         guard !text.isEmpty else { return }
         let bg = inBackground
         let s = start ?? (bg ? (backgroundEnd ?? backgroundSpan?.start ?? lineStart) : (mainWords.last?.end ?? lineStart))
         let e = end ?? (bg && start == nil && !placeholder ? max(s, backgroundSpan?.end ?? s) : s)
-        let syllable = LyricSyllable(start: s, end: e, text: text)
+        let syllable = LyricSyllable(start: s, end: e, text: text, ruby: Self.ruby(ruby, start: s, end: e))
         if placeholder {
             let index = (bg ? backgroundWords : mainWords).reduce(0) { $0 + $1.syllables.count }
             if bg { backgroundPlaceholders.insert(index) } else { mainPlaceholders.insert(index) }
@@ -565,6 +638,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             for k in i..<j {
                 result[k].start = start + Double(k - i) * step
                 result[k].end = result[k].start + step
+                result[k].ruby = LyricRuby.spread(result[k].ruby.map(\.text), start: result[k].start, end: result[k].end)
             }
             i = j
         }

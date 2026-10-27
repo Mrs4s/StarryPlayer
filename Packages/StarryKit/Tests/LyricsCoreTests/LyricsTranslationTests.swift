@@ -98,15 +98,85 @@ struct LyricsTranslationTests {
         var draft = draft()
         let original = draft
         let json = try response(rows(draft))
-        #expect(try LyricsTranslation.apply(json, to: &draft) == 2)
+        let changes = try LyricsTranslation.apply(json, to: &draft)
+        #expect(changes.translations == 2 && changes.romanizations == 0 && changes.rubies == 0)
+        #expect(changes.lines == [original.lines[1].id, original.lines[3].id])
         var expected = original
         expected.lines[1].translation = "译文 2"
         expected.lines[3].translation = "译文 3"
         #expect(draft == expected)
-        #expect(try LyricsTranslation.apply(json, to: &draft) == 0)
-        #expect(try LyricsTranslation.apply(json, to: &draft, overwrite: true) == 1)
+        #expect(try LyricsTranslation.apply(json, to: &draft).isEmpty)
+        #expect(try LyricsTranslation.apply(json, to: &draft, overwrite: true).translations == 1)
         expected.lines[0].translation = "译文 1"
         #expect(draft == expected)
+    }
+
+    private func japanese() -> LyricsDraft {
+        LyricsDraft(lines: [
+            .init(syllables: [.init(text: "所", start: 1, end: 1.4), .init(text: "詮", start: 1.4, end: 1.8, ruby: [.init(text: "せん")]),
+                              .init(text: "は", start: 1.8, end: 2), .init(text: "夢 ", start: 2, end: 2.5), .init(text: "だ")]),
+            .init(syllables: [.init(text: "Hello ", start: 3, end: 3.5), .init(text: "world", start: 3.5, end: 4)], romanization: "kept"),
+        ])
+    }
+
+    private func readings(_ draft: LyricsDraft, ruby: [[String]], romanization: [String]) throws -> String {
+        let rows: [[String: Any]] = draft.lines.enumerated().map { index, line in
+            var row: [String: Any] = ["id": line.id.uuidString, "source": line.text, "romanization": romanization[index]]
+            if !ruby[index].isEmpty {
+                row["syllables"] = zip(line.syllables, ruby[index]).map { ["text": $0.text.trimmingCharacters(in: .whitespaces), "ruby": $1] }
+            }
+            return row
+        }
+        return try response(rows)
+    }
+
+    @Test func promptsForRomanizationAndRubyWithoutTranslating() throws {
+        let draft = japanese()
+        let prompt = try LyricsTranslation.prompt(for: draft, fields: [.romanization, .ruby], language: "", rubyScript: "片假名")
+        let start = try #require(prompt.firstIndex(of: "{"))
+        let payload = try #require(try JSONSerialization.jsonObject(with: Data(prompt[start...].utf8)) as? [String: Any])
+        let rows = try #require(payload["lines"] as? [[String: Any]])
+        #expect(rows.allSatisfy { $0["translation"] == nil && $0["romanization"] as? String == "" })
+        let syllables = try #require(rows[0]["syllables"] as? [[String: Any]])
+        #expect(syllables.compactMap { $0["text"] as? String } == ["所", "詮", "は", "夢", "だ"])
+        #expect(rows[1]["syllables"] == nil)
+        #expect(throws: LyricsTranslation.ValidationError.noFields) { try LyricsTranslation.prompt(for: draft, fields: []) }
+        #expect(throws: LyricsTranslation.ValidationError.noLanguage) { try LyricsTranslation.prompt(for: draft, fields: [.translation, .ruby], language: " ") }
+    }
+
+    @Test func appliesRomanizationAndRubyToBlanksOnly() throws {
+        var draft = japanese()
+        let original = draft
+        let json = try readings(draft, ruby: [["しょ", "ぜん", "わ", "ゆめ", "だ"], []], romanization: ["shosen wa yume da", "  "])
+        let entries = try LyricsTranslation.parse(json, for: draft, fields: [.romanization, .ruby])
+        #expect(entries.map(\.translation) == [nil, nil])
+        #expect(entries.map(\.ruby) == [["しょ", "ぜん", "わ", "ゆめ", "だ"], nil])
+        let changes = LyricsTranslation.apply(entries, to: &draft)
+        #expect(changes.romanizations == 1 && changes.rubies == 2 && changes.translations == 0)
+        #expect(changes.lines == [original.lines[0].id])
+        #expect(draft.lines[0].romanization == "shosen wa yume da")
+        #expect(draft.lines[0].syllables.map { $0.ruby?.map(\.text) } == [["しょ"], ["せん"], nil, ["ゆめ"], nil])
+        #expect(draft.lines[1] == original.lines[1])
+        let replaced = try LyricsTranslation.apply(json, to: &draft, fields: [.romanization, .ruby], overwrite: true)
+        #expect(replaced.rubies == 1 && replaced.romanizations == 0)
+        #expect(draft.lines[0].syllables[1].ruby == [.init(text: "ぜん")])
+        #expect(try LyricsTranslation.parse(json, for: draft, fields: [.ruby]).map(\.romanization) == [nil, nil])
+    }
+
+    @Test func rejectsChangedSyllablesAndMultilineReadings() throws {
+        let draft = japanese()
+        let fields: LyricsTranslation.Fields = [.romanization, .ruby]
+        var json = try readings(draft, ruby: [["しょ", "せん", "", "ゆめ"], []], romanization: ["", ""])
+        #expect(throws: LyricsTranslation.ValidationError.changedSyllables(1)) { try LyricsTranslation.parse(json, for: draft, fields: fields) }
+        json = try readings(draft, ruby: [[], []], romanization: ["", ""])
+        #expect(throws: LyricsTranslation.ValidationError.changedSyllables(1)) { try LyricsTranslation.parse(json, for: draft, fields: fields) }
+        json = try readings(draft, ruby: [["しょ", "せ\nん", "", "", ""], []], romanization: ["", ""])
+        #expect(throws: LyricsTranslation.ValidationError.multilineRuby(1)) { try LyricsTranslation.parse(json, for: draft, fields: fields) }
+        json = try readings(draft, ruby: [["", "", "", "", ""], []], romanization: ["", "hello\nworld"])
+        #expect(throws: LyricsTranslation.ValidationError.multilineRomanization(2)) { try LyricsTranslation.parse(json, for: draft, fields: fields) }
+        json = try readings(draft, ruby: [["", "", "", "", ""], []], romanization: ["", ""])
+        #expect(throws: LyricsTranslation.ValidationError.emptyTranslation(1)) { try LyricsTranslation.parse(json, for: draft, fields: [.translation, .ruby]) }
+        #expect(throws: LyricsTranslation.ValidationError.noFields) { try LyricsTranslation.parse(json, for: draft, fields: []) }
     }
 
     @Test func aLateValidationFailureCannotPartiallyApplyAndTimingEditsAreAllowed() throws {
@@ -120,7 +190,7 @@ struct LyricsTranslationTests {
         #expect(draft == original)
         let json = try response(rows(draft))
         draft.lines[0].syllables[0].start = 0.5
-        #expect(try LyricsTranslation.apply(json, to: &draft, overwrite: true) == 3)
+        #expect(try LyricsTranslation.apply(json, to: &draft, overwrite: true).translations == 3)
         #expect(draft.lines[0].syllables[0].start == 0.5)
         draft.lines[3].syllables[0].text = "edited"
         let edited = draft

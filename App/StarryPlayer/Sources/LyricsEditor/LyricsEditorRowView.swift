@@ -6,6 +6,7 @@ import QuartzCore
 struct LyricsEditorLineLayout {
     struct Input: Equatable {
         var texts: [String]
+        var rubies: [String]
         var translation: String
         var romanization: String
         var badge: String?
@@ -16,6 +17,7 @@ struct LyricsEditorLineLayout {
 
         init(line: LyricsDraft.Line, width: CGFloat, paragraph: Bool, editing: Bool) {
             texts = line.syllables.map(\.text)
+            rubies = line.syllables.map { ($0.ruby ?? []).map(\.text).joined() }
             translation = line.translation
             romanization = line.romanization
             badge = line.isBackground ? "背景" : line.singer == .secondary ? "对唱" : line.singer == .duet ? "合唱" : nil
@@ -33,10 +35,16 @@ struct LyricsEditorLineLayout {
     let romanization: NSRect?
     let editor: NSRect
     let height: CGFloat
+    /// Room over the text of every chip for ruby, when any syllable of the line has some.
+    let rubyBand: CGFloat
     var top: CGFloat { input.paragraph ? 19 : 7 }
     var leading: CGFloat { input.background ? 70 : 46 }
-    var play: NSRect { NSRect(x: input.width - 122, y: top + 2, width: 26, height: 26) }
-    var more: NSRect { NSRect(x: input.width - 94, y: top + 2, width: 26, height: 26) }
+    /// Where the first row of chips has its text, which the row's number and buttons line up with.
+    var textTop: CGFloat { top + rubyBand }
+    var play: NSRect { NSRect(x: input.width - 122, y: textTop + 2, width: 26, height: 26) }
+    var more: NSRect { NSRect(x: input.width - 94, y: textTop + 2, width: 26, height: 26) }
+
+    static func rubyFont(background: Bool) -> NSFont { .systemFont(ofSize: background ? 9 : 10, weight: .medium) }
 
     @MainActor init(input: Input) {
         self.input = input
@@ -44,21 +52,26 @@ struct LyricsEditorLineLayout {
         let leading: CGFloat = input.background ? 70 : 46
         let available = max(26, input.width - leading - 132)
         let font = NSFont.systemFont(ofSize: input.background ? 15 : 17, weight: .medium)
-        let chipHeight: CGFloat = input.background ? 26 : 30
+        let rubyFont = Self.rubyFont(background: input.background)
+        let band: CGFloat = !input.editing && input.rubies.contains { !$0.isEmpty } ? ceil(rubyFont.ascender - rubyFont.descender) : 0
+        rubyBand = band
+        let chipHeight: CGFloat = (input.background ? 26 : 30) + band
         var x = leading
         var y = top
         var badgeRect: NSRect?
         if let badge = input.badge, !input.editing {
             let width = ceil((badge as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 10.5, weight: .semibold)]).width) + 12
-            badgeRect = NSRect(x: x, y: y + (chipHeight - 20) / 2, width: width, height: 20)
+            badgeRect = NSRect(x: x, y: y + band + (chipHeight - band - 20) / 2, width: width, height: 20)
             x += width + 6
         }
         badge = badgeRect
         var frames: [NSRect] = []
         if !input.editing {
-            for text in input.texts {
+            for (text, ruby) in zip(input.texts, input.rubies) {
                 let label = text.trimmingCharacters(in: .whitespaces)
-                let width = min(available, max(26, ceil((label as NSString).size(withAttributes: [.font: font]).width) + 12))
+                let labelWidth = (label as NSString).size(withAttributes: [.font: font]).width
+                let rubyWidth = (ruby as NSString).size(withAttributes: [.font: rubyFont]).width
+                let width = min(available, max(26, ceil(max(labelWidth, rubyWidth)) + 12))
                 if x > leading, x + width > leading + available {
                     x = leading
                     y += chipHeight + 4
@@ -69,7 +82,7 @@ struct LyricsEditorLineLayout {
         }
         chips = frames
         editor = NSRect(x: leading, y: top, width: available, height: 30)
-        y += input.editing ? 50 : max(chipHeight, 30)
+        y += input.editing ? 50 : max(chipHeight, 30 + band)
         func annotation(_ text: String, font: NSFont) -> NSRect? {
             guard !text.isEmpty else { return nil }
             let measured = (text as NSString).boundingRect(with: NSSize(width: available, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font])
@@ -116,6 +129,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     private var field: NSTextField?
     private var endingEdit = false
     private var labels: [NSAttributedString] = []
+    private var rubyLabels: [NSAttributedString?] = []
     private var sweeps: [(clip: CALayer, fill: CALayer)] = []
     private let pulseLayer = CAShapeLayer()
     private var accessible: [LyricsEditorActionElement] = []
@@ -160,6 +174,12 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             labels = line.syllables.map {
                 NSAttributedString(string: $0.text.trimmingCharacters(in: .whitespaces), attributes: [
                     .font: font, .foregroundColor: NSColor(theme.onSurface).withAlphaComponent($0.isTimed ? 0.95 : 0.5)
+                ])
+            }
+            let rubyFont = LyricsEditorLineLayout.rubyFont(background: line.isBackground)
+            rubyLabels = zip(line.syllables, layout.input.rubies).map { syllable, ruby in
+                ruby.isEmpty ? nil : NSAttributedString(string: ruby, attributes: [
+                    .font: rubyFont, .foregroundColor: NSColor(theme.onSurfaceVariant).withAlphaComponent(syllable.isTimed ? 0.9 : 0.5)
                 ])
             }
             for sweep in sweeps { sweep.clip.removeFromSuperlayer() }
@@ -216,9 +236,9 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
         }
         if active {
             accent.setFill()
-            NSBezierPath(roundedRect: NSRect(x: line.isBackground ? 26 : 2, y: layout.top + 6, width: 3, height: 18), xRadius: 1.5, yRadius: 1.5).fill()
+            NSBezierPath(roundedRect: NSRect(x: line.isBackground ? 26 : 2, y: layout.textTop + 6, width: 3, height: 18), xRadius: 1.5, yRadius: 1.5).fill()
         }
-        text("\(index + 1)", rect: NSRect(x: 10 + (line.isBackground ? 24 : 0), y: layout.top + 8, width: 26, height: 16), font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: caret != nil ? accent : secondary.withAlphaComponent(0.7), alignment: .right)
+        text("\(index + 1)", rect: NSRect(x: 10 + (line.isBackground ? 24 : 0), y: layout.textTop + 8, width: 26, height: 16), font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: caret != nil ? accent : secondary.withAlphaComponent(0.7), alignment: .right)
         if layout.input.editing {
             accent.withAlphaComponent(0.5).setStroke()
             NSBezierPath(roundedRect: layout.editor, xRadius: Radius.menu, yRadius: Radius.menu).stroke()
@@ -254,7 +274,13 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
                 NSGraphicsContext.saveGraphicsState()
                 rect.insetBy(dx: 4, dy: 0).clip()
                 let label = labels[s]
-                label.draw(at: NSPoint(x: rect.minX + 6, y: rect.midY - label.size().height / 2))
+                let textMidY = rect.minY + layout.rubyBand + (rect.height - layout.rubyBand) / 2
+                if let ruby = rubyLabels[s] {
+                    ruby.draw(at: NSPoint(x: max(rect.minX + 6, rect.midX - ruby.size().width / 2), y: rect.minY + 3))
+                    label.draw(at: NSPoint(x: max(rect.minX + 6, rect.midX - label.size().width / 2), y: textMidY - label.size().height / 2))
+                } else {
+                    label.draw(at: NSPoint(x: rect.minX + 6, y: textMidY - label.size().height / 2))
+                }
                 NSGraphicsContext.restoreGraphicsState()
             }
         }
@@ -266,7 +292,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             text("▶", rect: layout.play.insetBy(dx: 7, dy: 5), font: .systemFont(ofSize: 11), color: foreground)
             text("•••", rect: layout.more.insetBy(dx: 4, dy: 5), font: .systemFont(ofSize: 11, weight: .semibold), color: foreground)
         }
-        text(LyricsEditorFormat.time(line.timedRange?.lowerBound), rect: NSRect(x: layout.input.width - 68, y: layout.top + 8, width: 58, height: 16), font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: secondary.withAlphaComponent(line.timedRange == nil ? 0.4 : 0.8), alignment: .right)
+        text(LyricsEditorFormat.time(line.timedRange?.lowerBound), rect: NSRect(x: layout.input.width - 68, y: layout.textTop + 8, width: 58, height: 16), font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: secondary.withAlphaComponent(line.timedRange == nil ? 0.4 : 0.8), alignment: .right)
     }
 
     private func text(_ value: String, rect: NSRect, font: NSFont, color: NSColor, alignment: NSTextAlignment = .left, wrap: Bool = false) {
@@ -409,7 +435,8 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
         accessible = layout.chips.enumerated().map { s, rect in
             let syllable = line.syllables[s]
             let state = selected.contains(s) ? "，已选中" : ""
-            return actionElement(label: "\(syllable.text)，\(LyricsEditorFormat.time(syllable.start, digits: 3))\(state)", rect: rect) { [weak self] in self?.select?(s) }
+            let ruby = layout.input.rubies[s].isEmpty ? "" : "，注音 \(layout.input.rubies[s])"
+            return actionElement(label: "\(syllable.text)\(ruby)，\(LyricsEditorFormat.time(syllable.start, digits: 3))\(state)", rect: rect) { [weak self] in self?.select?(s) }
         }
         accessible.append(actionElement(label: "编辑这一行", rect: layout.editor) { [weak self] in self?.edit?() })
         accessible.append(actionElement(label: "从这一行播放", rect: layout.play) { [weak self] in self?.play?() })

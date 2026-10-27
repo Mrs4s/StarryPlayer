@@ -9,6 +9,7 @@ struct LyricsEditorTimeline: View {
     let clock: LyricsEditorClock
     let viewport: LyricsTimelineViewport
     var manageTracks: () -> Void
+    var alignLine: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     @AppStorage(LyricsEditorTimeline.gainKey) private var gain = Double(Spectrogram.defaultGain)
@@ -61,6 +62,15 @@ struct LyricsEditorTimeline: View {
                 HStack(spacing: 6) {
                     tracksMenu
                     if onSpectrogram {
+                        Button(action: alignLine) {
+                            Label("自动排字", systemImage: "wand.and.stars")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(accent)
+                                .padding(.horizontal, 8)
+                                .frame(height: 22)
+                        }
+                        .buttonStyle(.plain)
+                        .help("自动对齐当前行，或校准已有逐字时间")
                         onsetSwitch
                         if onsetHints { sensitivityMenu }
                         vocalsSwitch
@@ -77,8 +87,11 @@ struct LyricsEditorTimeline: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .onChange(of: lineIndex) { _, line in
-            if viewport.interactionRange == nil, !viewport.keepsSpan(movingTo: line) { viewport.manual = nil }
+        .onAppear {
+            if let visible = viewport.range(caretLine: lineIndex, in: session) { viewport.hold(visible) }
+        }
+        .onChange(of: lineIndex) { previous, line in
+            viewport.selectionChanged(from: previous, to: line, in: session)
         }
         .task(id: vocalsOnly && audio.isPrecise) {
             if vocalsOnly, audio.isPrecise { audio.prepareVocals() }

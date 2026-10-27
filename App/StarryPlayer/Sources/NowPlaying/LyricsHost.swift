@@ -88,6 +88,7 @@ extension LyricsSpecs {
         specs.blur.maximum = CGFloat(max(settings.blurMax, settings.blurRadius))
         specs.showTranslation = settings.showTranslation
         specs.showRomanization = settings.showRomanization
+        specs.showRuby = settings.showRuby
         specs.hoverHighlightEnabled = settings.hoverHighlight
         if settings.inactiveOpacity > 0 {
             specs.deselectedTextAlpha = CGFloat(settings.inactiveOpacity)

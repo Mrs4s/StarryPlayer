@@ -42,6 +42,22 @@ struct AppSettingsTests {
         #expect(partial.menuBarLyrics.maxWidth == 300)
     }
 
+    @Test func lyricsSettingsSavedBeforeRubyKeepTheirValues() throws {
+        var settings = AppSettings()
+        settings.lyrics.showRomanization = true
+        settings.lyrics.alignment = .center
+        settings.lyrics.fontSize = 40
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        var lyrics = try #require(object["lyrics"] as? [String: Any])
+        lyrics["showRuby"] = nil
+        object["lyrics"] = lyrics
+        let saved = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(saved.lyrics.showRomanization && saved.lyrics.alignment == .center && saved.lyrics.fontSize == 40)
+        #expect(saved.lyrics.showRuby)
+        settings.lyrics.showRuby = false
+        #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
+    }
+
     @Test func languagePreferencesRoundTripAndTolerateUnknownValues() throws {
         for language in AppSettings.Language.allCases {
             var settings = AppSettings()

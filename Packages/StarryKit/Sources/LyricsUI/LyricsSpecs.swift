@@ -73,6 +73,10 @@ public struct LyricsSpecs: Sendable, Equatable {
     public var romanizationBackgroundVocalsFontSize: CGFloat = 20
     public var romanizationLineHeightAdjustment: CGFloat = 5
     public var romanizationMinWordSpacing: CGFloat = 5
+    public var rubyFontSize: CGFloat = 24
+    public var rubyBackgroundVocalsFontSize: CGFloat = 16
+    public var rubyLineHeightAdjustment: CGFloat = -4
+    public var rubyMinSpacing: CGFloat = 4
     public var fontLeading: CGFloat? = 52
     public var lineSpacing: CGFloat = 40
     public var paragraphSpacing: CGFloat = 39
@@ -143,6 +147,7 @@ public struct LyricsSpecs: Sendable, Equatable {
 
     public var showTranslation = true
     public var showRomanization = false
+    public var showRuby = true
 
     public init() {}
 
@@ -157,6 +162,8 @@ public struct LyricsSpecs: Sendable, Equatable {
         s.translationBackgroundVocalsFontSize = 14
         s.romanizationFontSize = 18
         s.romanizationBackgroundVocalsFontSize = 15
+        s.rubyFontSize = 14
+        s.rubyBackgroundVocalsFontSize = 12
         s.fontLeading = nil
         s.lineSpacing = 25
         s.backgroundVocalsTopSpacing = 15
@@ -184,6 +191,10 @@ public struct LyricsSpecs: Sendable, Equatable {
         s.romanizationBackgroundVocalsFontSize *= k
         s.romanizationLineHeightAdjustment *= k
         s.romanizationMinWordSpacing *= k
+        s.rubyFontSize *= k
+        s.rubyBackgroundVocalsFontSize *= k
+        s.rubyLineHeightAdjustment *= k
+        s.rubyMinSpacing *= k
         s.fontLeading = fontLeading.map { $0 * k }
         s.lineSpacing *= k
         s.paragraphSpacing *= k
@@ -229,6 +240,8 @@ public struct LyricsSpecs: Sendable, Equatable {
     public var translationBackgroundVocalsFont: NSFont { .systemFont(ofSize: translationBackgroundVocalsFontSize, weight: .semibold) }
     public var romanizationFont: NSFont { .systemFont(ofSize: romanizationFontSize, weight: .bold) }
     public var romanizationBackgroundVocalsFont: NSFont { .systemFont(ofSize: romanizationBackgroundVocalsFontSize, weight: .bold) }
+    public var rubyFont: NSFont { .systemFont(ofSize: rubyFontSize, weight: .semibold) }
+    public var rubyBackgroundVocalsFont: NSFont { .systemFont(ofSize: rubyBackgroundVocalsFontSize, weight: .semibold) }
 
     public func blurRadius(distance: Int, beforeFirstLine: Bool = false) -> CGFloat {
         guard blur.mode != .off else { return 0 }

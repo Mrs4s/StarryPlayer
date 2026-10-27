@@ -18,6 +18,20 @@ public struct VocalOnset: Sendable, Equatable {
 /// unvoiced consonants; a following vowel can reinforce their earlier start.
 /// Broad spectral-envelope changes also reinforce boundaries between connected vowels.
 public enum VocalOnsetDetector {
+    public struct Analysis: Sendable {
+        public var onsets: [VocalOnset]
+        public var activity: VocalActivity
+        public var frameDuration: TimeInterval
+        public var centerOffset: TimeInterval
+
+        public init(onsets: [VocalOnset], activity: VocalActivity, frameDuration: TimeInterval, centerOffset: TimeInterval) {
+            self.onsets = onsets
+            self.activity = activity
+            self.frameDuration = frameDuration
+            self.centerOffset = centerOffset
+        }
+    }
+
     public enum Sensitivity: String, CaseIterable, Sendable {
         case low, medium, high
 
@@ -33,17 +47,27 @@ public enum VocalOnsetDetector {
     /// Supply already separated vocals. Chunked reads bound PCM memory; cancellation is
     /// checked between chunks. Times refer to the original audio, independently of zoom.
     public static func analyze(file: URL) throws -> [VocalOnset] {
+        try analysis(file: file).onsets
+    }
+
+    /// Retains activity for phrase endings and pauses. A range limits audio reads, while
+    /// all timestamps and frame indexes continue to refer to the original recording.
+    public static func analysis(file: URL, range: ClosedRange<TimeInterval>? = nil) throws -> Analysis {
         try Task.checkCancellation()
         let analyzer = try VocalActivityAnalyzer(file: file, model: nil, suppressVibrato: true)
-        for start in stride(from: 0.0, to: analyzer.duration, by: 10) {
+        let lower = max(0, (range?.lowerBound ?? 0) - 0.2)
+        let upper = min(analyzer.duration, (range?.upperBound ?? analyzer.duration) + 0.2)
+        guard lower.isFinite, upper.isFinite, upper > lower else { throw VocalActivityError.unsupportedFormat }
+        for start in stride(from: lower, to: upper, by: 10) {
             try Task.checkCancellation()
-            try analyzer.analyze(start...min(start + 10, analyzer.duration))
+            try analyzer.analyze(start...min(start + 10, upper))
         }
         try Task.checkCancellation()
         let result = candidates(in: analyzer.activity, frameDuration: analyzer.frameDuration,
                                 centerOffset: analyzer.frameCenterOffset, duration: analyzer.duration)
         try Task.checkCancellation()
-        return result
+        return Analysis(onsets: result, activity: analyzer.activity, frameDuration: analyzer.frameDuration,
+                        centerOffset: analyzer.frameCenterOffset)
     }
 
     static func candidates(in activity: VocalActivity, frameDuration: TimeInterval,

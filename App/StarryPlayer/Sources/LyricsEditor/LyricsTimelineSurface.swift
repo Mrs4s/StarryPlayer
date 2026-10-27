@@ -621,7 +621,7 @@ final class LyricsTimelineView: NSView {
     private func placeAtPlayhead(_ edit: LyricsTimelinePlacement) {
         guard let c = configuration else { return }
         guard c.canPlay else { return c.session.flash("音频载入后才能放到播放头") }
-        if edit.commit(at: c.clock.time, in: c.session) { c.viewport.manual = nil }
+        if edit.commit(at: c.clock.time, in: c.session) { c.viewport.hold(c.range) }
     }
 
     // MARK: Pointer
@@ -653,7 +653,7 @@ final class LyricsTimelineView: NSView {
                                                                        range: c.range, width: bounds.width) {
             drag = Drag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: !event.modifierFlags.contains(.option))
             c.viewport.interactionRange = c.range
-            if c.session.caret?.line != block.position.line { c.viewport.manual = nil }
+            c.viewport.hold(c.range)
             c.session.caret = block.position
             needsDisplay = true
         } else if c.canPlay {
@@ -683,10 +683,13 @@ final class LyricsTimelineView: NSView {
             setGuide(nil)
             if !placement.moved {
                 if event.clickCount >= 2 { placeAtPlayhead(placement.edit) }
-                else { c.session.select(.init(line: placement.edit.line, syllable: placement.edit.run.lowerBound)) }
+                else {
+                    c.viewport.hold(c.range)
+                    c.session.select(.init(line: placement.edit.line, syllable: placement.edit.run.lowerBound))
+                }
             } else if let time = placement.time, placement.edit.commit(at: time, edges: placement.activeEdges, onsets: placement.activeOnsets,
                                                                         lane: placement.lane, in: c.session) {
-                c.viewport.hold(c.range, line: placement.edit.line)
+                c.viewport.hold(c.range)
             }
         } else if let drag {
             self.drag = nil
@@ -801,14 +804,18 @@ final class LyricsTimelineView: NSView {
             LyricsEditorActionElement(host: self,
                                       label: "\(block.syllable.text)，\(LyricsEditorFormat.time(block.syllable.start, digits: 3)) 至 \(LyricsEditorFormat.time(block.syllable.end, digits: 3))",
                                       rect: block.rect) { [weak self] in
-                self?.configuration?.session.caret = block.position
+                guard let c = self?.configuration else { return }
+                c.viewport.hold(c.range)
+                c.session.caret = block.position
             }
         }
         let visible = NSRect(x: Self.trayLeading, y: trayTop, width: max(bounds.width - Self.trayLeading, 0), height: Self.trayHeight)
         for item in tray where trayFrame(item.rect).intersects(visible) {
             accessible.append(LyricsEditorActionElement(host: self, label: "暂存区，第 \(item.line + 1) 行：\(item.texts.joined(separator: " "))",
                                                         rect: trayFrame(item.rect)) { [weak self] in
-                self?.configuration?.session.select(.init(line: item.line, syllable: item.run.lowerBound))
+                guard let c = self?.configuration else { return }
+                c.viewport.hold(c.range)
+                c.session.select(.init(line: item.line, syllable: item.run.lowerBound))
             })
         }
     }

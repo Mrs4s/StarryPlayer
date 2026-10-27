@@ -20,6 +20,53 @@ struct LyricsEditorNativeTests {
         try #require(LyricsTimelineAdjustment(session: session, position: .init(line: 0, syllable: 1), part: part, range: 0...10, width: 1_000))
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func selectingAnotherTimelineLineKeepsTheRangeAndZoom(manuallyPositioned: Bool, usingAccessibility: Bool) throws {
+        let audio = LyricsEditorAudio()
+        let track = Track(id: TrackRef(source: .local, id: "viewport-test"), title: "Viewport", artists: [], album: nil, duration: 30)
+        let session = LyricsEditorSession(track: track, draft: LyricsDraft(lines: [
+            .init(syllables: [.init(text: "一", start: 1, end: 2)]),
+            .init(syllables: [.init(text: "二", start: 3, end: 4)]),
+        ]))
+        let original = session.draft
+        let viewport = LyricsTimelineViewport()
+        if manuallyPositioned { viewport.manual = 0...8 }
+        let visible = try #require(viewport.range(caretLine: 0, in: session))
+        let view = LyricsTimelineView(frame: NSRect(x: 0, y: 0, width: 1_000, height: 180))
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { view.disconnect(); window.close(); audio.stop() }
+        view.configure(LyricsTimelineSurface(session: session, audio: audio, clock: LyricsEditorClock(), viewport: viewport,
+                                             revision: session.revision, caret: session.caret, range: visible,
+                                             theme: .darkBase, accent: .white, onSpectrogram: true, canPlay: false))
+        view.layoutSubtreeIfNeeded()
+        let target = try #require(view.accessibilityChildren()?.compactMap { $0 as? LyricsEditorActionElement }
+            .first { $0.accessibilityLabel()?.hasPrefix("二，") == true })
+        if usingAccessibility {
+            #expect(target.accessibilityPerformPress())
+            viewport.selectionChanged(from: 0, to: 1, in: session)
+        } else {
+            let rect = window.convertFromScreen(target.accessibilityFrame())
+            let location = NSPoint(x: rect.midX, y: rect.midY)
+            let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0,
+                                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0.1,
+                                                     windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
+            view.mouseDown(with: down)
+            viewport.selectionChanged(from: 0, to: 1, in: session)
+            #expect(viewport.range(caretLine: 1, in: session) == visible)
+            view.mouseUp(with: up)
+        }
+        #expect(session.caret?.line == 1)
+        #expect(viewport.interactionRange == nil)
+        #expect(viewport.range(caretLine: 1, in: session) == visible)
+        #expect(session.draft == original)
+        session.selectLine(0)
+        viewport.selectionChanged(from: 1, to: 0, in: session)
+        #expect(viewport.manual == visible)
+    }
+
     @Test func draggingSharedEdgesKeepsBothSyllablesJoinedAndAtLeastTwentyMillisecondsLong() throws {
         let session = session()
         let start = try adjustment(session, part: .start)
@@ -114,6 +161,33 @@ struct LyricsEditorNativeTests {
         }
         #expect(layout.translation!.maxY < layout.romanization!.minY)
         #expect(layout.romanization!.maxY < layout.height)
+    }
+
+    @Test func rubySitsInABandOverTheChipsThatTheRowLinesUpWith() {
+        let plain = LyricsDraft.Line(syllables: [.init(text: "所"), .init(text: "詮")])
+        var annotated = plain
+        annotated.syllables[0].ruby = [.init(text: "しょ")]
+        annotated.syllables[1].ruby = [.init(text: "せ"), .init(text: "ん")]
+        let a = LyricsEditorLineLayout(input: .init(line: plain, width: 500, paragraph: false, editing: false))
+        let b = LyricsEditorLineLayout(input: .init(line: annotated, width: 500, paragraph: false, editing: false))
+        #expect(b.input.rubies == ["しょ", "せん"])
+        #expect(a.rubyBand == 0 && b.rubyBand > 0)
+        #expect(b.chips[0].height == a.chips[0].height + b.rubyBand)
+        #expect(b.chips[0].width > a.chips[0].width)
+        #expect(b.height == a.height + b.rubyBand)
+        #expect(b.play.minY == a.play.minY + b.rubyBand)
+        #expect(LyricsEditorLineLayout(input: .init(line: annotated, width: 500, paragraph: false, editing: true)).rubyBand == 0)
+    }
+
+    @Test func rubyIsClearedAndRestoredByUndo() {
+        let session = session()
+        let at = LyricsDraft.Position(line: 0, syllable: 1)
+        session.edit { $0.setRuby("に", at: at) }
+        #expect(session.draft[at].ruby == [.init(text: "に")])
+        session.clearRuby([at])
+        #expect(session.draft[at].ruby == nil)
+        session.undo()
+        #expect(session.draft[at].ruby == [.init(text: "に")])
     }
 
     @Test func leavingAnEditorDoesNotCancelAnotherRowsEditingSession() {

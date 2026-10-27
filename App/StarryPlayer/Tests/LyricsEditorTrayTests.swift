@@ -141,17 +141,6 @@ struct LyricsEditorTrayTests {
         #expect(body.preview(translation: 0, lane: .track(nil)).track == track.id)
     }
 
-    @Test func aDropKeepsTheTimelineSpanForTheOneCaretMoveItCauses() {
-        let viewport = LyricsTimelineViewport()
-        viewport.hold(20...30, line: 3)
-        #expect(viewport.manual == 20...30)
-        #expect(viewport.keepsSpan(movingTo: 3))
-        #expect(!viewport.keepsSpan(movingTo: 3))
-        viewport.hold(20...30, line: 3)
-        #expect(!viewport.keepsSpan(movingTo: 4))
-        #expect(!viewport.keepsSpan(movingTo: 3))
-    }
-
     @Test func tracksTakeFreeNamesAndRemovingOneReturnsItsLines() {
         let session = session([.init(syllables: [.init(text: "a", start: 1, end: 2)])])
         let first = session.addTrack(moving: session.draft.lines[0].id)

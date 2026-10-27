@@ -35,7 +35,7 @@ final class LyricsEditorAudio {
     private var duetHintsB: [VocalOnset] = []
     private var duetHintsAll: [VocalOnset] = []
 
-    enum HintVoice: String, CaseIterable {
+    enum HintVoice: String, CaseIterable, Sendable {
         case all, a, b
         var title: String {
             switch self {
@@ -202,6 +202,66 @@ final class LyricsEditorAudio {
     }
 
     // MARK: Onset hints
+
+    enum AlignmentFailure: Error, LocalizedError {
+        case unavailable, vocals(String)
+        var errorDescription: String? {
+            switch self {
+            case .unavailable: "当前音频还不能分析，请等待解码完成后重试。"
+            case .vocals(let message): message
+            }
+        }
+    }
+
+    struct AIAlignmentSource: Sendable {
+        var file: URL
+        var identity: String
+    }
+
+    var aiAlignmentIdentity: String { "\(generation):\(vocalRequestID.uuidString)" }
+
+    /// Cancellation preserves vocals shared with playback and onset hints.
+    func aiAlignmentSource() async throws -> AIAlignmentSource {
+        try Task.checkCancellation()
+        guard isPrecise else { throw AlignmentFailure.unavailable }
+        let expected = generation
+        prepareVocals()
+        await vocalsTask?.value
+        try Task.checkCancellation()
+        guard generation == expected else { throw CancellationError() }
+        if case .failed(let message) = vocals { throw AlignmentFailure.vocals(message) }
+        guard vocals == .ready, let vocalsFile, FileManager.default.fileExists(atPath: vocalsFile.path) else {
+            throw AlignmentFailure.unavailable
+        }
+        return AIAlignmentSource(file: vocalsFile, identity: aiAlignmentIdentity)
+    }
+
+    func alignmentAnalysis(in range: ClosedRange<TimeInterval>, voice: HintVoice = .all) async throws -> VocalOnsetDetector.Analysis {
+        try Task.checkCancellation()
+        guard isPrecise else { throw AlignmentFailure.unavailable }
+        let currentGeneration = generation
+        prepareVocals()
+        await vocalsTask?.value
+        try Task.checkCancellation()
+        guard generation == currentGeneration else { throw CancellationError() }
+        if case .failed(let message) = vocals { throw AlignmentFailure.vocals(message) }
+        guard vocals == .ready, var file = vocalsFile else { throw AlignmentFailure.unavailable }
+        let requestID = vocalRequestID
+        if voice != .all {
+            prepareDuetOnsets()
+            await duetTask?.value
+            try Task.checkCancellation()
+            if case .failed(let message) = duetStatus { throw AlignmentFailure.vocals(message) }
+            guard duetStatus == .ready, let duetFiles else { throw AlignmentFailure.unavailable }
+            file = voice == .a ? duetFiles.first : duetFiles.second
+        }
+        let source = file
+        let worker = Task.detached(priority: .userInitiated) { try VocalOnsetDetector.analysis(file: source, range: range) }
+        let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+        guard generation == currentGeneration, vocalRequestID == requestID else { throw CancellationError() }
+        try Task.checkCancellation()
+        return result
+    }
 
     /// Hints always use isolated vocals, even when the displayed spectrum is the mix.
     func prepareOnsets() {

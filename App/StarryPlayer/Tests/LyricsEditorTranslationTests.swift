@@ -29,7 +29,7 @@ struct LyricsEditorTranslationTests {
         let caret = session.caret
         let revision = session.revision
         let json = try response(session)
-        #expect(try session.applyTranslation(json, overwrite: true) == 2)
+        #expect(try session.applyTranslation(json, overwrite: true).translations == 2)
         var expected = before
         expected.lines[0].translation = "译：Hello world"
         expected.lines[1].translation = "译：Hello"
@@ -49,7 +49,7 @@ struct LyricsEditorTranslationTests {
         session.redo()
         #expect(session.draft == expected)
         let completedRevision = session.revision
-        #expect(try session.applyTranslation(json, overwrite: true) == 0)
+        #expect(try session.applyTranslation(json, overwrite: true).isEmpty)
         #expect(session.revision == completedRevision)
     }
 
@@ -65,7 +65,7 @@ struct LyricsEditorTranslationTests {
         #expect(session.revision == revision)
         session.undo()
         #expect(!session.canUndo)
-        #expect(try session.applyTranslation(json) == 1)
+        #expect(try session.applyTranslation(json).translations == 1)
         #expect(session.draft.lines[0].translation == "旧译文")
     }
 }

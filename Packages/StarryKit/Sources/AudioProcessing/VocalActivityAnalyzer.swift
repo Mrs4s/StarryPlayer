@@ -28,6 +28,13 @@ public struct VocalActivity: Sendable {
     }
 
     public var frameCount: Int { energy.count }
+
+    /// Boundary analysis includes quiet high-band consonants such as /s/. Keep the
+    /// original low-band energy unchanged for whole-song offset calibration.
+    public var boundaryEnergy: [Float] {
+        guard fricativeEnergy.count == energy.count else { return energy }
+        return zip(energy, fricativeEnergy).map { low, high in high.isFinite ? max(low, high) : low }
+    }
 }
 
 public enum VocalActivityError: Error, Equatable {
