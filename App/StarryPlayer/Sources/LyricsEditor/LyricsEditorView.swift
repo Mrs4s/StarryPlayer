@@ -13,8 +13,7 @@ struct LyricsEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock = LyricsEditorClock()
     @State private var panel: Panel?
-    @State private var showPreview = true
-    @State private var focusPreview = false
+    @State private var previewLayout = PreviewLayout.split
     @State private var pendingAction: PendingAction?
     @State private var appeared = false
     @State private var keyMonitor: Any?
@@ -26,6 +25,29 @@ struct LyricsEditorView: View {
     @AppStorage("starry.lyricsEditor.hintVoice") private var hintVoice = LyricsEditorAudio.HintVoice.all
     @AppStorage(LyricsEditorTimeline.gainKey) private var spectrogramGain = 3.0
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
+
+    private enum PreviewLayout: String, CaseIterable {
+        case editor, split, preview
+
+        var title: String {
+            switch self {
+            case .editor: "仅编辑"
+            case .split: "分栏预览"
+            case .preview: "全幅预览"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .editor: "text.alignleft"
+            case .split: "sidebar.right"
+            case .preview: "rectangle.inset.filled"
+            }
+        }
+    }
+
+    private var showPreview: Bool { previewLayout != .editor }
+    private var focusPreview: Bool { previewLayout == .preview }
 
     private enum PendingAction: Identifiable {
         case export, apply
@@ -156,23 +178,29 @@ struct LyricsEditorView: View {
         show(.alignment(session.draft.lines[position.line].id))
     }
 
+    private func setPreviewLayout(_ layout: PreviewLayout) {
+        withAnimation(Motion.shelf) { previewLayout = layout }
+    }
+
     private func togglePreview() {
-        withAnimation(Motion.shelf) {
-            showPreview.toggle()
-            focusPreview = false
-        }
+        setPreviewLayout(showPreview ? .editor : .split)
     }
 
     private func togglePreviewFocus() {
-        withAnimation(Motion.shelf) {
-            showPreview = true
-            focusPreview.toggle()
-        }
+        setPreviewLayout(focusPreview ? .split : .preview)
     }
 
     // MARK: Header
 
     private var header: some View {
+        VStack(spacing: 0) {
+            documentHeader
+            editorToolbar
+        }
+        .overlay(alignment: .bottom) { headerRule }
+    }
+
+    private var documentHeader: some View {
         HStack(spacing: 12) {
             ArtworkView(artwork: session.track.artwork, radius: 6, pixelSize: 96)
                 .frame(width: 34, height: 34)
@@ -188,17 +216,35 @@ struct LyricsEditorView: View {
                     .lineLimit(1)
                     .contentTransition(.opacity)
             }
-            .frame(maxWidth: 240, alignment: .leading)
+            .frame(maxWidth: 320, alignment: .leading)
             LyricsEditorProgress(timed: session.draft.timedCount, total: session.draft.syllableCount)
             Spacer(minLength: 12)
+            exportMenu
+            PillButton(title: "应用到这首歌", systemName: "checkmark", variant: .filled, height: 30) { request(.apply) }
+                .disabled(session.draft.isEmpty)
+                .opacity(session.draft.isEmpty ? 0.45 : 1)
+                .help("播放这首歌时就显示编辑好的歌词（⌘S）")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background {
+            Color.clear.contentShape(Rectangle()).modifier(WindowDrag())
+        }
+    }
+
+    private var editorToolbar: some View {
+        HStack(spacing: 12) {
+            importMenu
+            toolbarDivider
             HStack(spacing: 2) {
                 IconButton(systemName: "arrow.uturn.backward", size: 30, iconSize: 13, help: "撤销（⌘Z）") { session.undo() }
                     .disabled(!session.canUndo)
                     .opacity(session.canUndo ? 1 : 0.4)
+                    .accessibilityLabel("撤销")
                 IconButton(systemName: "arrow.uturn.forward", size: 30, iconSize: 13, help: "重做（⇧⌘Z）") { session.redo() }
                     .disabled(!session.canRedo)
                     .opacity(session.canRedo ? 1 : 0.4)
-                IconButton(systemName: "keyboard", size: 30, iconSize: 13, help: "快捷键（?）") { show(.shortcuts) }
+                    .accessibilityLabel("重做")
             }
             PillButton(title: "AI 打轴", systemName: "wand.and.stars", variant: .tertiary, height: 30) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
@@ -206,30 +252,88 @@ struct LyricsEditorView: View {
             }
             .disabled(session.draft.isEmpty)
             .help("使用外置本地模型生成整首逐字时间")
-            PillButton(title: "导入", systemName: "square.and.arrow.down", variant: .tertiary, height: 30) { show(.importer) }
-                .help("粘贴或打开歌词，快速分好音节")
-            moreMenu
-            HStack(spacing: 2) {
-                IconButton(systemName: "sidebar.right", size: 30, iconSize: 13, isActive: showPreview, help: showPreview ? "隐藏预览" : "显示预览", action: togglePreview)
-                    .accessibilityLabel(showPreview ? "隐藏预览" : "显示预览")
-                IconButton(systemName: focusPreview ? "rectangle.split.2x1" : "rectangle.inset.filled", size: 30, iconSize: 13, isActive: focusPreview, help: focusPreview ? "回到编辑" : "全幅预览", action: togglePreviewFocus)
+            toolsMenu
+            Spacer(minLength: 12)
+            previewPicker
+            toolbarDivider
+            IconButton(systemName: "keyboard", size: 30, iconSize: 13, help: "快捷键（?）") { show(.shortcuts) }
+                .accessibilityLabel("快捷键")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 46)
+        .background(theme.onSurface.opacity(0.025))
+        .overlay(alignment: .top) { headerRule }
+    }
+
+    private var headerRule: some View {
+        Rectangle().fill(theme.outlineVariant.opacity(0.7)).frame(height: 1)
+    }
+
+    private var toolbarDivider: some View {
+        Rectangle().fill(theme.outlineVariant.opacity(0.7)).frame(width: 1, height: 18)
+            .accessibilityHidden(true)
+    }
+
+    private var previewPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(PreviewLayout.allCases, id: \.self) { layout in
+                Button { setPreviewLayout(layout) } label: {
+                    Label(layout.title, systemImage: layout.systemImage)
+                        .font(.system(size: 12, weight: previewLayout == layout ? .semibold : .medium))
+                        .foregroundStyle(previewLayout == layout ? theme.primary : theme.onSurfaceVariant)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                }
+                .buttonStyle(VariantButtonStyle(variant: .ghost, isActive: previewLayout == layout))
+                .accessibilityAddTraits(previewLayout == layout ? [.isSelected] : [])
             }
-            PillButton(title: "导出 TTML…", systemName: "square.and.arrow.up", variant: .secondary, height: 30) { request(.export) }
-                .disabled(session.draft.isEmpty)
-                .opacity(session.draft.isEmpty ? 0.45 : 1)
-                .help("导出为 TTML 文件（⌘E）")
-            PillButton(title: "应用到这首歌", systemName: "checkmark", variant: .filled, height: 30) { request(.apply) }
-                .disabled(session.draft.isEmpty)
-                .opacity(session.draft.isEmpty ? 0.45 : 1)
-                .help("播放这首歌时就显示编辑好的歌词（⌘S）")
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 14)
-        .frame(height: 56)
-        .background {
-            Color.clear.contentShape(Rectangle()).modifier(WindowDrag())
+        .padding(2)
+        .background(theme.onSurface.opacity(0.035), in: RoundedRectangle(cornerRadius: Radius.button + 2))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("预览布局")
+    }
+
+    private func menuLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.outlineVariant.opacity(0.7)).frame(height: 1) }
+        .foregroundStyle(theme.primary)
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+    }
+
+    private var importMenu: some View {
+        PopMenu {
+            PopMenuItem.button("导入歌词…", systemImage: "square.and.arrow.down") { show(.importer) }
+            PopMenuItem.button(findingLyrics ? "正在查找歌词…" : "载入这首歌的歌词", systemImage: "text.quote", disabled: findingLyrics) { loadSongLyrics() }
+            PopMenuItem.divider
+            PopMenuItem.button("打开歌词工程…", systemImage: "folder") { model.openLyricsProject(into: session) }
+        } label: {
+            menuLabel("导入", systemImage: "square.and.arrow.down")
+        }
+        .buttonStyle(VariantButtonStyle(variant: .tertiary, isPill: true))
+        .help("导入歌词（⌘I）、载入歌曲歌词或打开工程（⌘O）")
+    }
+
+    private var exportMenu: some View {
+        PopMenu {
+            PopMenuItem.button("导出 TTML…", systemImage: "square.and.arrow.up") { request(.export) }
+            PopMenuItem.button("拷贝 TTML", systemImage: "doc.on.doc") { model.copyLyrics(session) }
+            PopMenuItem.divider
+            PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square") { saveProject() }
+        } label: {
+            menuLabel("导出", systemImage: "square.and.arrow.up")
+        }
+        .buttonStyle(VariantButtonStyle(variant: .secondary, isPill: true))
+        .disabled(session.draft.isEmpty)
+        .opacity(session.draft.isEmpty ? 0.45 : 1)
+        .help("导出 TTML（⌘E）、拷贝歌词或保存工程（⇧⌘S）")
     }
 
     private var subtitle: String {
@@ -238,12 +342,8 @@ struct LyricsEditorView: View {
         return artist
     }
 
-    private var moreMenu: some View {
+    private var toolsMenu: some View {
         PopMenu {
-            PopMenuItem.button(findingLyrics ? "正在查找歌词…" : "载入这首歌的歌词", systemImage: "text.quote", disabled: findingLyrics) { loadSongLyrics() }
-            PopMenuItem.button("打开歌词工程…", systemImage: "folder") { model.openLyricsProject(into: session) }
-            PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square", disabled: session.draft.isEmpty) { model.saveLyricsProject(session) }
-            PopMenuItem.divider
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
             PopMenuItem.button("AI 翻译与注音…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
@@ -263,37 +363,37 @@ struct LyricsEditorView: View {
                 PopMenuItem.header("离线生成罗马音，特殊读法可手动校对")
             }
             PopMenuItem.divider
-            PopMenuItem.button("整体提前 0.1 秒", systemImage: "backward") { session.edit { $0.shift(by: -0.1) } }
-            PopMenuItem.button("整体延后 0.1 秒", systemImage: "forward") { session.edit { $0.shift(by: 0.1) } }
-            PopMenuItem.option("打完一行后自动排字", selected: autoAlignAfterTiming) {
-                autoAlignAfterTiming.toggle()
-                if !autoAlignAfterTiming { autoAlignment.cancelAll() }
-            }
-            PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(session.tapLead)) {
-                for lead in [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2] {
-                    PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(session.tapLead - lead) < 0.001) { session.tapLead = lead }
+            PopMenuItem.submenu("打点设置", systemImage: "timer") {
+                PopMenuItem.button("整体提前 0.1 秒", systemImage: "backward", disabled: session.draft.timedCount == 0) { session.edit { $0.shift(by: -0.1) } }
+                PopMenuItem.button("整体延后 0.1 秒", systemImage: "forward", disabled: session.draft.timedCount == 0) { session.edit { $0.shift(by: 0.1) } }
+                PopMenuItem.divider
+                PopMenuItem.option("打完一行后自动排字", selected: autoAlignAfterTiming) {
+                    autoAlignAfterTiming.toggle()
+                    if !autoAlignAfterTiming { autoAlignment.cancelAll() }
                 }
-            }
-            PopMenuItem.submenu("频谱亮度", systemImage: "sun.max", detail: LyricsEditorFormat.gain(spectrogramGain)) {
-                for gain in LyricsEditorTimeline.gains {
-                    PopMenuItem.option(LyricsEditorFormat.gain(gain), selected: abs(spectrogramGain - gain) < 0.001) { spectrogramGain = gain }
+                PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(session.tapLead)) {
+                    for lead in [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2] {
+                        PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(session.tapLead - lead) < 0.001) { session.tapLead = lead }
+                    }
+                }
+                PopMenuItem.submenu("频谱亮度", systemImage: "sun.max", detail: LyricsEditorFormat.gain(spectrogramGain)) {
+                    for gain in LyricsEditorTimeline.gains {
+                        PopMenuItem.option(LyricsEditorFormat.gain(gain), selected: abs(spectrogramGain - gain) < 0.001) { spectrogramGain = gain }
+                    }
                 }
             }
             PopMenuItem.divider
-            PopMenuItem.button("拷贝 TTML", systemImage: "doc.on.doc", disabled: session.draft.isEmpty) { model.copyLyrics(session) }
             PopMenuItem.button("清除全部时间", systemImage: "eraser", role: .destructive, disabled: session.draft.timedCount == 0) {
                 session.edit { draft in
                     for index in draft.lines.indices { draft.clearTiming(ofLine: index) }
                 }
                 session.caret = session.draft.firstPosition(fromLine: 0)
             }
-        } label: { open in
-            PopMenuEllipsis(isOpen: open, size: 13, weight: .semibold)
-                .foregroundStyle(theme.onSurface.opacity(0.85))
-                .frame(width: 30, height: 30)
+        } label: {
+            menuLabel("工具", systemImage: "slider.horizontal.3")
         }
-        .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true))
-        .help("更多")
+        .buttonStyle(VariantButtonStyle(variant: .ghost, isPill: true))
+        .help("歌曲信息、虚拟轨、翻译注音与打点设置")
     }
 
     private var audioBanner: some View {
