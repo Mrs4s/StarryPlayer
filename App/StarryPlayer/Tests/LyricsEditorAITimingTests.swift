@@ -101,11 +101,32 @@ import Testing
         #expect(state.canApply(in: session, configuration: configuration, audioIdentity: source.identity))
         var changed = configuration; changed.backend = .gpu
         #expect(!state.canApply(in: session, configuration: changed, audioIdentity: source.identity))
+        changed = configuration; changed.englishSplit = .word
+        #expect(!state.canApply(in: session, configuration: changed, audioIdentity: source.identity))
         #expect(!state.canApply(in: session, configuration: configuration, audioIdentity: "different-audio"))
         session.edit { $0.lines[0].translation = "temporary" }
         session.undo()
         #expect(!state.apply(in: session, configuration: configuration, audioIdentity: source.identity))
         #expect(session.draft.timedCount == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func optionalResplittingPreservesBackgroundAndLeavesDraftUntouched(enabled: Bool) async throws {
+        let session = twoLineSession(), source = source
+        session.edit {
+            $0.lines[0].syllables = [.init(text: "你好")]
+            $0.lines[1] = .init(syllables: [.init(text: "背景", start: 8, end: 9)], isBackground: true)
+        }
+        let before = session.draft
+        var configuration = configuration
+        configuration.resplitSyllables = enabled
+        let state = LyricsEditorAITimingState { request, _ in Self.aligned(request.draft) }
+        state.start(configuration: configuration, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
+        try await wait(state)
+        let result = try #require(state.result)
+        #expect(result.draft.lines[0].syllables.map(\.text) == (enabled ? ["你", "好"] : ["你好"]))
+        #expect(result.draft.lines[1] == before.lines[1])
+        #expect(session.draft == before)
     }
 
     private func twoLineSession() -> LyricsEditorSession {

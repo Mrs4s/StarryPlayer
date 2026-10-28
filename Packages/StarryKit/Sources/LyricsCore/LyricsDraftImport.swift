@@ -85,7 +85,8 @@ public enum LyricsDraftImport {
     /// splits only at `|` and between words, for syllables set by hand (`Hel|lo world`).
     /// Punctuation goes with the syllable before it, an opening bracket or quote with the one
     /// after. Joined, the syllables give the line back, less its `|` and repeated spaces.
-    public static func syllables(in text: String, explicitBoundaries: Bool = true, preservesLineBreaks: Bool = false) -> [LyricsDraft.Syllable] {
+    public static func syllables(in text: String, explicitBoundaries: Bool = true, preservesLineBreaks: Bool = false,
+                                 preservesWhitespace: Bool = false) -> [LyricsDraft.Syllable] {
         let explicit = explicitBoundaries && text.contains("|")
         var parts: [String] = []
         var prefix = ""
@@ -96,6 +97,12 @@ public enum LyricsDraftImport {
                 continue
             }
             if character.isWhitespace {
+                if preservesWhitespace {
+                    if !prefix.isEmpty || parts.isEmpty { prefix.append(character) }
+                    else if let last = parts.indices.last { parts[last].append(character) }
+                    wordOpen = false
+                    continue
+                }
                 if preservesLineBreaks, character.isNewline, let last = parts.indices.last {
                     parts[last] = parts[last].trimmingCharacters(in: .whitespaces) + "\n"
                     wordOpen = false
@@ -105,14 +112,14 @@ public enum LyricsDraftImport {
                 wordOpen = false
                 continue
             }
-            let afterSpace = parts.last?.hasSuffix(" ") ?? true
+            let afterSpace = preservesWhitespace ? (parts.last?.last?.isWhitespace ?? true) : (parts.last?.hasSuffix(" ") ?? true)
             if isOpening(character) || (afterSpace && (character == "\"" || character == "'")) {
                 prefix.append(character)
                 wordOpen = false
                 continue
             }
             // After a space (`Rock & roll`) the mark is a syllable of its own.
-            if attachesBackward(character), !afterSpace {
+            if attachesBackward(character), !afterSpace, !preservesWhitespace || prefix.isEmpty {
                 parts[parts.count - 1].append(character)
                 continue
             }
@@ -128,7 +135,7 @@ public enum LyricsDraftImport {
         if !prefix.isEmpty {
             if parts.isEmpty { parts.append(prefix) } else { parts[parts.count - 1] += prefix }
         }
-        if let last = parts.indices.last { parts[last] = parts[last].trimmingCharacters(in: .whitespaces) }
+        if !preservesWhitespace, let last = parts.indices.last { parts[last] = parts[last].trimmingCharacters(in: .whitespaces) }
         return parts.filter { !$0.isEmpty }.map { LyricsDraft.Syllable(text: $0) }
     }
 

@@ -6,6 +6,7 @@ import SwiftUI
 struct LyricsEditorAITiming: View {
     static let directoryKey = LyricsAIModelDownloadState.directoryKey
     static let backendKey = "starry.lyricsEditor.aiTiming.backend"
+    static let englishSplitKey = "starry.lyricsEditor.aiTiming.englishSplit"
 
     let session: LyricsEditorSession
     let audio: LyricsEditorAudio
@@ -16,6 +17,8 @@ struct LyricsEditorAITiming: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Self.directoryKey) private var modelPath = ""
     @AppStorage(Self.backendKey) private var backend = LyricsAIBackend.neuralEngine
+    @AppStorage(Self.englishSplitKey) private var englishSplit = LyricsAIEnglishSplit.automatic
+    @State private var resplitSyllables = false
 
     private enum Stage: Hashable { case setup, working, result }
 
@@ -30,7 +33,7 @@ struct LyricsEditorAITiming: View {
 
     private var directory: URL? { modelPath.isEmpty ? nil : URL(fileURLWithPath: modelPath, isDirectory: true) }
     private var configuration: LyricsEditorAITimingState.Configuration? {
-        directory.map { .init(directory: $0, backend: backend) }
+        directory.map { .init(directory: $0, backend: backend, resplitSyllables: resplitSyllables, englishSplit: englishSplit) }
     }
     private var supported: Bool {
         if #available(macOS 15, *) { return true }
@@ -55,6 +58,7 @@ struct LyricsEditorAITiming: View {
 
     var body: some View {
         EditorPanel(title: "AI 一键打轴", subtitle: "在本机根据人声和歌词读音，为整首主歌词生成逐字时间。", width: 720, close: dismiss) {
+            banner("目前仅针对日语歌词优化，其他语言的打轴效果可能不理想。", tone: .info)
             settings
             switch stage {
             case .setup:
@@ -79,6 +83,8 @@ struct LyricsEditorAITiming: View {
         .task { await modelDownload.discover() }
         .onChange(of: modelPath) { _, _ in state.validate(directory) }
         .onChange(of: backend) { _, _ in state.invalidate() }
+        .onChange(of: resplitSyllables) { _, _ in state.invalidate() }
+        .onChange(of: englishSplit) { _, _ in state.invalidate() }
         .onDisappear { state.cancel() }
     }
 
@@ -113,8 +119,40 @@ struct LyricsEditorAITiming: View {
                     .disabled(state.isWorking)
                     .opacity(state.isWorking ? 0.5 : 1)
             }
+            Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
+            settingRow("textformat.abc") {
+                Text("英文切分")
+            } detail: {
+                Text(englishSplitDescription)
+            } trailing: {
+                SegmentSwitch(selection: $englishSplit, options: LyricsAIEnglishSplit.allCases.map { ($0, $0.title) })
+                    .disabled(state.isWorking)
+                    .opacity(state.isWorking ? 0.5 : 1)
+                    .help("自动：按音节切分，并合并不超过 60 毫秒的短片段。按音节：保留所有可对齐的音节。按词：保留当前字块。已有注音和节拍标记的字块保持原切分。")
+            }
+            Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
+            settingRow("text.word.spacing") {
+                Text("重新拆分音节")
+            } detail: {
+                Text("按文本规则重新分块，适合修正导入歌词的切分")
+            } trailing: {
+                AICheckbox(value: resplitSyllables ? .on : .off, label: "重新拆分音节") {
+                    resplitSyllables.toggle()
+                }
+                .disabled(state.isWorking)
+                .opacity(state.isWorking ? 0.5 : 1)
+                .help("默认保留原有切分。开启后重新拆分主歌词；无法对应到新字块的注音会重新推断，结果可预览并按行应用。")
+            }
         }
         .aiCard(theme)
+    }
+
+    private var englishSplitDescription: String {
+        switch englishSplit {
+        case .automatic: "按音节拆词，合并过短片段"
+        case .syllable: "保留所有可对齐的音节"
+        case .word: "保留当前字块，不自动拆词"
+        }
     }
 
     private var modelRow: some View {
@@ -404,12 +442,16 @@ private struct AITimingResultPreview: View {
                 if result.estimatedReadings > 0 {
                     Tag(text: "\(result.estimatedReadings) 个读音为估计", style: .amber, soft: true)
                 }
+                if result.uncertainReadings > 0 {
+                    Tag(text: "\(result.uncertainReadings) 处多读音待核对", style: .amber, soft: true)
+                        .help(result.uncertainReadingDescriptions.joined(separator: "\n"))
+                }
                 if result.skippedBackgroundLines > 0 {
                     Tag(text: "\(result.skippedBackgroundLines) 行背景未修改", soft: true)
                 }
                 Spacer(minLength: 0)
             }
-            if result.estimatedReadings > 0 {
+            if result.estimatedReadings > 0 || result.uncertainReadings > 0 {
                 Text("估计的读音或词内边界建议重点试听；特殊读法可补充注音后重新打轴。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(theme.onSurfaceVariant)

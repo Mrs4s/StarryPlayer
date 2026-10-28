@@ -3,9 +3,10 @@ import LyricsCore
 
 extension LyricsAIAligner {
     nonisolated static func apply(_ spans: [LyricsAICTC.Span], plan: LyricsAIPronunciation,
-                                  to source: LyricsDraft) throws -> LyricsAIAlignmentResult {
+                                  to source: LyricsDraft, englishSplit: LyricsAIEnglishSplit = .automatic) throws -> LyricsAIAlignmentResult {
         guard spans.count == plan.tokens.count else { throw LyricsAIError.alignment("结果与歌词数量不一致") }
         var draft = source
+        var alignedSyllables = 0
         for lineIndex in plan.lines {
             guard draft.lines.indices.contains(lineIndex) else { throw LyricsAIError.alignment("歌词结构已改变") }
             var line = draft.lines[lineIndex]
@@ -35,12 +36,70 @@ extension LyricsAIAligner {
                     line.syllables[unit.syllable].ruby = ruby
                 }
             }
+            if englishSplit != .word {
+                for unit in units.reversed() where unit.english.count > 1 {
+                    let original = line.syllables[unit.syllable]
+                    let pieces = englishPieces(unit, spans: spans, bounds: .init(start: original.start!, end: original.end!), mode: englishSplit)
+                    let replacements = pieces.enumerated().map { index, piece in
+                        var syllable = original
+                        if index > 0 { syllable.id = UUID() }
+                        syllable.text = piece.text
+                        syllable.start = piece.start
+                        syllable.end = piece.end
+                        return syllable
+                    }
+                    line.syllables.replaceSubrange(unit.syllable...unit.syllable, with: replacements)
+                }
+            }
+            alignedSyllables += line.syllables.count
             line.start = nil
             line.end = nil
             draft.lines[lineIndex] = line
         }
-        return .init(draft: draft, alignedLines: plan.lines.count, alignedSyllables: plan.units.count,
+        return .init(draft: draft, alignedLines: plan.lines.count, alignedSyllables: alignedSyllables,
                      estimatedReadings: plan.estimatedCount, skippedBackgroundLines: plan.backgroundCount)
+    }
+
+    private struct EnglishPiece {
+        var text: String
+        var tokens: Range<Int>
+        var start: TimeInterval
+        var end: TimeInterval
+        var endsInLongMark: Bool
+        var duration: TimeInterval { end - start }
+    }
+
+    private nonisolated static func englishPieces(_ unit: LyricsAIPronunciation.Unit, spans: [LyricsAICTC.Span], bounds: LyricsAICTC.Span,
+                                                  mode: LyricsAIEnglishSplit) -> [EnglishPiece] {
+        var result: [EnglishPiece] = []
+        for piece in unit.english {
+            let tokens = (unit.tokens.lowerBound + piece.tokens.lowerBound)..<(unit.tokens.lowerBound + piece.tokens.upperBound)
+            var current = EnglishPiece(text: piece.text, tokens: tokens, start: max(bounds.start, spans[tokens.lowerBound].start),
+                                       end: min(bounds.end, spans[tokens.upperBound - 1].end), endsInLongMark: piece.endsInLongMark)
+            if let previous = result.last {
+                let held = previous.tokens.upperBound - 1
+                let mark = spans[held]
+                if previous.endsInLongMark, previous.tokens.count > 1, mark.end - mark.start >= 0.3,
+                   current.duration < mark.end - mark.start {
+                    // Transfer a long mark that absorbed the following syllable's hold.
+                    result[result.count - 1].tokens = previous.tokens.lowerBound..<held
+                    let boundary = min(max(mark.start, bounds.start), bounds.end)
+                    result[result.count - 1].end = boundary
+                    result[result.count - 1].endsInLongMark = false
+                    current.tokens = held..<tokens.upperBound
+                    current.start = boundary
+                }
+            }
+            if let previous = result.last,
+               current.duration <= 1e-9 || previous.duration <= 1e-9
+                || (mode == .automatic && (current.duration <= 0.06 + 1e-9 || previous.duration <= 0.06 + 1e-9)) {
+                result[result.count - 1].text += current.text
+                result[result.count - 1].tokens = previous.tokens.lowerBound..<current.tokens.upperBound
+                result[result.count - 1].end = max(previous.end, current.end)
+                result[result.count - 1].endsInLongMark = current.endsInLongMark
+            } else { result.append(current) }
+        }
+        return result
     }
 
     // Give punctuation at least 1 ms so TTML rounding preserves a nonzero interval.
