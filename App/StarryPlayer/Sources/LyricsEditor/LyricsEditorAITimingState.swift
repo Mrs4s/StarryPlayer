@@ -8,6 +8,7 @@ final class LyricsEditorAITimingState {
     struct Configuration: Equatable, Sendable {
         var directory: URL
         var backend: LyricsAIBackend
+        var resplitSyllables = false
     }
     struct Request: Sendable {
         var draft: LyricsDraft
@@ -121,7 +122,13 @@ final class LyricsEditorAITimingState {
                 let audio = try await prepareAudio()
                 try Task.checkCancellation()
                 guard session.revision == revision else { throw LyricsAIError.alignment("歌词已改变，请重新打轴") }
-                let result = try await perform(Request(draft: draft, audio: audio.file, configuration: configuration)) { [weak self] progress in
+                var input = draft
+                if configuration.resplitSyllables {
+                    for index in input.lines.indices where !input.lines[index].isBackground {
+                        input.lines[index].resplitSyllables()
+                    }
+                }
+                let result = try await perform(Request(draft: input, audio: audio.file, configuration: configuration)) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.request == id, self.isWorking, !self.isCancelling else { return }
                         self.progress = progress

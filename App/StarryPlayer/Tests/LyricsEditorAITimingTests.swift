@@ -108,6 +108,25 @@ import Testing
         #expect(session.draft.timedCount == 0)
     }
 
+    @Test(arguments: [false, true])
+    func optionalResplittingPreservesBackgroundAndLeavesDraftUntouched(enabled: Bool) async throws {
+        let session = twoLineSession(), source = source
+        session.edit {
+            $0.lines[0].syllables = [.init(text: "你好")]
+            $0.lines[1] = .init(syllables: [.init(text: "背景", start: 8, end: 9)], isBackground: true)
+        }
+        let before = session.draft
+        var configuration = configuration
+        configuration.resplitSyllables = enabled
+        let state = LyricsEditorAITimingState { request, _ in Self.aligned(request.draft) }
+        state.start(configuration: configuration, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
+        try await wait(state)
+        let result = try #require(state.result)
+        #expect(result.draft.lines[0].syllables.map(\.text) == (enabled ? ["你", "好"] : ["你好"]))
+        #expect(result.draft.lines[1] == before.lines[1])
+        #expect(session.draft == before)
+    }
+
     private func twoLineSession() -> LyricsEditorSession {
         LyricsEditorSession(track: Track(id: TrackRef(source: .local, id: "ai-editor-partial"), title: "AI fixture", artists: [], duration: 10),
                             draft: LyricsDraft(lines: [.init(syllables: [.init(text: "あ")]), .init(syllables: [.init(text: "い")])]))

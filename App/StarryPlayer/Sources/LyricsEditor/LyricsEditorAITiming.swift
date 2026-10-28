@@ -16,6 +16,7 @@ struct LyricsEditorAITiming: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Self.directoryKey) private var modelPath = ""
     @AppStorage(Self.backendKey) private var backend = LyricsAIBackend.neuralEngine
+    @State private var resplitSyllables = false
 
     private enum Stage: Hashable { case setup, working, result }
 
@@ -30,7 +31,7 @@ struct LyricsEditorAITiming: View {
 
     private var directory: URL? { modelPath.isEmpty ? nil : URL(fileURLWithPath: modelPath, isDirectory: true) }
     private var configuration: LyricsEditorAITimingState.Configuration? {
-        directory.map { .init(directory: $0, backend: backend) }
+        directory.map { .init(directory: $0, backend: backend, resplitSyllables: resplitSyllables) }
     }
     private var supported: Bool {
         if #available(macOS 15, *) { return true }
@@ -79,6 +80,7 @@ struct LyricsEditorAITiming: View {
         .task { await modelDownload.discover() }
         .onChange(of: modelPath) { _, _ in state.validate(directory) }
         .onChange(of: backend) { _, _ in state.invalidate() }
+        .onChange(of: resplitSyllables) { _, _ in state.invalidate() }
         .onDisappear { state.cancel() }
     }
 
@@ -112,6 +114,19 @@ struct LyricsEditorAITiming: View {
                 SegmentSwitch(selection: $backend, options: LyricsAIBackend.allCases.map { ($0, $0.title) })
                     .disabled(state.isWorking)
                     .opacity(state.isWorking ? 0.5 : 1)
+            }
+            Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
+            settingRow("text.word.spacing") {
+                Text("重新拆分音节")
+            } detail: {
+                Text("按文本规则重新分块，适合修正导入歌词的切分")
+            } trailing: {
+                AICheckbox(value: resplitSyllables ? .on : .off, label: "重新拆分音节") {
+                    resplitSyllables.toggle()
+                }
+                .disabled(state.isWorking)
+                .opacity(state.isWorking ? 0.5 : 1)
+                .help("默认保留原有切分。开启后重新拆分主歌词；无法对应到新字块的注音会重新推断，结果可预览并按行应用。")
             }
         }
         .aiCard(theme)
