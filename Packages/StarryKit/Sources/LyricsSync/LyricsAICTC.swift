@@ -16,6 +16,7 @@ enum LyricsAICTC {
         var label: Int
         var sustainClass: Int
         var endsLine: Bool = false
+        var isStandaloneVowel: Bool = false
     }
 
     struct Span: Sendable, Equatable {

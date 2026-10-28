@@ -9,6 +9,7 @@ final class LyricsEditorAITimingState {
         var directory: URL
         var backend: LyricsAIBackend
         var resplitSyllables = false
+        var englishSplit: LyricsAIEnglishSplit = .automatic
     }
     struct Request: Sendable {
         var draft: LyricsDraft
@@ -48,7 +49,7 @@ final class LyricsEditorAITimingState {
         perform = work ?? { request, progress in
             try await worker.align(request.draft, vocals: request.audio,
                                    modelDirectory: request.configuration.directory,
-                                   backend: request.configuration.backend, progress: progress)
+                                   backend: request.configuration.backend, englishSplit: request.configuration.englishSplit, progress: progress)
         }
     }
 

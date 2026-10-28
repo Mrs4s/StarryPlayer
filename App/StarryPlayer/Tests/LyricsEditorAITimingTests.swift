@@ -101,6 +101,8 @@ import Testing
         #expect(state.canApply(in: session, configuration: configuration, audioIdentity: source.identity))
         var changed = configuration; changed.backend = .gpu
         #expect(!state.canApply(in: session, configuration: changed, audioIdentity: source.identity))
+        changed = configuration; changed.englishSplit = .word
+        #expect(!state.canApply(in: session, configuration: changed, audioIdentity: source.identity))
         #expect(!state.canApply(in: session, configuration: configuration, audioIdentity: "different-audio"))
         session.edit { $0.lines[0].translation = "temporary" }
         session.undo()

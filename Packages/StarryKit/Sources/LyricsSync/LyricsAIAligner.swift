@@ -8,14 +8,21 @@ public struct LyricsAIAlignmentResult: Sendable {
     public var alignedSyllables: Int
     public var estimatedReadings: Int
     public var skippedBackgroundLines: Int
+    public var resolvedReadings: Int
+    public var uncertainReadings: Int
+    public var uncertainReadingDescriptions: [String]
 
     public init(draft: LyricsDraft, alignedLines: Int, alignedSyllables: Int,
-                estimatedReadings: Int = 0, skippedBackgroundLines: Int = 0) {
+                estimatedReadings: Int = 0, skippedBackgroundLines: Int = 0,
+                resolvedReadings: Int = 0, uncertainReadings: Int = 0, uncertainReadingDescriptions: [String] = []) {
         self.draft = draft
         self.alignedLines = alignedLines
         self.alignedSyllables = alignedSyllables
         self.estimatedReadings = estimatedReadings
         self.skippedBackgroundLines = skippedBackgroundLines
+        self.resolvedReadings = resolvedReadings
+        self.uncertainReadings = uncertainReadings
+        self.uncertainReadingDescriptions = uncertainReadingDescriptions
     }
 }
 
@@ -44,6 +51,7 @@ public actor LyricsAIAligner {
     }
 
     public func align(_ draft: LyricsDraft, vocals: URL, modelDirectory: URL, backend: LyricsAIBackend,
+                      englishSplit: LyricsAIEnglishSplit = .automatic,
                       progress: @escaping @Sendable (LyricsAIProgress) -> Void = { _ in }) async throws -> LyricsAIAlignmentResult {
         guard #available(macOS 15, *) else { throw LyricsAIError.unsupportedSystem }
         guard !busy else { throw LyricsAIError.busy }
@@ -57,7 +65,7 @@ public actor LyricsAIAligner {
         try Task.checkCancellation()
         progress(.init(0.02, "检查外置模型与歌词读音…"))
         let bundle = try LyricsAIModelBundle.load(from: modelDirectory)
-        let plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: bundle.vocabulary, english: bundle.englishReadings)
+        var plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: bundle.vocabulary, english: bundle.englishReadings)
         let stamp = try bundle.stamp()
         let audioValues = try vocals.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let audioKey = "\(vocals.path):\(audioValues.fileSize ?? -1):\(audioValues.contentModificationDate?.timeIntervalSince1970 ?? 0)"
@@ -79,16 +87,32 @@ public actor LyricsAIAligner {
             cached = (key, evidence)
         }
         progress(.init(0.85, "定位歌词时间…"))
-        let spans = try LyricsAICTC.align(evidence, tokens: plan.tokens) { fraction in
-            progress(.init(0.85 + fraction * 0.14, "定位歌词时间…"))
+        var initialSpans = try LyricsAICTC.align(evidence, tokens: plan.tokens) { fraction in
+            progress(.init(0.85 + fraction * 0.08, "定位歌词时间…"))
         }
+        progress(.init(0.94, "核对歌词读音…"))
+        let readings = try LyricsAIReadingSelector.select(draft: draft, plan: plan, spans: initialSpans, evidence: evidence,
+                                                          vocabulary: bundle.vocabulary, english: bundle.englishReadings)
+        if readings.resolvedCount > 0 {
+            plan = readings.plan
+            initialSpans = try LyricsAICTC.align(evidence, tokens: plan.tokens) { fraction in
+                progress(.init(0.95 + fraction * 0.04, "定位歌词时间…"))
+            }
+        }
+        let spans = try LyricsAIRepeatedVowels.refine(initialSpans, evidence: evidence, tokens: plan.tokens, vocals: vocals)
         try Task.checkCancellation()
         guard try bundle.stamp() == stamp else { throw LyricsAIError.invalidModel("模型文件在执行期间发生变化，请重试") }
         let currentAudio = try vocals.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         guard currentAudio.fileSize == audioValues.fileSize, currentAudio.contentModificationDate == audioValues.contentModificationDate else {
             throw LyricsAIError.alignment("人声音频在执行期间发生变化，请重试")
         }
-        let result = try Self.apply(spans, plan: plan, to: draft)
+        var result = try Self.apply(spans, plan: plan, to: draft, englishSplit: englishSplit)
+        result.resolvedReadings = readings.resolvedCount
+        result.uncertainReadings = readings.uncertainCount
+        result.uncertainReadingDescriptions = readings.decisions.filter(\.uncertain).map {
+            let reading = $0.reading.contains("\u{E000}") ? "未确定" : $0.reading
+            return "第 \($0.line + 1) 行「\($0.text)」：\(reading)"
+        }
         progress(.init(1, "打轴完成，请预览并试听"))
         return result
     }
