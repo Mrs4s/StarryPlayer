@@ -1073,8 +1073,11 @@ final class AppModel {
             return
         }
         guard let route = route(for: context) else { return }
+        if context.originType == .dailyRecommendation, let source = context.source { selectBrowsingSource(source) }
         player.showNowPlaying = false
         navigate(route)
+        // A retained history page may have switched to another date since it was opened.
+        if case .dailyHistory = route { history.refreshCurrentPage() }
     }
 
     private func route(for context: PlaybackContext) -> Route? {
@@ -1088,7 +1091,14 @@ final class AppModel {
             default: .artist(Artist(id: id, source: source, name: name))
             }
         case .search: return name.isEmpty ? nil : .search(name)
-        case .dailyRecommendation: return .daily
+        case .dailyRecommendation:
+            guard let source = context.source, registry.source(for: source) != nil else { return nil }
+            if context.originID == "style" { return .dailyStyles }
+            if let id = context.originID, id.hasPrefix("history:") {
+                let date = String(id.dropFirst("history:".count))
+                return .dailyHistory(date: date.isEmpty ? nil : date)
+            }
+            return .daily
         case .liked: return .liked
         case .allMedia: return .allMedia
         case .history: return .history

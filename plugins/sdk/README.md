@@ -93,6 +93,7 @@ tsc --noEmit
   - 资料里的 `detail` 写服务器名，多台服务器作为多个账号管理；
   - 服务器地址由用户填写，`permissions.hosts` 只能写 `['*']`。
 - `source` 里的 `userPlaylists`、`likedTrackIDs`、`setLiked`、`setCollected`、`dailyRecommendations`、`personalFM`、`allMedia`（所有媒体，按页取，可以返回 `{ songs, total, hasMore, nextOffset }`）、`homeShelves`（首页上自己命名的货架）、`comments` / `commentThread` / `replies`、`reportPlayback`：导出了哪个，界面就有哪个功能。
+- 每日推荐扩展：`recommendationStyles` / `styleRecommendations` / `setRecommendationStyles` 一起导出时显示风格推荐；`dailyRecommendationDates` / `dailyRecommendationHistory` 一起导出时显示历史日推。
 - 资料库页（侧栏的专辑、歌手、流派，适合用户自己的曲库）：`libraryAlbums(sort, genre, page)`、`libraryArtists(page)`、`libraryGenres()`，导出哪个就有哪一页（流派要和专辑一起）；`albumSorts` 写支持的专辑排序（`'title'`、`'artist'`、`'year'`、`'recentlyAdded'`），第一个是默认。
 - 音量均衡：`resolve` 的结果可以带 `gain: { trackGain?, trackPeak?, albumGain?, albumPeak? }`，即把歌曲或专辑调到 −18 LUFS 要加减的 dB（和 ReplayGain 2.0 一样），峰值以 1 为满幅、知道才给；用户打开音量均衡时，播放器按它调音量。
 - 服务器边转码边发的流（没有长度、不支持 Range），`resolve` 返回时带上 `transcoded: true`：播放器会先下完再播。

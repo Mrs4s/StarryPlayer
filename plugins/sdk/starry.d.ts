@@ -102,6 +102,15 @@ export interface PlaylistDraft {
 
 export interface Page { offset: number; limit: number }
 
+export interface RecommendationStyle { id: string; name: string }
+
+export interface RecommendationStyleCategory {
+  id: string;
+  name: string;
+  styles: RecommendationStyle[];
+  selectedStyleIDs?: string[];
+}
+
 export type QualityLevel = 'lq' | 'sq' | 'hq' | 'lossless' | 'hi-res';
 
 export interface QualityTier {
@@ -355,6 +364,14 @@ export interface Source {
   /** Daily recommendations. */
   dailyRecommendations?(): Promise<Track[]>;
   dailyPlaylists?(): Promise<Playlist[]>;
+  /** Export all three style functions to show the entry in Daily Recommendations. */
+  recommendationStyles?(): Promise<RecommendationStyleCategory[]>;
+  styleRecommendations?(): Promise<Track[]>;
+  /** Applies one category's tags; the host reads `recommendationStyles` again afterward. */
+  setRecommendationStyles?(categoryID: string, styleIDs: string[]): Promise<void>;
+  /** Available YYYY-MM-DD dates, newest first. Export both history functions to show the entry. */
+  dailyRecommendationDates?(): Promise<string[]>;
+  dailyRecommendationHistory?(date: string): Promise<Track[]>;
   /** Personal radio: a few songs a call. */
   personalFM?(mode: 'default' | 'familiar' | 'explore' | 'scene' | 'puzzle', firstFetch: boolean): Promise<Track[]>;
   skipFM?(trackID: string, playedSeconds: number): Promise<void>;

@@ -7,6 +7,8 @@ enum Route: Hashable {
     case liked
     case history
     case daily
+    case dailyStyles
+    case dailyHistory(date: String? = nil)
     case allMedia
     case collection(Playlist)
     case album(Album)
@@ -26,6 +28,8 @@ enum Route: Hashable {
         case .liked: "我喜欢的音乐"
         case .history: "最近播放"
         case .daily: "每日推荐"
+        case .dailyStyles: "风格推荐"
+        case .dailyHistory: "历史日推"
         case .allMedia: "所有媒体"
         case .collection(let playlist): playlist.name
         case .album(let album): album.name

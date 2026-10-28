@@ -26,55 +26,6 @@ struct HistoryPage: View {
     }
 }
 
-struct DailyPage: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.theme) private var theme
-    @State private var state: Loadable<[Track]> = .idle
-
-    private var source: SourceID { model.browsingSourceID }
-    private var context: PlaybackContext { PlaybackContext(source: source, originType: .dailyRecommendation, originName: "每日推荐") }
-
-    var body: some View {
-        PageScroll {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 20) {
-                    VStack(spacing: 2) {
-                        Text(Date().formatted(.dateTime.month(.abbreviated))).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.onSurfaceVariant)
-                        Text(Date().formatted(.dateTime.day())).font(.system(size: 36, weight: .bold)).foregroundStyle(theme.primary)
-                    }
-                    .frame(width: 112, height: 112)
-                    .background(theme.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("每日推荐").font(.system(size: 30, weight: .bold)).foregroundStyle(theme.onSurface)
-                        Text("根据你的音乐口味生成").font(.system(size: 14)).foregroundStyle(theme.onSurfaceVariant)
-                        PillButton(title: "播放全部", systemName: "play.fill") {
-                            if let tracks = state.value, !tracks.isEmpty { model.player.play(tracks, context: context) }
-                        }
-                        .disabled(state.value == nil)
-                        .padding(.top, 4)
-                    }
-                    Spacer()
-                }
-                if !model.hasDailyRecommendations {
-                    SourceLacks(feature: "每日推荐", systemName: "calendar")
-                } else if !model.isLoggedIn {
-                    LoginPrompt()
-                } else {
-                    AsyncContent(state: state, retry: { Task { await load() } }) { tracks in
-                        SongList(tracks: tracks, context: context)
-                    }
-                }
-            }
-        }
-        .task(id: model.hasDailyRecommendations ? model.homeKey : nil) { if model.signedInUser != nil { await load() } }
-    }
-
-    private func load() async {
-        state = .loading
-        state = await Loadable.run { try await model.require(source, as: (any DailyRecommendationSource).self, "每日推荐").dailyRecommendations() }
-    }
-}
-
 /// All media: every song the browsing source's account keeps (its uploads, a server's whole
 /// library), 500 at a time as the list scrolls (`TrackListLoader(pages:)`), every one of them
 /// for a playback.
@@ -128,9 +79,11 @@ struct LoginPrompt: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         VStack(spacing: 14) {
-            StateView(systemName: "person.crop.circle.badge.questionmark", title: "需要登录", detail: "登录\(model.currentSourceName)后查看")
+            StateView(systemName: "person.crop.circle.badge.questionmark",
+                      localizedTitle: LocalizedStringResource("common.loginRequired", defaultValue: "需要登录"),
+                      detail: .localized(LocalizedStringResource("common.loginRequired.detail", defaultValue: "登录\(model.currentSourceName)后查看")))
                 .frame(minHeight: 0)
-            PillButton(title: "登录", systemName: "person", variant: .secondary) { model.requestLogin() }
+            PillButton(localizedTitle: LocalizedStringResource("common.login", defaultValue: "登录"), systemName: "person", variant: .secondary) { model.requestLogin() }
         }
         .frame(maxWidth: .infinity, minHeight: 280)
     }
@@ -139,12 +92,25 @@ struct LoginPrompt: View {
 /// Shown on a page of the browsing source's content that the source does not have (daily
 /// recommendations on a server without them), after switching to it with the page open.
 struct SourceLacks: View {
-    var feature: String
+    var feature: DisplayText
     var systemName: String
     @Environment(AppModel.self) private var model
+    @Environment(\.locale) private var locale
+
+    init(feature: String, systemName: String) {
+        self.feature = .verbatim(feature)
+        self.systemName = systemName
+    }
+
+    init(localizedFeature: LocalizedStringResource, systemName: String) {
+        feature = .localized(localizedFeature)
+        self.systemName = systemName
+    }
 
     var body: some View {
-        StateView(systemName: systemName, title: "\(model.currentSourceName)没有\(feature)", detail: "在侧栏切换到其他来源查看")
+        StateView(systemName: systemName,
+                  localizedTitle: LocalizedStringResource("common.sourceLacks", defaultValue: "\(model.currentSourceName)没有\(feature.resolved(locale: locale))"),
+                  detail: .localized(LocalizedStringResource("common.sourceLacks.detail", defaultValue: "在侧栏切换到其他来源查看")))
             .frame(maxWidth: .infinity, minHeight: 280)
     }
 }

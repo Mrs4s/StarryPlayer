@@ -166,6 +166,10 @@ private struct HomeSections: View {
     @State private var shown = false
 
     private var player: PlayerController { model.player }
+    private var dailyPlayState: Bool? {
+        guard player.context?.originID == nil else { return nil }
+        return player.playState(from: .dailyRecommendation, of: model.browsingSourceID)
+    }
 
     var body: some View {
         let history = Array(model.library.history.prefix(12))
@@ -292,11 +296,11 @@ private struct HomeSections: View {
         let tracks = Self.firstTileTracks(content)
         let shelf = daily || !content.newSongs.isEmpty ? nil : Self.firstSongShelf(content)
         PickTile(
-            eyebrow: daily ? "每日推荐" : shelf?.title ?? "新歌速递",
+            eyebrow: daily ? model.localization.string(DailyRecommendationsModel.Kind.today.title) : shelf?.title ?? "新歌速递",
             title: HomePage.artistLine(tracks),
-            detail: daily ? "\(tracks.count) 首 · 根据你的口味" : shelf != nil ? "\(tracks.count) 首" : "今日上新 · \(tracks.count) 首",
+            detail: daily ? model.localization.string(LocalizedStringResource("daily.home.detail", defaultValue: "\(tracks.count) 首 · 根据你的口味")) : shelf != nil ? "\(tracks.count) 首" : "今日上新 · \(tracks.count) 首",
             tint: .artwork(tracks.first?.artwork),
-            playing: daily ? player.playState(from: .dailyRecommendation, of: model.browsingSourceID) : nil,
+            playing: daily ? dailyPlayState : nil,
             onTint: { if backdrop.tint != $0 { backdrop.tint = $0 } },
             onOpen: { daily ? model.navigate(.daily) : play(tracks, context: nil) },
             onPlay: { daily ? playDaily() : play(tracks, context: nil) }
@@ -375,7 +379,7 @@ private struct HomeSections: View {
     }
 
     private func playDaily() {
-        if player.playState(from: .dailyRecommendation, of: model.browsingSourceID) != nil {
+        if dailyPlayState != nil {
             player.togglePlayPause()
         } else {
             play(content.daily, context: PlaybackContext(source: model.browsingSourceID, originType: .dailyRecommendation, originName: "每日推荐"))

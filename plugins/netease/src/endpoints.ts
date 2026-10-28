@@ -162,7 +162,7 @@ export const Discovery = {
   dailySongs: ep('/api/v3/discovery/recommend/songs', { cache: null }),
   dailySongsV1: ep('/api/v1/discovery/recommend/songs', { cache: null }),
   dailyHistoryDates: ep('/api/discovery/recommend/songs/history/recent', { cache: null }),
-  dailyHistory: ep('/api/discovery/recommend/songs/history/detail'),
+  dailyHistory: ep('/api/discovery/recommend/songs/history/detail', { cache: null }),
   dailyDislike: ep('/api/v2/discovery/recommend/dislike', { cache: null }),
   styleDailySongs: ep('/api/homepage/category/daily/song/list', { cache: null }),
   styleDailyConfig: ep('/api/homepage/daily/song/config/get', { cache: null }),
