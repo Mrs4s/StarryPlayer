@@ -442,6 +442,21 @@ private struct FakeSearchProvider: MatchingLyricsProvider {
         #expect(resolver.lyrics(from: LyricsFile(name: "晴天.lrc", text: yrc), for: track(), options: offline())?.document.format == .yrc)
         #expect(resolver.lyrics(from: LyricsFile(name: "晴天.txt", text: ttml), for: track(), options: offline())?.document.format == .ttml)
         #expect(resolver.lyrics(from: LyricsFile(name: "notes.txt", text: "just words"), for: track(), options: offline()) == nil)
+        let wordLRC = "[00:01.000]<00:01.000>你<00:02.000>好<00:03.000>"
+        let kra = resolver.lyrics(from: LyricsFile(name: "Song.kra", text: wordLRC), for: track(), options: offline())
+        #expect(kra?.document.lines[0].syllables.map(\.start) == [1, 2])
+        let subtitle = "1\n00:00:01,000 --> 00:00:03,000\nHello"
+        for name in ["Song.srt", "Song.txt"] {
+            let result = resolver.lyrics(from: LyricsFile(name: name, text: subtitle), for: track(), options: offline())
+            #expect(result?.document.format == .srt)
+            #expect(result?.document.lines[0].end == 3)
+        }
+        let nico = "[00:01:00]未来[00:02:00]\n@Ruby1=未来,みらい,[00:01:00],[00:02:00]"
+        let nicoResult = resolver.lyrics(from: LyricsFile(name: "Song.lrc", text: nico), for: track(), options: offline())
+        #expect(nicoResult?.document.format == .nicokara)
+        #expect(nicoResult?.document.hasRuby == true)
+        let krl = "【@Alice】{未|[00:01:00]み>[00:01:00]mi}[00:02:00]"
+        #expect(resolver.lyrics(from: LyricsFile(name: "Song.krl", text: krl), for: track(), options: offline())?.document.hasRuby == true)
     }
 
     /// GB 18030 (older Chinese LRC), UTF-8 with a BOM, UTF-16 and an encrypted .krc all
@@ -454,5 +469,13 @@ private struct FakeSearchProvider: MatchingLyricsProvider {
         let krc = try #require(Data(base64Encoded: "a3JjMTjbGsglTQAh26O7LNoWnBsF0AUt25Zi0NGuCKS3O8vgqe433stsLQ4XkDd8L3Ro9xlCKGaf1+1u6Fek5IjrCyDZ2QfJTzTCZ1ywcR66/u6PmF+Jb12rcjEewB+dz2MiqPzgKoCsQHVH7NAViw=="))
         #expect(try KRCParser.parse(try #require(LyricsFile(name: "a.krc", data: krc)).text).lines.map(\.text) == ["你好"])
         #expect(LyricsFile(name: "a.lrc", data: Data()) == nil)
+    }
+
+    @Test func olderJapaneseAndTraditionalChineseKaraokeFilesDecode() throws {
+        for (cf, text) in [(CFStringEncodings.dosJapanese, "[00:01:00]君の未来へ\n@Ruby=未来,みらい"), (.big5_HKSCS_1999, "[00:01.00]感謝你的溫柔與愛"), (.GB_18030_2000, "[00:01.00]感谢你的温柔与爱")] {
+            let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(cf.rawValue)))
+            let data = try #require(text.data(using: encoding))
+            #expect(LyricsFile(name: "legacy.lrc", data: data)?.text == text)
+        }
     }
 }

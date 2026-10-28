@@ -9,6 +9,7 @@ struct LyricsEditorDock: View {
     var release: () -> Void
     var manageTracks: () -> Void
     var alignLine: () -> Void
+    var manageRoles: () -> Void
     @Environment(\.theme) private var theme
     @State private var viewport = LyricsTimelineViewport()
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
@@ -35,7 +36,7 @@ struct LyricsEditorDock: View {
                 transport
             }
             .frame(maxWidth: .infinity)
-            LyricsEditorInspector(session: session)
+            LyricsEditorInspector(session: session, manageRoles: manageRoles)
                 .frame(width: 300)
         }
         .padding(.horizontal, 16)

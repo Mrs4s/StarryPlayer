@@ -8,6 +8,7 @@ struct LyricsEditorLineList: View {
     var canPlay: Bool
     var appeared: Bool
     var playFrom: (LyricsDraft.Position) -> Void
+    var manageRoles: () -> Void = {}
     @Environment(\.theme) private var theme
     @Environment(LocalizationStore.self) private var localization
 
@@ -15,7 +16,7 @@ struct LyricsEditorLineList: View {
         LyricsEditorLinesHost(session: session, clock: clock, localization: localization, revision: session.revision,
                               caret: session.caret, selection: session.selection, editingLine: session.editingLine,
                               lastTapped: session.lastTapped, tapSerial: session.tapSerial,
-                              canPlay: canPlay, theme: theme, playFrom: playFrom)
+                              canPlay: canPlay, theme: theme, playFrom: playFrom, manageRoles: manageRoles)
             .opacity(appeared ? 1 : 0)
             .overlay {
                 if session.draft.lines.isEmpty {
@@ -38,11 +39,12 @@ private struct LyricsEditorLinesHost: NSViewRepresentable {
     var canPlay: Bool
     var theme: Theme
     var playFrom: (LyricsDraft.Position) -> Void
+    var manageRoles: () -> Void
 
     func makeNSView(context: Context) -> LyricsEditorListView { LyricsEditorListView() }
 
     func updateNSView(_ view: LyricsEditorListView, context: Context) {
-        view.configure(session: session, clock: clock, localization: localization, theme: theme, canPlay: canPlay, playFrom: playFrom)
+        view.configure(session: session, clock: clock, localization: localization, theme: theme, canPlay: canPlay, playFrom: playFrom, manageRoles: manageRoles)
     }
 
     static func dismantleNSView(_ view: LyricsEditorListView, coordinator: ()) { view.disconnect() }
@@ -63,6 +65,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
     private var clock: LyricsEditorClock?
     private var clockToken: UUID?
     private var lines: [LyricsDraft.Line] = []
+    private var agents: [LyricAgent] = []
     private var layouts: [UUID: LyricsEditorLineLayout] = [:]
     private var revision = -1
     private var caret: LyricsDraft.Position?
@@ -72,6 +75,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
     private var theme = Theme.darkBase
     private var canPlay = false
     private var playFrom: ((LyricsDraft.Position) -> Void)?
+    private var manageRoles: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -116,7 +120,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
     }
 
     func configure(session: LyricsEditorSession, clock: LyricsEditorClock, localization: LocalizationStore, theme: Theme, canPlay: Bool,
-                   playFrom: @escaping (LyricsDraft.Position) -> Void) {
+                   playFrom: @escaping (LyricsDraft.Position) -> Void, manageRoles: @escaping () -> Void = {}) {
         self.localization = localization
         let replaced = self.session !== session
         if replaced { selection.reset() }
@@ -129,6 +133,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
         self.theme = theme
         self.canPlay = canPlay
         self.playFrom = playFrom
+        self.manageRoles = manageRoles
         let oldCaret = caret
         let oldEditing = editingLine
         caret = session.caret
@@ -138,10 +143,12 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             let oldIDs = lines.map(\.id)
             revision = session.revision
             lines = session.draft.lines
+            let agentsChanged = agents != session.draft.agents
+            agents = session.draft.agents
             let ids = lines.map(\.id)
             let live = Set(ids)
             layouts = layouts.filter { live.contains($0.key) }
-            let changed = oldIDs == ids ? IndexSet(lines.indices.filter {
+            let changed = oldIDs == ids && !agentsChanged ? IndexSet(lines.indices.filter {
                 oldLines[$0] != lines[$0] || lines[$0].id == oldEditing || lines[$0].id == editingLine
             }) : nil
             updateLayouts(rows: changed, notify: oldIDs == ids)
@@ -203,7 +210,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             let line = lines[index]
             let input = LyricsEditorLineLayout.Input(line: line, width: measuredWidth,
                                                      paragraph: index > 0 && line.isParagraphStart,
-                                                     editing: line.id == editingLine)
+                                                     editing: line.id == editingLine, agents: agents)
             if layouts[line.id]?.input != input {
                 layouts[line.id] = LyricsEditorLineLayout(input: input)
                 changed.insert(index)
@@ -241,7 +248,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                        caret: caret?.line == row ? caret?.syllable : nil,
                        selected: selection.isEmpty ? [] : IndexSet(line.syllables.indices.filter { selection.contains(line.syllables[$0].id) }),
                        pulse: line.syllables.contains(where: { $0.id == session.lastTapped }) ? session.tapSerial : 0,
-                       lastTapped: session.lastTapped)
+                       lastTapped: session.lastTapped, agents: agents)
         cell.select = { [weak self] syllable in self?.select(id: line.id, syllable: syllable) }
         cell.toggle = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: false) }
         cell.extend = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: true) }
@@ -365,6 +372,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: (selected.first?.line ?? 0) == 0) { session.moveToLine(by: -1) }.shortcut("⌘↑"),
             .button("移到下一行开头", systemImage: "arrow.down.to.line", disabled: (selected.last?.line ?? lines.count) >= lines.count - 1) { session.moveToLine(by: 1) }.shortcut("⌘↓"),
             .button("合并成一个音节", systemImage: "link", disabled: !session.canMergeSelection) { session.mergeSelection() },
+            LyricsEditorRoleMenu.syllableItem(session, positions: selected),
             .divider,
             .button("清除时间", systemImage: "eraser", disabled: !selected.contains { session.draft[$0].isTimed }) { session.clearTiming() },
             .button("清除注音", systemImage: "xmark.circle", disabled: !selected.contains { !(session.draft[$0].ruby ?? []).isEmpty }) { session.clearRuby() },
@@ -393,6 +401,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                 session.focusRuby()
             },
             .button("清除注音", systemImage: "xmark.circle", disabled: (line.syllables[syllable].ruby ?? []).isEmpty) { session.clearRuby([position]) },
+            LyricsEditorRoleMenu.syllableItem(session, positions: [position]),
             .button("从这里断成新的一行", systemImage: "return", disabled: syllable == 0) { session.moveToNewLine() }.shortcut("⌘↩"),
             .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: index == 0) { session.moveToLine(by: -1, [position]) }.shortcut("⌘↑"),
             .button("移到下一行开头", systemImage: "arrow.down.to.line", disabled: index + 1 >= lines.count) { session.moveToLine(by: 1, [position]) }.shortcut("⌘↓"),
@@ -414,6 +423,21 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             }
         }
         let singers: [(String, LyricSinger)] = [("主唱", .primary), ("对唱", .secondary), ("合唱", .duet)]
+        let manageRoles = { [weak self] in
+            self?.window?.makeFirstResponder(nil)
+            self?.manageRoles?()
+        }
+        let performers: PopMenuItem = session.draft.agents.isEmpty
+            ? .submenu("演唱", systemImage: "person.2", detail: singers.first(where: { $0.1 == line.singer })?.0) {
+                for (title, singer) in singers {
+                    PopMenuItem.option(title, selected: line.singer == singer) { editLine { $0.setSinger(singer, agents: session.draft.agents) } }
+                }
+                PopMenuItem.divider
+                PopMenuItem.button("设置演唱角色…", systemImage: "person.crop.rectangle.stack", action: manageRoles)
+            }
+            : .submenu("演唱", systemImage: "person.2", detail: LyricsEditorRoleStyle.names(line.agentIDs, in: session) ?? "未分配") {
+                LyricsEditorRoleMenu.lineItems(session, line: id, manage: manageRoles)
+            }
         return PopMenuItem.tidy([
             .button("编辑文本", systemImage: "pencil") { session.editingLine = id },
             .button("生成日语音译（替换已有）", systemImage: "wand.and.stars", disabled: session.isGeneratingRomanization || !JapaneseRomanization.containsJapaneseScript(line.text)) { [weak self] in
@@ -423,7 +447,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             .button("选中这一行的音节", systemImage: "checklist", disabled: line.syllables.isEmpty) { session.selectSyllables(ofLine: index) },
             .button("从这一行播放", systemImage: "play.circle") { [weak self] in self?.play(id: id) },
             .button("在下方插入一行", systemImage: "plus") {
-                let new = LyricsDraft.Line(syllables: [], singer: line.singer, track: line.track)
+                let new = LyricsDraft.Line(syllables: [], singer: line.singer, track: line.track, agentIDs: line.agentIDs)
                 session.edit { draft in
                     guard let i = draft.lines.firstIndex(where: { $0.id == id }) else { return }
                     draft.lines.insert(new, at: i + 1)
@@ -441,11 +465,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                 }
             },
             .divider,
-            .submenu("演唱", systemImage: "person.2", detail: singers.first(where: { $0.1 == line.singer })?.0) {
-                for (title, singer) in singers {
-                    PopMenuItem.option(title, selected: line.singer == singer) { editLine { $0.singer = singer } }
-                }
-            },
+            performers,
             .option("背景人声", selected: line.isBackground) { editLine { $0.isBackground.toggle() } },
             .submenu("虚拟轨", systemImage: "rectangle.split.1x2", detail: session.draft.tracks.first { $0.id == line.track }.map { LyricsEditorSession.name(of: $0) }) {
                 PopMenuItem.option("不放在轨道上（按演唱）", selected: !session.draft.isOnTrack(line)) { session.setTrack(nil, ofLine: id) }

@@ -56,18 +56,25 @@ extension AppModel {
         return draft.isEmpty ? nil : draft
     }
 
-    func exportLyrics(_ session: LyricsEditorSession) {
-        guard let text = session.exportTTML() else { return }
+    func exportLyrics(_ session: LyricsEditorSession, format: LyricsExportFormat = .ttml) {
+        let output: LyricsExport.Output
+        do {
+            guard let exported = try session.exportLyrics(format: format) else { return }
+            output = exported
+        } catch {
+            session.flash("导出失败：\(error.localizedDescription)")
+            return
+        }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "ttml") ?? .xml]
-        panel.nameFieldStringValue = session.exportFileName
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension, conformingTo: .plainText) ?? .plainText]
+        panel.nameFieldStringValue = session.exportFileName(for: format)
         panel.prompt = "导出"
-        panel.message = "导出「\(session.track.title)」的逐字歌词（TTML）"
+        panel.message = "导出「\(session.track.title)」（\(format.title)）" + (output.losses.isEmpty ? "" : "\n此格式不保存：\(output.losses.map(\.title).joined(separator: "、"))。完整内容可保存为歌词工程。")
         let write: (NSApplication.ModalResponse) -> Void = { [weak session] response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try text.write(to: url, atomically: true, encoding: .utf8)
-                session?.markSaved()
+                try output.text.write(to: url, atomically: true, encoding: .utf8)
+                if format == .ttml, output.losses.isEmpty { session?.markSaved() }
                 session?.flash("已导出「\(url.lastPathComponent)」")
             } catch {
                 session?.flash("导出失败：\(error.localizedDescription)")
@@ -151,6 +158,45 @@ extension AppModel {
             panel.beginSheetModal(for: window, completionHandler: completion)
         } else {
             panel.begin(completionHandler: completion)
+        }
+    }
+}
+
+extension LyricsExportFormat {
+    var title: String {
+        switch self {
+        case .ttml: "TTML"
+        case .lrcLine: "LRC · 逐行"
+        case .lrcEnhanced: "LRC · 增强型"
+        case .lrcWord: "LRC · 逐字"
+        case .kra: "KRA"
+        case .txt: "纯文本"
+        case .txt2ass: "txt2ass"
+        case .srt: "SRT"
+        case .ass: "ASS · 卡拉 OK"
+        case .nicokara: "Nicokara"
+        case .nicokaraRuby: "Nicokara · 带注音"
+        case .rl: "RL 编辑模式"
+        case .kasugamuki: "春日向注音"
+        case .krl: "Kirakara（KRL）"
+        }
+    }
+}
+
+private extension LyricsExport.Loss {
+    var title: String {
+        switch self {
+        case .timing: "歌词时间"
+        case .syllableTiming: "逐字时间"
+        case .lineEndTiming: "重叠歌词的独立结束时间"
+        case .translation: "翻译"
+        case .romanization: "音译"
+        case .ruby: "注音"
+        case .agents: "角色信息"
+        case .backgroundGrouping: "背景人声分组（会单独输出为歌词行）"
+        case .metadata: "部分歌曲元数据"
+        case .agentDetails: "角色 ID、类型、别名和扮演者关系（保留演唱名称）"
+        case .editingState: "多拍、休止及未完成的时间编辑状态"
         }
     }
 }

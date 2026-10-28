@@ -83,7 +83,7 @@ struct LyricsEditorImport: View {
     private var editor: some View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
-                Text("每行一句歌词，例如：\n\n君の名は\nHel|lo world（用 | 手动分开音节）\n\n也可以直接粘贴 LRC、TTML、YRC、QRC 或 KRC 歌词，已有的时间会保留。")
+                Text("每行一句歌词，例如：\n\n君の名は\nHel|lo world（用 | 手动分开音节）\n\n也可以粘贴或打开 TTML、LRC、KRA、SRT、ASS、Nicokara、RL 编辑文本、Kirakara／春日向注音，以及 YRC、QRC、KRC。已有的时间会保留。")
                     .font(.system(size: 13))
                     .foregroundStyle(theme.onSurfaceVariant.opacity(0.7))
                     .padding(.horizontal, 13)
@@ -136,6 +136,7 @@ struct LyricsEditorImport: View {
         case .empty: ""
         case .plainText: "纯文本"
         case .lineTimed: "LRC · 逐行时间"
+        case .lineTimedFormat(let format): "\(format.rawValue.uppercased()) · 逐行时间"
         case .syllableTimed(let format): "\(format.rawValue.uppercased()) · 逐字时间"
         }
     }

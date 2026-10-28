@@ -469,7 +469,7 @@ final class LyricsEditorSession {
     }
 
     static func sameVoice(_ a: LyricsDraft.Line, _ b: LyricsDraft.Line) -> Bool {
-        a.id == b.id || (a.singer == b.singer && a.isBackground == b.isBackground)
+        a.id == b.id || (a.singer == b.singer && a.isBackground == b.isBackground && Set(a.agentIDs) == Set(b.agentIDs))
     }
 
     @discardableResult
@@ -572,12 +572,33 @@ final class LyricsEditorSession {
         validateForExport() ? ttml() : nil
     }
 
+    func exportLyrics(format: LyricsExportFormat) throws -> LyricsExport.Output? {
+        guard format == .txt || validateForExport() else { return nil }
+        return try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: track.duration > 0 ? track.duration : nil)
+    }
+
+    func needsTiming(for format: LyricsExportFormat) -> Bool {
+        switch format {
+        case .txt, .rl: return false
+        case .lrcLine, .txt2ass, .srt:
+            return draft.lines.contains { line in
+                guard !line.syllables.isEmpty else { return false }
+                let start = line.start ?? line.syllables.first?.start
+                let end = line.end ?? line.syllables.last?.end
+                return start == nil || (format == .srt && end == nil)
+            }
+        default: return draft.timedCount < draft.syllableCount
+        }
+    }
+
     private var fileStem: String {
         let name = track.artistText.isEmpty ? track.title : "\(track.artistText) - \(track.title)"
         return name.replacingOccurrences(of: "/", with: "／").replacingOccurrences(of: ":", with: "：")
     }
 
     var exportFileName: String { fileStem + ".ttml" }
+
+    func exportFileName(for format: LyricsExportFormat) -> String { fileStem + "." + format.fileExtension }
 
     // MARK: Project
 

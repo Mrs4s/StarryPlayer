@@ -18,28 +18,24 @@ public struct LyricsFile: Sendable, Codable, Hashable {
         self.text = text
     }
 
-    /// Reads a lyric file: UTF-8 or UTF-16 text, GB 18030 for older Chinese LRC files, and
-    /// an encrypted `.krc`. nil when it is none of these or holds nothing.
+    /// Reads UTF text, older Chinese/Japanese text, or an encrypted `.krc`.
     public init?(name: String, data: Data) {
         guard let text = Self.text(from: data), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         self.init(name: name, text: text)
     }
 
-    public static let extensions = ["lrc", "ttml", "yrc", "qrc", "krc", "xml", "txt"]
+    public static let extensions = ["lrc", "ttml", "yrc", "qrc", "krc", "kra", "srt", "ass", "ssa", "krl", "xml", "txt"]
 
     /// The format the extension names; nil leaves it to detection (.txt, .xml).
     var declaredFormat: LyricsDocument.Format? {
-        LyricsDocument.Format(rawValue: (name as NSString).pathExtension.lowercased())
+        if (name as NSString).pathExtension.lowercased() == "kra" { return .lrc }
+        if (name as NSString).pathExtension.lowercased() == "ssa" { return .ass }
+        return LyricsDocument.Format(rawValue: (name as NSString).pathExtension.lowercased())
     }
 
     static func text(from data: Data) -> String? {
         if KRCCipher.isKRC(data) { return try? KRCCipher.text(from: data) }
-        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) { return String(data: data, encoding: .utf16) }
-        if let text = String(data: data, encoding: .utf8) {
-            return text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
-        }
-        let gb18030 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
-        return String(data: data, encoding: String.Encoding(rawValue: gb18030))
+        return LyricsTextDecoder.decode(data)
     }
 }
 

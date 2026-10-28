@@ -4,6 +4,7 @@ import SwiftUI
 
 struct LyricsEditorInspector: View {
     let session: LyricsEditorSession
+    var manageRoles: () -> Void = {}
     @Environment(\.theme) private var theme
 
     private var position: LyricsDraft.Position? {
@@ -31,8 +32,16 @@ struct LyricsEditorInspector: View {
                 .frame(height: 28)
                 LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
                 HStack(spacing: 10) {
-                    SegmentSwitch(selection: Binding { line.singer } set: { singer in setLine(\.singer, singer, at: position.line) }, options: [(.primary, "主唱"), (.secondary, "对唱"), (.duet, "合唱")])
-                        .controlSize(.small)
+                    if session.draft.agents.isEmpty {
+                        SegmentSwitch(selection: Binding { line.singer } set: { singer in
+                            session.edit { draft in draft.lines[position.line].setSinger(singer, agents: draft.agents) }
+                        }, options: [(.primary, "主唱"), (.secondary, "对唱"), (.duet, "合唱")])
+                            .controlSize(.small)
+                            .transition(.opacity)
+                    } else {
+                        LyricsEditorRolePicker(session: session, line: line, manage: manageRoles)
+                            .transition(.opacity)
+                    }
                     Spacer(minLength: 0)
                     Text("背景").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                     SettingsSwitch(isOn: Binding { line.isBackground } set: { setLine(\.isBackground, $0, at: position.line) })
@@ -55,6 +64,7 @@ struct LyricsEditorInspector: View {
             }
         }
         .animation(Motion.hover, value: position)
+        .animation(Motion.popover, value: session.draft.agents.isEmpty)
     }
 
     private func set(_ key: WritableKeyPath<LyricsDraft.Syllable, TimeInterval?>, _ value: TimeInterval?, at position: LyricsDraft.Position) {

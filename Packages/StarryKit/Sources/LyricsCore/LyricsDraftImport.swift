@@ -5,28 +5,41 @@ public enum LyricsDraftImport {
         case empty
         case plainText
         case lineTimed
+        case lineTimedFormat(LyricsDocument.Format)
         case syllableTimed(LyricsDocument.Format)
     }
 
     public static func kind(of text: String) -> Kind {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .empty }
         let format = LyricsFormatDetector.detect(text)
+        if format == .srt { return .lineTimedFormat(.srt) }
+        if format == .ass, text.range(of: #"\\[kK][fFoO]?\d"#, options: .regularExpression) == nil { return .lineTimedFormat(.ass) }
         if format != .lrc { return .syllableTimed(format) }
+        if LRCContent.hasInlineTiming(text) { return .syllableTimed(.lrc) }
         return stampedLines(text).isEmpty ? .plainText : .lineTimed
     }
 
-    /// The draft of `text`. `pairsTranslations`: in LRC, a second line at the same time is the
-    /// first one's translation and a third its romanization (how merged LRC files carry them).
+    /// Line-timed LRC can pair same-time rows as lyrics, translation, and romanization.
     public static func draft(from text: String, pairsTranslations: Bool = true) throws -> LyricsDraft {
         let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
+        switch LyricsFormatDetector.detect(text) {
+        case .rl: return try RLParser.source(text).draft()
+        case .krl: return try KRLParser.source(text).draft()
+        case .nicokara: return try NicokaraParser.source(text).draft()
+        case .ass: return try ASSParser.source(text).draft()
+        default: break
+        }
         switch kind(of: text) {
         case .empty:
             throw LyricsParseError.empty
         case .plainText:
             return plainDraft(text)
         case .lineTimed:
-            return lrcDraft(text, pairsTranslations: pairsTranslations)
+            return try LRCContent(text).draft(pairsTranslations: pairsTranslations)
+        case .lineTimedFormat(let format):
+            return LyricsDraft(document: try LyricsParsing.parse(text, format: format))
         case .syllableTimed(let format):
+            if format == .lrc { return try LRCContent(text).draft(pairsTranslations: pairsTranslations) }
             let draft = LyricsDraft(document: try LyricsParsing.parse(text, format: format))
             guard !draft.isEmpty else { throw LyricsParseError.empty }
             return draft
@@ -44,36 +57,6 @@ public enum LyricsDraftImport {
             }
             lines.append(LyricsDraft.Line(syllables: syllables(in: content), isParagraphStart: paragraph))
             paragraph = false
-        }
-        return LyricsDraft(lines: lines)
-    }
-
-    private static func lrcDraft(_ text: String, pairsTranslations: Bool) -> LyricsDraft {
-        var groups: [(time: TimeInterval, texts: [String])] = []
-        for entry in stampedLines(text).enumerated().sorted(by: { ($0.element.time, $0.offset) < ($1.element.time, $1.offset) }).map(\.element) {
-            if let last = groups.indices.last, abs(groups[last].time - entry.time) < 0.0005 {
-                groups[last].texts.append(entry.text)
-            } else {
-                groups.append((entry.time, [entry.text]))
-            }
-        }
-        var lines: [LyricsDraft.Line] = []
-        for (index, group) in groups.enumerated() {
-            let texts = group.texts.filter { !$0.isEmpty }
-            // A line without text only ends the one before it.
-            guard let main = texts.first else { continue }
-            let end = index + 1 < groups.count ? groups[index + 1].time : nil
-            var line = LyricsDraft.Line(syllables: syllables(in: main), isParagraphStart: lines.isEmpty, start: group.time, end: end)
-            if pairsTranslations {
-                if texts.count > 1 { line.translation = texts[1] }
-                if texts.count > 2 { line.romanization = texts[2] }
-            } else {
-                for extra in texts.dropFirst() {
-                    lines.append(line)
-                    line = LyricsDraft.Line(syllables: syllables(in: extra), start: group.time, end: end)
-                }
-            }
-            lines.append(line)
         }
         return LyricsDraft(lines: lines)
     }
@@ -102,8 +85,8 @@ public enum LyricsDraftImport {
     /// splits only at `|` and between words, for syllables set by hand (`Hel|lo world`).
     /// Punctuation goes with the syllable before it, an opening bracket or quote with the one
     /// after. Joined, the syllables give the line back, less its `|` and repeated spaces.
-    public static func syllables(in text: String) -> [LyricsDraft.Syllable] {
-        let explicit = text.contains("|")
+    public static func syllables(in text: String, explicitBoundaries: Bool = true, preservesLineBreaks: Bool = false) -> [LyricsDraft.Syllable] {
+        let explicit = explicitBoundaries && text.contains("|")
         var parts: [String] = []
         var prefix = ""
         var wordOpen = false
@@ -113,6 +96,11 @@ public enum LyricsDraftImport {
                 continue
             }
             if character.isWhitespace {
+                if preservesLineBreaks, character.isNewline, let last = parts.indices.last {
+                    parts[last] = parts[last].trimmingCharacters(in: .whitespaces) + "\n"
+                    wordOpen = false
+                    continue
+                }
                 if let last = parts.indices.last, !parts[last].hasSuffix(" ") { parts[last] += " " }
                 wordOpen = false
                 continue

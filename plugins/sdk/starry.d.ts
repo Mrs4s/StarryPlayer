@@ -457,7 +457,7 @@ export interface Account {
 /** `mid`: a second id of the song, when the platform has two; the AMLL TTML database is asked with it before `id`. */
 export interface LyricsSong { id: string; mid?: string; title: string; artists: string[]; album?: string; duration?: number }
 
-export type LyricsFormat = 'ttml' | 'yrc' | 'qrc' | 'krc' | 'lrc';
+export type LyricsFormat = 'ttml' | 'yrc' | 'qrc' | 'krc' | 'lrc' | 'srt' | 'ass' | 'nicokara' | 'rl' | 'krl';
 
 export interface Lyrics {
   format: LyricsFormat;

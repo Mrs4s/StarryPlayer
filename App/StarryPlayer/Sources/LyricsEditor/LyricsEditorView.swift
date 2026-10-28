@@ -49,13 +49,14 @@ struct LyricsEditorView: View {
     private var showPreview: Bool { previewLayout != .editor }
     private var focusPreview: Bool { previewLayout == .preview }
 
-    private enum PendingAction: Identifiable {
+    private enum PendingAction: Hashable, Identifiable {
         case export, apply
+        case exportAs(LyricsExportFormat)
         var id: Self { self }
     }
 
     enum Panel: Equatable {
-        case importer, metadata, tracks, shortcuts, translation, aiTiming
+        case importer, metadata, tracks, roles, shortcuts, translation, aiTiming
         case alignment(UUID)
     }
 
@@ -68,6 +69,8 @@ struct LyricsEditorView: View {
                 HStack(spacing: 0) {
                     LyricsEditorLineList(session: session, clock: clock, canPlay: audio.isReady, appeared: appeared) { position in
                         play(from: position, preroll: 1)
+                    } manageRoles: {
+                        show(.roles)
                     }
                     .frame(width: max(geo.size.width - previewWidth - (showPreview ? 12 : 0), 0))
                     .opacity(focusPreview ? 0 : 1)
@@ -82,7 +85,7 @@ struct LyricsEditorView: View {
                     }
                 }
             }
-            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) }, alignLine: alignCurrentLine)
+            LyricsEditorDock(session: session, audio: audio, clock: clock, tap: { tap() }, release: { release() }, manageTracks: { show(.tracks) }, alignLine: alignCurrentLine, manageRoles: { show(.roles) })
         }
         .disabled(panel != nil)
         .accessibilityHidden(panel != nil)
@@ -150,6 +153,11 @@ struct LyricsEditorView: View {
             LyricsEditorMetadata(session: session, close: close).transition(.opacity).zIndex(3)
         case .tracks:
             LyricsEditorTracks(session: session, close: close).transition(.opacity).zIndex(3)
+        case .roles:
+            LyricsEditorRoles(session: session, clock: clock, play: { line in
+                play(from: LyricsDraft.Position(line: line, syllable: 0), preroll: 1)
+            }, close: close)
+            .transition(.opacity).zIndex(3)
         case .shortcuts:
             LyricsEditorShortcuts(close: close).transition(.opacity).zIndex(3)
         case .translation:
@@ -324,6 +332,11 @@ struct LyricsEditorView: View {
     private var exportMenu: some View {
         PopMenu {
             PopMenuItem.button("导出 TTML…", systemImage: "square.and.arrow.up") { request(.export) }
+            PopMenuItem.submenu("导出其他格式", systemImage: "doc.text") {
+                for format in LyricsExportFormat.allCases where format != .ttml {
+                    PopMenuItem.button("\(format.title)…") { request(.exportAs(format)) }
+                }
+            }
             PopMenuItem.button("拷贝 TTML", systemImage: "doc.on.doc") { model.copyLyrics(session) }
             PopMenuItem.divider
             PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square") { saveProject() }
@@ -338,7 +351,7 @@ struct LyricsEditorView: View {
 
     private var subtitle: String {
         let artist = session.track.artistText
-        if session.hasUnsavedChanges { return artist.isEmpty ? "有未应用的修改" : "\(artist) · 有未应用的修改" }
+        if session.hasUnsavedChanges { return artist.isEmpty ? "有未保存的修改" : "\(artist) · 有未保存的修改" }
         return artist
     }
 
@@ -346,6 +359,10 @@ struct LyricsEditorView: View {
         PopMenu {
             PopMenuItem.button("歌曲信息…", systemImage: "info.circle") { show(.metadata) }
             PopMenuItem.button("虚拟轨…", systemImage: "rectangle.split.1x2") { show(.tracks) }
+            PopMenuItem.button("演唱角色…", systemImage: "person.2") {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                show(.roles)
+            }
             PopMenuItem.button("AI 翻译与注音…", systemImage: "character.bubble", disabled: !session.draft.lines.contains(where: LyricsTranslation.isTranslatable)) {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 show(.translation)
@@ -393,7 +410,7 @@ struct LyricsEditorView: View {
             menuLabel("工具", systemImage: "slider.horizontal.3")
         }
         .buttonStyle(VariantButtonStyle(variant: .ghost, isPill: true))
-        .help("歌曲信息、虚拟轨、翻译注音与打点设置")
+        .help("歌曲信息、虚拟轨、演唱角色、翻译注音与打点设置")
     }
 
     private var audioBanner: some View {
@@ -432,6 +449,7 @@ struct LyricsEditorView: View {
 
     private func request(_ action: PendingAction) {
         guard !session.draft.isEmpty else { return }
+        if case .exportAs(let format) = action, !session.needsTiming(for: format) { perform(action); return }
         if session.draft.timedCount < session.draft.syllableCount {
             pendingAction = action
         } else {
@@ -443,10 +461,16 @@ struct LyricsEditorView: View {
         switch action {
         case .export:
             model.exportLyrics(session)
+        case .exportAs(let format):
+            model.exportLyrics(session, format: format)
         case .apply:
             guard session.validateForExport() else { return }
             if model.applyEditedLyrics(session) {
-                session.flash(model.player.current?.id == session.track.id ? "已应用，播放页正在显示编辑好的歌词" : "已应用，播放这首歌时会显示编辑好的歌词")
+                if session.draft.hasAuthoringTiming {
+                    session.flash("已应用播放歌词；多拍、休止及未完成时间请另存歌词工程")
+                } else {
+                    session.flash(model.player.current?.id == session.track.id ? "已应用，播放页正在显示编辑好的歌词" : "已应用，播放这首歌时会显示编辑好的歌词")
+                }
             } else {
                 session.flash("没能应用这份歌词")
             }
@@ -543,6 +567,10 @@ struct LyricsEditorView: View {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if panel != nil {
+            if panel == .roles, flags.contains(.command), key == "z" {
+                flags.contains(.shift) ? session.redo() : session.undo()
+                return true
+            }
             guard panel != .importer, event.keyCode == 53 else { return false }
             withAnimation(Motion.popover) { panel = nil }
             return true

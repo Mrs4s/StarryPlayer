@@ -5,17 +5,20 @@ import Foundation
 /// so each character becomes a word with one syllable.
 public struct LyricsDocument: Sendable, Hashable {
     public enum Format: String, Sendable, Codable, CaseIterable {
-        case ttml, yrc, qrc, krc, lrc
+        case ttml, yrc, qrc, krc, lrc, srt, ass, nicokara, rl, krl
     }
 
     public var format: Format
     public var lines: [LyricLine]
     public var metadata: [String: String]
+    /// Performer declarations in source order.
+    public var agents: [LyricAgent]
 
-    public init(format: Format, lines: [LyricLine], metadata: [String: String] = [:]) {
+    public init(format: Format, lines: [LyricLine], metadata: [String: String] = [:], agents: [LyricAgent] = []) {
         self.format = format
         self.lines = lines
         self.metadata = metadata
+        self.agents = agents
     }
 
     public var hasSyllables: Bool {
@@ -28,10 +31,22 @@ public struct LyricsDocument: Sendable, Hashable {
     public var hasRomanization: Bool { lines.contains { $0.romanization?.isEmpty == false } }
     public var hasBackgroundVocals: Bool { lines.contains { $0.background != nil } }
     public var hasRuby: Bool { lines.contains { $0.hasRuby } }
+    public var hasAuthoringTiming: Bool {
+        lines.flatMap { $0.syllables + ($0.background?.syllables ?? []) }.contains {
+            $0.isRest || ($0.checkpoints?.count ?? 0) > 1 || $0.hasRelease && $0.checkpoints?.contains(where: { $0 == nil }) == true
+        }
+    }
     public var hasDuet: Bool { lines.contains { $0.singer == .secondary } }
     /// More than one vocalist: lines are laid out narrower so alternating voices read as left /
     /// right.
-    public var hasMultipleVocalists: Bool { lines.contains { $0.singer != .primary } }
+    public var hasMultipleVocalists: Bool {
+        if lines.contains(where: { $0.singer != .primary }) { return true }
+        let ids = Set(lines.flatMap { line in
+            line.agentIDs + line.syllables.flatMap(\.agentIDs)
+                + (line.background.map { $0.agentIDs + $0.syllables.flatMap(\.agentIDs) } ?? [])
+        })
+        return ids.count > 1 || agents.contains { ids.contains($0.id) && $0.kind == .group }
+    }
 
     /// Index of the line active at `time`, or nil before the first line.
     public func activeLineIndex(at time: TimeInterval) -> Int? {
@@ -81,6 +96,7 @@ public struct InstrumentalGap: Sendable, Hashable {
     public var duration: TimeInterval { max(0, end - start) }
 }
 
+/// Compatibility presentation (lead / opposite side / chorus), not a performer identity.
 public enum LyricSinger: String, Sendable, Codable {
     case primary, secondary, duet
 }
@@ -98,12 +114,14 @@ public struct LyricLine: Sendable, Hashable, Identifiable {
     /// (`LyricRomanizationGrouping`).
     public var romanizationWords: [LyricWord]?
     public var singer: LyricSinger
+    /// Empty uses the legacy `singer` when no role table exists.
+    public var agentIDs: [String]
     public var background: LyricBackgroundVocals?
     public var primaryStart: TimeInterval
     public var primaryEnd: TimeInterval
     public var isParagraphStart: Bool
 
-    public init(id: Int, start: TimeInterval, end: TimeInterval, words: [LyricWord], translation: String? = nil, romanization: String? = nil, romanizationWords: [LyricWord]? = nil, singer: LyricSinger = .primary, background: LyricBackgroundVocals? = nil, primaryStart: TimeInterval? = nil, primaryEnd: TimeInterval? = nil, isParagraphStart: Bool = false) {
+    public init(id: Int, start: TimeInterval, end: TimeInterval, words: [LyricWord], translation: String? = nil, romanization: String? = nil, romanizationWords: [LyricWord]? = nil, singer: LyricSinger = .primary, background: LyricBackgroundVocals? = nil, primaryStart: TimeInterval? = nil, primaryEnd: TimeInterval? = nil, isParagraphStart: Bool = false, agentIDs: [String] = []) {
         self.id = id
         self.start = start
         self.end = end
@@ -112,6 +130,7 @@ public struct LyricLine: Sendable, Hashable, Identifiable {
         self.romanization = romanization
         self.romanizationWords = romanizationWords
         self.singer = singer
+        self.agentIDs = agentIDs
         self.background = background
         self.primaryStart = primaryStart ?? start
         self.primaryEnd = primaryEnd ?? end
@@ -140,14 +159,17 @@ public struct LyricBackgroundVocals: Sendable, Hashable {
     public var translation: String?
     public var romanization: String?
     public var romanizationWords: [LyricWord]?
+    /// Empty inherits the containing line's performers.
+    public var agentIDs: [String]
 
-    public init(start: TimeInterval, end: TimeInterval, words: [LyricWord], translation: String? = nil, romanization: String? = nil, romanizationWords: [LyricWord]? = nil) {
+    public init(start: TimeInterval, end: TimeInterval, words: [LyricWord], translation: String? = nil, romanization: String? = nil, romanizationWords: [LyricWord]? = nil, agentIDs: [String] = []) {
         self.start = start
         self.end = end
         self.words = words
         self.translation = translation
         self.romanization = romanization
         self.romanizationWords = romanizationWords
+        self.agentIDs = agentIDs
     }
 
     public var text: String { words.map(\.text).joined() }
@@ -193,12 +215,22 @@ public struct LyricSyllable: Sendable, Hashable {
     /// Ruby over the syllable (furigana, TTML `tts:ruby`), in reading order; empty for none.
     /// The text stays the base alone.
     public var ruby: [LyricRuby]
+    /// An inline performer change; empty inherits the containing line or background voice.
+    public var agentIDs: [String]
+    /// Absolute beat times; nil entries are untimed.
+    public var checkpoints: [TimeInterval?]?
+    public var isRest: Bool
+    public var hasRelease: Bool
 
-    public init(start: TimeInterval, end: TimeInterval, text: String, ruby: [LyricRuby] = []) {
+    public init(start: TimeInterval, end: TimeInterval, text: String, ruby: [LyricRuby] = [], agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false) {
         self.start = start
         self.end = end
         self.text = text
         self.ruby = ruby
+        self.agentIDs = agentIDs
+        self.checkpoints = checkpoints
+        self.isRest = isRest
+        self.hasRelease = hasRelease
     }
 
     public var duration: TimeInterval { max(0, end - start) }

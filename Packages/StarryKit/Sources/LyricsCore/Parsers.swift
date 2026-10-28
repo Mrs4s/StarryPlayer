@@ -13,7 +13,9 @@ public protocol LyricsParser: Sendable {
 
 public enum LyricsParsing {
     public static func parse(_ body: String, format: LyricsDocument.Format, translation: String? = nil, romanization: String? = nil) throws -> LyricsDocument {
-        var document = try parser(for: format).parse(body)
+        let detected = format == .lrc ? LyricsFormatDetector.detect(body) : format
+        let actual = format == .lrc && [.nicokara, .rl, .krl].contains(detected) ? detected : format
+        var document = try parser(for: actual).parse(body)
         attach(translation: translation, romanization: romanization, to: &document)
         return document
     }
@@ -25,6 +27,11 @@ public enum LyricsParsing {
         case .qrc: QRCParser.self
         case .krc: KRCParser.self
         case .ttml: TTMLParser.self
+        case .srt: SRTParser.self
+        case .ass: ASSParser.self
+        case .nicokara: NicokaraParser.self
+        case .rl: RLParser.self
+        case .krl: KRLParser.self
         }
     }
 
@@ -38,7 +45,7 @@ public enum LyricsParsing {
             merge(&document, extra: extra, accept: { $0 != "//" }, read: \.translation) { line, text, _ in line.translation = text }
         }
         if let extra = secondary(romanization) {
-            let timed = extra.format != .lrc
+            let timed = extra.format == .lrc ? LRCContent.hasInlineTiming(romanization ?? "") : extra.format != .srt
             // Leading notes such as `以下音译标注由AI工具生产` are not romanization.
             merge(&document, extra: extra, accept: { !LyricWordGrouping.containsChineseJapanese($0) }, read: \.romanization) { line, text, source in
                 line.romanization = text
@@ -69,9 +76,18 @@ public enum LyricsParsing {
 /// Sniffs the lyric format of a body whose source did not say (secondary bodies, local files).
 public enum LyricsFormatDetector {
     public static func detect(_ text: String) -> LyricsDocument.Format {
+        let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
         let head = text.prefix(4096)
         if head.contains("<QrcInfos") || head.contains("LyricContent=") { return .qrc }
         if head.contains("<tt ") || head.contains("<tt>") || head.contains("<tt\n") { return .ttml }
+        if head.range(of: #"(?im)^\s*\[(Script Info|Events)\]\s*$"#, options: .regularExpression) != nil { return .ass }
+        if head.range(of: #"(?m)^\s*\d+:\d{2}:\d{2}[,.]\d+\s*-->"#, options: .regularExpression) != nil { return .srt }
+        if head.range(of: #"(?i)^\s*config\s*\{"#, options: .regularExpression) != nil || text.contains("【@") { return .krl }
+        if text.range(of: #"\[\d+e?\|\d+:\d{2}:\d{2}\]|(?m)^\s*\[\d+e?\]|\{[^{}\r\n]*\|\[\d+e?\]"#, options: .regularExpression) != nil { return .rl }
+        if text.range(of: #"(?m)^[ \t]*@(Ruby\d*|Emoji|Title|Artist)=|【sv\d+】|【(?!@)[^】]+】\s*\[\d+:"#, options: .regularExpression) != nil { return .nicokara }
+        if text.range(of: #"\{[^{}\r\n]+\|[^{}\r\n]*\}"#, options: .regularExpression) != nil { return .krl }
+        if text.range(of: #"\[\d+:\d{2}:\d{2,3}\]"#, options: .regularExpression) != nil,
+           text.range(of: #"<\d+:\d{2}[.:]"#, options: .regularExpression) == nil { return .nicokara }
         for rawLine in text.split(whereSeparator: \.isNewline).prefix(300) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard let header = KaraokeLine.header(line) else { continue }
@@ -88,41 +104,20 @@ public enum LRCParser: LyricsParser {
     public static let format: LyricsDocument.Format = .lrc
 
     public static func parse(_ text: String) throws -> LyricsDocument {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw LyricsParseError.empty }
-        var metadata: [String: String] = [:]
-        var stamped: [(TimeInterval, String)] = []
-
-        for rawLine in trimmed.components(separatedBy: .newlines) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            guard line.hasPrefix("[") else { continue }
-            var times: [TimeInterval] = []
-            var rest = Substring(line)
-            while rest.hasPrefix("["), let close = rest.firstIndex(of: "]") {
-                let tag = rest[rest.index(after: rest.startIndex)..<close]
-                rest = rest[rest.index(after: close)...]
-                if let time = parseTimestamp(tag) {
-                    times.append(time)
-                } else if let colon = tag.firstIndex(of: ":") {
-                    metadata[String(tag[..<colon])] = String(tag[tag.index(after: colon)...])
-                }
-            }
-            let content = rest.trimmingCharacters(in: .whitespaces)
-            for time in times { stamped.append((time, content)) }
-        }
-
-        stamped.sort { $0.0 < $1.0 }
-        let lines = stamped.enumerated().map { index, entry in
-            let end = index + 1 < stamped.count ? stamped[index + 1].0 : entry.0 + 5
-            return LyricLine.plain(id: index, start: entry.0, end: end, text: entry.1)
-        }
-        return LyricsDocument(format: .lrc, lines: lines, metadata: metadata)
+        try LRCContent(text).document()
     }
 
     static func parseTimestamp(_ tag: Substring) -> TimeInterval? {
         let parts = tag.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 2, let minutes = Double(parts[0]), let seconds = Double(parts[1]) else { return nil }
-        return minutes * 60 + seconds
+        guard parts.count == 2 || parts.count == 3,
+              !parts[0].isEmpty, parts[0].allSatisfy(\.isNumber), let minutes = Double(parts[0]),
+              let seconds = Double(parts[1]), seconds.isFinite, seconds >= 0, seconds < 60 else { return nil }
+        var time = minutes * 60 + seconds
+        if parts.count == 3 {
+            guard !parts[1].contains("."), (2...3).contains(parts[2].count), parts[2].allSatisfy(\.isNumber), let fraction = Double(parts[2]) else { return nil }
+            time += fraction / pow(10, Double(parts[2].count))
+        }
+        return time.isFinite && time >= 0 ? time : nil
     }
 }
 
@@ -195,8 +190,11 @@ public enum TTMLParser: LyricsParser {
         }
         guard !delegate.lines.isEmpty else { throw LyricsParseError.empty }
         var lines = delegate.lines
-        for i in lines.indices { lines[i].id = i }
-        var document = LyricsDocument(format: .ttml, lines: lines, metadata: delegate.metadata)
+        for i in lines.indices {
+            lines[i].id = i
+            lines[i].singer = LyricAgent.singer(for: lines[i].agentIDs, in: delegate.agents)
+        }
+        var document = LyricsDocument(format: .ttml, lines: lines, metadata: delegate.metadata, agents: delegate.agents)
         LyricRomanizationAligner.alignMissing(in: &document)
         return document
     }
@@ -220,14 +218,21 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     var lines: [LyricLine] = []
     var metadata: [String: String] = [:]
 
-    private var agents: [String] = []          // xml:id in declaration order
-    private var agentTypes: [String: String] = [:]
+    var agents: [LyricAgent] = []
+    private var inHead = false
+    private var currentAgent: Int?
+    private var agentName: LyricAgent.Name?
+    private var agentStack: [[String]] = []
+    private var namespaceStack: [[String: String]] = []
+    private var languageStack: [String?] = []
     private var paragraphPending = false
 
     private var inParagraph = false
     private var lineStart: TimeInterval = 0
     private var lineEnd: TimeInterval = 0
     private var lineSinger: LyricSinger = .primary
+    private var lineAgentIDs: [String] = []
+    private var backgroundAgentIDs: [String] = []
     private var mainWords: [LyricWord] = []
     private var mainPlainText = ""
     private var translation: String?
@@ -272,13 +277,41 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     private var rubyTexts: [PendingRuby] = []
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        var namespaces = namespaceStack.last ?? [:]
+        for (key, value) in attributes where key.hasPrefix("xmlns:") { namespaces[String(key.dropFirst(6))] = value }
+        namespaceStack.append(namespaces)
+        var attributes = attributes
+        for (key, value) in attributes {
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            switch namespaces[String(parts[0])] {
+            case "http://www.w3.org/ns/ttml#metadata": attributes["ttm:\(parts[1])"] = value
+            case "http://www.w3.org/ns/ttml#styling": attributes["tts:\(parts[1])"] = value
+            default: break
+            }
+        }
+        let inheritedAgents = agentStack.last ?? []
+        let language = attributes["xml:lang"] ?? (languageStack.last ?? nil)
+        let currentAgents = (attributes["ttm:agent"] ?? attributes["agent"]).map {
+            LyricAgent.references($0.split(whereSeparator: \.isWhitespace).map(String.init))
+        } ?? inheritedAgents
+        // Flush preceding text with its enclosing performers before pushing the new span.
+        defer {
+            agentStack.append(currentAgents)
+            languageStack.append(language)
+        }
         let local = name.split(separator: ":").last.map(String.init) ?? name
         switch local {
+        case "head": inHead = true
         case "agent":
-            if let id = attributes["xml:id"] {
-                agents.append(id)
-                agentTypes[id] = attributes["type"] ?? "person"
+            if inHead, let id = attributes["xml:id"], !agents.contains(where: { $0.id == id }) {
+                agents.append(LyricAgent(id: id, kind: attributes["type"].flatMap(LyricAgent.Kind.init(rawValue:)) ?? .person))
+                currentAgent = agents.count - 1
             }
+        case "name" where currentAgent != nil:
+            agentName = .init("", kind: attributes["type"].flatMap(LyricAgent.Name.Kind.init(rawValue:)) ?? .full, language: language)
+        case "actor":
+            if let currentAgent { agents[currentAgent].actorID = attributes["agent"] }
         case "meta":
             if let key = attributes["key"], let value = attributes["value"] { metadata[key] = value }
         case "div":
@@ -308,12 +341,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             lineKey = attributes["itunes:key"] ?? attributes["key"]
             lineStart = attributes["begin"].flatMap(TTMLParser.parseTime) ?? 0
             lineEnd = attributes["end"].flatMap(TTMLParser.parseTime) ?? lineStart
-            let agent = attributes["ttm:agent"] ?? attributes["agent"]
-            if let agent, let index = agents.firstIndex(of: agent), index > 0 {
-                lineSinger = agentTypes[agent] == "group" ? .duet : .secondary
-            } else {
-                lineSinger = .primary
-            }
+            lineAgentIDs = currentAgents
             mainWords = []
             mainPlainText = ""
             translation = nil
@@ -324,6 +352,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             backgroundRomanization = nil
             backgroundEnd = nil
             backgroundSpan = nil
+            backgroundAgentIDs = []
             mainPlaceholders = []
             backgroundPlaceholders = []
             mainTimed = false
@@ -359,6 +388,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
                 switch role {
                 case "x-bg":
                     kind = .background
+                    backgroundAgentIDs = currentAgents == lineAgentIDs ? [] : currentAgents
                     if let b = begin {
                         let e = end ?? b
                         if !isPlaceholder(begin: b, end: e) { backgroundSpan = (b, max(b, e)) }
@@ -382,6 +412,10 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if agentName != nil {
+            agentName?.text += string
+            return
+        }
         if transliterationKey != nil {
             if case .syllable = transliterationStack.last {
                 transliterationText += string
@@ -405,8 +439,18 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        defer {
+            _ = agentStack.popLast()
+            _ = namespaceStack.popLast()
+            _ = languageStack.popLast()
+        }
         let local = name.split(separator: ":").last.map(String.init) ?? name
         switch local {
+        case "head": inHead = false
+        case "agent": currentAgent = nil
+        case "name":
+            if let currentAgent, let agentName { agents[currentAgent].names.append(agentName) }
+            agentName = nil
         case "span" where transliterationKey != nil:
             guard let kind = transliterationStack.popLast() else { return }
             if case .syllable(let start, let end) = kind {
@@ -534,7 +578,9 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         let bg = inBackground
         let s = start ?? (bg ? (backgroundEnd ?? backgroundSpan?.start ?? lineStart) : (mainWords.last?.end ?? lineStart))
         let e = end ?? (bg && start == nil && !placeholder ? max(s, backgroundSpan?.end ?? s) : s)
-        let syllable = LyricSyllable(start: s, end: e, text: text, ruby: Self.ruby(ruby, start: s, end: e))
+        let voiceAgents = bg && !backgroundAgentIDs.isEmpty ? backgroundAgentIDs : lineAgentIDs
+        let currentAgents = agentStack.last ?? []
+        let syllable = LyricSyllable(start: s, end: e, text: text, ruby: Self.ruby(ruby, start: s, end: e), agentIDs: currentAgents == voiceAgents ? [] : currentAgents)
         if placeholder {
             let index = (bg ? backgroundWords : mainWords).reduce(0) { $0 + $1.syllables.count }
             if bg { backgroundPlaceholders.insert(index) } else { mainPlaceholders.insert(index) }
@@ -569,6 +615,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
                 words = [LyricWord(start: lineStart, end: lineEnd, text: plain)]
             } else if let bg = background {
                 words = bg.words
+                if !bg.agentIDs.isEmpty { lineAgentIDs = bg.agentIDs }
                 background = nil
             } else {
                 return
@@ -605,7 +652,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         }
         let romanizationWords = transliterationWords(transliteration?.main)
         let romanizationText = romanization ?? romanizationWords.map { $0.map(\.text).joined().trimmingCharacters(in: .whitespaces) }
-        lines.append(LyricLine(id: lines.count, start: start, end: end, words: words, translation: translation, romanization: romanizationText, romanizationWords: romanizationWords, singer: lineSinger, background: background, primaryStart: background == nil ? start : primaryStart, primaryEnd: background == nil ? end : primaryEnd, isParagraphStart: paragraphPending))
+        lines.append(LyricLine(id: lines.count, start: start, end: end, words: words, translation: translation, romanization: romanizationText, romanizationWords: romanizationWords, singer: lineSinger, background: background, primaryStart: background == nil ? start : primaryStart, primaryEnd: background == nil ? end : primaryEnd, isParagraphStart: paragraphPending, agentIDs: lineAgentIDs))
         paragraphPending = false
     }
 
@@ -660,6 +707,6 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         let start = syllables.map(\.start).min() ?? backgroundSpan?.start ?? lineStart
         let end = syllables.map(\.end).max() ?? backgroundSpan?.end ?? lineEnd
         let romanization = backgroundRomanization ?? transliteration.map { $0.map(\.text).joined().trimmingCharacters(in: .whitespaces) }
-        return LyricBackgroundVocals(start: start, end: max(end, start), words: words, translation: backgroundTranslation, romanization: romanization, romanizationWords: transliteration)
+        return LyricBackgroundVocals(start: start, end: max(end, start), words: words, translation: backgroundTranslation, romanization: romanization, romanizationWords: transliteration, agentIDs: backgroundAgentIDs)
     }
 }

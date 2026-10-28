@@ -17,18 +17,22 @@ import Testing
     }
 
     @Test func projectsFromBeforeRubyStillOpen() throws {
-        let project = LyricsProject(draft: LyricsDraft(lines: [.init(syllables: [.init(text: "我", start: 1, end: 1.5)])]))
-        let data = try project.data()
-        #expect(!String(decoding: data, as: UTF8.self).contains("ruby"))
-        let v1 = String(decoding: data, as: UTF8.self).replacingOccurrences(of: #""version" : 2"#, with: #""version" : 1"#)
-        #expect(v1.contains(#""version" : 1"#))
-        #expect(try LyricsProject(data: Data(v1.utf8)).draft == project.draft)
+        let old = #"{"format":"starry-lyrics","version":1,"title":"","artists":[],"metadata":[],"draft":{"lines":[{"id":"00000000-0000-0000-0000-000000000001","syllables":[{"id":"00000000-0000-0000-0000-000000000002","text":"我","start":1,"end":1.5}],"translation":"","romanization":"","singer":"primary","isBackground":false,"isParagraphStart":false}],"metadata":{},"tracks":[]}}"#
+        for version in [1, 2, 3] {
+            let json = old.replacingOccurrences(of: #""version":1"#, with: "\"version\":\(version)")
+            let read = try LyricsProject(data: Data(json.utf8))
+            #expect(read.draft.agents.isEmpty)
+            #expect(read.draft.lines[0].agentIDs.isEmpty)
+            #expect(read.draft.lines[0].syllables[0].agentIDs.isEmpty)
+            #expect(read.draft.lines[0].text == "我")
+            #expect(try LyricsProject(data: read.data()).version == LyricsProject.currentVersion)
+        }
     }
 
     @Test func otherJSONAndProjectsFromLaterVersionsAreRefused() {
         #expect(throws: LyricsProject.ReadError.notAProject) { try LyricsProject(data: Data(#"{"lines": []}"#.utf8)) }
-        #expect(throws: LyricsProject.ReadError.newerVersion(3)) {
-            try LyricsProject(data: Data(#"{"format": "starry-lyrics", "version": 3}"#.utf8))
+        #expect(throws: LyricsProject.ReadError.newerVersion(5)) {
+            try LyricsProject(data: Data(#"{"format": "starry-lyrics", "version": 5}"#.utf8))
         }
         #expect(throws: (any Error).self) { try LyricsProject(data: Data("[00:01.00]歌词".utf8)) }
     }

@@ -17,6 +17,14 @@ struct LyricsEditorSessionTests {
         session.draft.lines[line].syllables.map { [$0.start, $0.end] }
     }
 
+    @Test func differentNamedPerformersDoNotShareTheSameTimingVoice() {
+        let alice = LyricsDraft.Line(syllables: [.init(text: "A")], singer: .secondary, agentIDs: ["alice"])
+        let bob = LyricsDraft.Line(syllables: [.init(text: "B")], singer: .secondary, agentIDs: ["bob"])
+        let aliceAgain = LyricsDraft.Line(syllables: [.init(text: "C")], singer: .secondary, agentIDs: ["alice"])
+        #expect(!LyricsEditorSession.sameVoice(alice, bob))
+        #expect(LyricsEditorSession.sameVoice(alice, aliceAgain))
+    }
+
     @Test func tapsStartEachSyllableAndEndTheOneBefore() throws {
         let session = try session("我爱你\n再见")
         #expect(session.caret == .init(line: 0, syllable: 0))

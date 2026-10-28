@@ -15,16 +15,28 @@ struct LyricsEditorLineLayout {
         var paragraph: Bool
         var editing: Bool
 
-        init(line: LyricsDraft.Line, width: CGFloat, paragraph: Bool, editing: Bool) {
+        init(line: LyricsDraft.Line, width: CGFloat, paragraph: Bool, editing: Bool, agents: [LyricAgent] = []) {
             texts = line.syllables.map(\.text)
             rubies = line.syllables.map { ($0.ruby ?? []).map(\.text).joined() }
             translation = line.translation
             romanization = line.romanization
-            badge = line.isBackground ? "背景" : line.singer == .secondary ? "对唱" : line.singer == .duet ? "合唱" : nil
+            badge = Self.badge(of: line, agents: agents)
             background = line.isBackground
             self.width = width
             self.paragraph = paragraph
             self.editing = editing
+        }
+
+        static func badge(of line: LyricsDraft.Line, agents: [LyricAgent]) -> String? {
+            let names = line.agentIDs.map { id in
+                let name = agents.first { $0.id == id }.map(LyricsEditorSession.name(of:)) ?? id
+                return name.count > 10 ? String(name.prefix(9)) + "…" : name
+            }
+            guard !names.isEmpty else {
+                return line.isBackground ? "背景" : line.singer == .secondary ? "对唱" : line.singer == .duet ? "合唱" : nil
+            }
+            let shown = names.count > 2 ? names.prefix(2).joined(separator: "、") + " +\(names.count - 2)" : names.joined(separator: "、")
+            return line.isBackground ? "背景 · " + shown : shown
         }
     }
 
@@ -120,6 +132,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     private var theme = Theme.darkBase
     private var caret: Int?
     private var selected = IndexSet()
+    private var agents: [LyricAgent] = []
     private var dragging = false
     private var hovered = false
     private var hoveredChip: Int?
@@ -153,9 +166,9 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     override var acceptsFirstResponder: Bool { true }
 
     func configure(line: LyricsDraft.Line, index: Int, layout: LyricsEditorLineLayout, theme: Theme,
-                   caret: Int?, selected: IndexSet = [], pulse: Int, lastTapped: UUID?) {
+                   caret: Int?, selected: IndexSet = [], pulse: Int, lastTapped: UUID?, agents: [LyricAgent] = []) {
         let reused = self.line?.id != line.id
-        let contentChanged = self.line != line || self.theme != theme || rowLayout?.input != layout.input
+        let contentChanged = self.line != line || self.theme != theme || rowLayout?.input != layout.input || self.agents != agents
         let selectionChanged = self.selected != selected
         let changed = contentChanged || selectionChanged || self.caret != caret || self.index != index
         if reused {
@@ -169,6 +182,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
         self.theme = theme
         self.caret = caret
         self.selected = selected
+        self.agents = agents
         if contentChanged {
             let font = NSFont.systemFont(ofSize: line.isBackground ? 15 : 17, weight: .medium)
             labels = line.syllables.map {
@@ -245,9 +259,10 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             text("用 | 分开音节；回车保存，Esc 取消", rect: layout.editor.offsetBy(dx: 0, dy: 34), font: .systemFont(ofSize: 11), color: secondary)
         } else {
             if let badge = layout.badge, let title = layout.input.badge {
-                accent.withAlphaComponent(0.12).setFill()
+                let tint = roleColor(line.agentIDs.first) ?? accent
+                tint.withAlphaComponent(0.12).setFill()
                 NSBezierPath(roundedRect: badge, xRadius: 5, yRadius: 5).fill()
-                text(title, rect: badge.insetBy(dx: 6, dy: 3), font: .systemFont(ofSize: 10.5, weight: .semibold), color: accent)
+                text(title, rect: badge.insetBy(dx: 6, dy: 3), font: .systemFont(ofSize: 10.5, weight: .semibold), color: tint)
             }
             if line.syllables.isEmpty {
                 text("空行", rect: layout.editor, font: .systemFont(ofSize: 15), color: secondary)
@@ -271,6 +286,10 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
                     path.setLineDash([3, 3], count: 2, phase: 0)
                     path.stroke()
                 }
+                if let performer = line.syllables[s].agentIDs.first {
+                    (roleColor(performer) ?? accent).setFill()
+                    NSBezierPath(roundedRect: NSRect(x: rect.minX + 6, y: rect.maxY - 4, width: max(rect.width - 12, 4), height: 2), xRadius: 1, yRadius: 1).fill()
+                }
                 NSGraphicsContext.saveGraphicsState()
                 rect.insetBy(dx: 4, dy: 0).clip()
                 let label = labels[s]
@@ -293,6 +312,11 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             text("•••", rect: layout.more.insetBy(dx: 4, dy: 5), font: .systemFont(ofSize: 11, weight: .semibold), color: foreground)
         }
         text(LyricsEditorFormat.time(line.timedRange?.lowerBound), rect: NSRect(x: layout.input.width - 68, y: layout.textTop + 8, width: 58, height: 16), font: .monospacedDigitSystemFont(ofSize: 11, weight: .medium), color: secondary.withAlphaComponent(line.timedRange == nil ? 0.4 : 0.8), alignment: .right)
+    }
+
+    private func roleColor(_ id: String?) -> NSColor? {
+        guard let id else { return nil }
+        return LyricsEditorRoleStyle.color(of: id, in: agents, dark: theme.isDark).map { NSColor($0) }
     }
 
     private func text(_ value: String, rect: NSRect, font: NSFont, color: NSColor, alignment: NSTextAlignment = .left, wrap: Bool = false) {
@@ -436,7 +460,9 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             let syllable = line.syllables[s]
             let state = selected.contains(s) ? "，已选中" : ""
             let ruby = layout.input.rubies[s].isEmpty ? "" : "，注音 \(layout.input.rubies[s])"
-            return actionElement(label: "\(syllable.text)\(ruby)，\(LyricsEditorFormat.time(syllable.start, digits: 3))\(state)", rect: rect) { [weak self] in self?.select?(s) }
+            let performers = syllable.agentIDs.map { id in agents.first { $0.id == id }.map(LyricsEditorSession.name(of:)) ?? id }
+            let performer = performers.isEmpty ? "" : "，由 \(performers.joined(separator: "、")) 演唱"
+            return actionElement(label: "\(syllable.text)\(ruby)\(performer)，\(LyricsEditorFormat.time(syllable.start, digits: 3))\(state)", rect: rect) { [weak self] in self?.select?(s) }
         }
         accessible.append(actionElement(label: "编辑这一行", rect: layout.editor) { [weak self] in self?.edit?() })
         accessible.append(actionElement(label: "从这一行播放", rect: layout.play) { [weak self] in self?.play?() })

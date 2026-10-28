@@ -904,7 +904,7 @@ final class AppModel {
         let file = LyricsFile(name: session.exportFileName, text: session.ttml())
         guard let lyrics = lyricsResolver?.lyrics(from: file, for: session.track, options: lyricOptions()) else { return false }
         pinLyrics(lyrics, to: .file(file), for: session.track)
-        session.markSaved()
+        if !session.draft.hasAuthoringTiming { session.markSaved() }
         return true
     }
 

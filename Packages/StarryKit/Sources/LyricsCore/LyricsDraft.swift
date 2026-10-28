@@ -8,11 +8,13 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
     public var lines: [Line]
     public var metadata: [String: String]
     public var tracks: [Track]
+    public var agents: [LyricAgent]
 
-    public init(lines: [Line] = [], metadata: [String: String] = [:], tracks: [Track] = []) {
+    public init(lines: [Line] = [], metadata: [String: String] = [:], tracks: [Track] = [], agents: [LyricAgent] = []) {
         self.lines = lines
         self.metadata = metadata
         self.tracks = tracks
+        self.agents = agents
     }
 
     public struct Syllable: Sendable, Hashable, Identifiable, Codable {
@@ -22,13 +24,23 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         public var start: TimeInterval?
         public var end: TimeInterval?
         public var ruby: [Ruby]?
+        /// Empty inherits the line's performers.
+        public var agentIDs: [String]
+        /// Seconds from the syllable's start; nil entries are untimed RL beats.
+        public var checkpoints: [TimeInterval?]?
+        public var isRest: Bool
+        public var hasRelease: Bool
 
-        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil, ruby: [Ruby]? = nil) {
+        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil, ruby: [Ruby]? = nil, agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false) {
             self.id = id
             self.text = text
             self.start = start
             self.end = end
             self.ruby = ruby
+            self.agentIDs = agentIDs
+            self.checkpoints = checkpoints
+            self.isRest = isRest
+            self.hasRelease = hasRelease
         }
 
         public var isTimed: Bool { start != nil }
@@ -77,8 +89,12 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         public var id: UUID
         public var syllables: [Syllable]
         public var translation: String
-        public var romanization: String
+        public var romanization: String {
+            didSet { if romanization != oldValue { romanizationTiming = nil } }
+        }
+        public var romanizationTiming: [RomanizationSegment]?
         public var singer: LyricSinger
+        public var agentIDs: [String]
         /// Background vocals of the line above.
         public var isBackground: Bool
         public var isParagraphStart: Bool
@@ -88,12 +104,14 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         /// The track it is drawn on; nil draws it by its singer, or under the line it backs.
         public var track: UUID?
 
-        public init(id: UUID = UUID(), syllables: [Syllable], translation: String = "", romanization: String = "", singer: LyricSinger = .primary, isBackground: Bool = false, isParagraphStart: Bool = false, start: TimeInterval? = nil, end: TimeInterval? = nil, track: UUID? = nil) {
+        public init(id: UUID = UUID(), syllables: [Syllable], translation: String = "", romanization: String = "", singer: LyricSinger = .primary, isBackground: Bool = false, isParagraphStart: Bool = false, start: TimeInterval? = nil, end: TimeInterval? = nil, track: UUID? = nil, agentIDs: [String] = [], romanizationTiming: [RomanizationSegment]? = nil) {
             self.id = id
             self.syllables = syllables
             self.translation = translation
             self.romanization = romanization
+            self.romanizationTiming = romanizationTiming
             self.singer = singer
+            self.agentIDs = agentIDs
             self.isBackground = isBackground
             self.isParagraphStart = isParagraphStart
             self.start = start
@@ -101,13 +119,27 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
             self.track = track
         }
 
-        public var text: String { syllables.map(\.text).joined() }
+        public var text: String { syllables.filter { !$0.isRest }.map(\.text).joined() }
 
         public var timedRange: ClosedRange<TimeInterval>? {
             let starts = syllables.compactMap(\.start) + [start].compactMap { $0 }
             let ends = syllables.compactMap { $0.end ?? $0.start } + [end].compactMap { $0 }
             guard let lo = starts.min() ?? ends.min(), let hi = ends.max() ?? starts.max() else { return nil }
             return lo...max(lo, hi)
+        }
+
+        public mutating func setSinger(_ singer: LyricSinger, agents: [LyricAgent]) {
+            guard self.singer != singer else { return }
+            self.singer = singer
+            if let agent = agents.first(where: { LyricAgent.singer(for: [$0.id], in: agents) == singer }) {
+                agentIDs = [agent.id]
+            } else if singer == .duet {
+                let members = agents.filter { $0.kind != .group }.prefix(2).map(\.id)
+                agentIDs = members.count == 2 ? members : []
+            } else {
+                agentIDs = []
+            }
+            for index in syllables.indices { syllables[index].agentIDs = [] }
         }
     }
 
@@ -128,6 +160,12 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
     public var isEmpty: Bool { lines.allSatisfy { $0.syllables.isEmpty } }
     public var syllableCount: Int { lines.reduce(0) { $0 + $1.syllables.count } }
     public var timedCount: Int { lines.reduce(0) { $0 + $1.syllables.filter(\.isTimed).count } }
+    public var hasAuthoringTiming: Bool {
+        lines.contains { line in
+            line.romanizationTiming?.contains(where: { $0.end == nil }) == true
+                || line.syllables.contains { $0.isRest || ($0.checkpoints?.count ?? 0) > 1 || $0.hasRelease && $0.end == nil }
+        }
+    }
 
     public subscript(position: Position) -> Syllable {
         get { lines[position.line].syllables[position.syllable] }
@@ -192,21 +230,26 @@ extension LyricsDraft {
         for line in document.lines {
             let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            if line.hasSyllableTiming {
-                lines.append(Line(syllables: Self.syllables(of: line.words), translation: line.translation ?? "", romanization: line.romanization ?? "", singer: line.singer, isParagraphStart: line.isParagraphStart))
+            if line.hasSyllableTiming || line.hasRuby || line.syllables.contains(where: { !$0.agentIDs.isEmpty || $0.checkpoints != nil || $0.isRest }) {
+                lines.append(Line(syllables: Self.syllables(of: line.words), translation: line.translation ?? "", romanization: line.romanization ?? "", singer: line.singer, isParagraphStart: line.isParagraphStart, agentIDs: line.agentIDs))
             } else {
-                lines.append(Line(syllables: LyricsDraftImport.syllables(in: text), translation: line.translation ?? "", romanization: line.romanization ?? "", singer: line.singer, isParagraphStart: line.isParagraphStart, start: line.primaryStart, end: line.primaryEnd))
+                lines.append(Line(syllables: LyricsDraftImport.syllables(in: text, explicitBoundaries: false, preservesLineBreaks: document.format == .srt), translation: line.translation ?? "", romanization: line.romanization ?? "", singer: line.singer, isParagraphStart: line.isParagraphStart, start: line.primaryStart, end: line.primaryEnd, agentIDs: line.agentIDs))
+            }
+            if let last = lines.indices.last {
+                lines[last].romanizationTiming = RomanizationSegment.relative(line.romanizationWords, start: line.primaryStart, end: line.primaryEnd)
             }
             if let background = line.background {
-                lines.append(Line(syllables: Self.syllables(of: background.words), translation: background.translation ?? "", romanization: background.romanization ?? "", singer: line.singer, isBackground: true))
+                lines.append(Line(syllables: Self.syllables(of: background.words), translation: background.translation ?? "", romanization: background.romanization ?? "", singer: line.singer, isBackground: true, agentIDs: background.agentIDs.isEmpty ? line.agentIDs : background.agentIDs))
+                lines[lines.count - 1].romanizationTiming = RomanizationSegment.relative(background.romanizationWords, start: background.start, end: background.end)
             }
         }
-        self.init(lines: lines, metadata: document.format == .ttml ? document.metadata : [:])
+        self.init(lines: lines, metadata: document.metadata, agents: document.agents)
     }
 
     private static func syllables(of words: [LyricWord]) -> [Syllable] {
-        words.flatMap(\.syllables).filter { !$0.text.isEmpty }.map {
-            Syllable(text: $0.text, start: $0.start, end: $0.end, ruby: Ruby.relative($0.ruby, start: $0.start, end: $0.end))
+        words.flatMap(\.syllables).filter { !$0.text.isEmpty || $0.isRest }.map {
+            let start = $0.start
+            return Syllable(text: $0.isRest ? "▨" : $0.text, start: start, end: $0.end, ruby: Ruby.relative($0.ruby, start: start, end: $0.end), agentIDs: $0.agentIDs, checkpoints: $0.checkpoints?.map { $0.map { $0 - start } }, isRest: $0.isRest, hasRelease: $0.hasRelease)
         }
     }
 }
@@ -275,7 +318,8 @@ extension LyricsDraft {
                 index += 1
                 if !bgSyllables.isEmpty {
                     let words = Self.words(bgSyllables)
-                    background = LyricBackgroundVocals(start: bgSyllables.map(\.start).min() ?? 0, end: bgSyllables.map(\.end).max() ?? 0, words: words, translation: bg.translation.nonEmpty, romanization: bg.romanization.nonEmpty)
+                    let start = bgSyllables.map(\.start).min() ?? 0, end = bgSyllables.map(\.end).max() ?? 0
+                    background = LyricBackgroundVocals(start: start, end: end, words: words, translation: bg.translation.nonEmpty, romanization: bg.romanization.nonEmpty, romanizationWords: RomanizationSegment.absolute(bg.romanizationTiming, start: start, end: end), agentIDs: bg.agentIDs)
                 }
             }
             let words = Self.words(syllables)
@@ -283,9 +327,9 @@ extension LyricsDraft {
             let primaryEnd = syllables.map(\.end).max() ?? primaryStart
             let start = min(primaryStart, background?.start ?? primaryStart)
             let end = max(primaryEnd, background?.end ?? primaryEnd)
-            result.append(LyricLine(id: result.count, start: start, end: end, words: words, translation: line.translation.nonEmpty, romanization: line.romanization.nonEmpty, singer: line.singer, background: background, primaryStart: primaryStart, primaryEnd: primaryEnd, isParagraphStart: line.isParagraphStart || result.isEmpty))
+            result.append(LyricLine(id: result.count, start: start, end: end, words: words, translation: line.translation.nonEmpty, romanization: line.romanization.nonEmpty, romanizationWords: RomanizationSegment.absolute(line.romanizationTiming, start: primaryStart, end: primaryEnd), singer: line.singer, background: background, primaryStart: primaryStart, primaryEnd: primaryEnd, isParagraphStart: line.isParagraphStart || result.isEmpty, agentIDs: line.agentIDs))
         }
-        return LyricsDocument(format: .ttml, lines: result, metadata: metadata)
+        return LyricsDocument(format: .ttml, lines: result, metadata: metadata, agents: agents)
     }
 
     private static func words(_ syllables: [LyricSyllable]) -> [LyricWord] {
@@ -386,7 +430,15 @@ extension LyricsDraft {
         for (k, syllable) in syllables.enumerated() {
             let start = max(syllable.start ?? time(at: offsets[k], preferLate: true), floor)
             let end = max(syllable.end ?? time(at: offsets[k + 1], preferLate: false), start)
-            result.append(LyricSyllable(start: start, end: end, text: syllable.text, ruby: Ruby.absolute(syllable.ruby, start: start, end: end)))
+            var ruby = Ruby.absolute(syllable.ruby, start: start, end: end)
+            if let checkpoints = syllable.checkpoints, checkpoints.count == ruby.count, checkpoints.allSatisfy({ $0 != nil }),
+               (syllable.ruby ?? []).contains(where: { $0.span == nil }) {
+                for index in ruby.indices {
+                    ruby[index].start = start + checkpoints[index]!
+                    ruby[index].end = index + 1 < checkpoints.count ? start + checkpoints[index + 1]! : max(end, ruby[index].start)
+                }
+            }
+            result.append(LyricSyllable(start: start, end: end, text: syllable.isRest ? "" : syllable.text, ruby: ruby, agentIDs: syllable.agentIDs, checkpoints: syllable.checkpoints?.map { $0.map { start + $0 } }, isRest: syllable.isRest, hasRelease: syllable.hasRelease))
             floor = start
         }
         return result
@@ -414,19 +466,17 @@ extension LyricsDraft {
         let key = { (s: Syllable) in s.text.trimmingCharacters(in: .whitespaces) }
         var head = 0
         while head < min(old.count, new.count), key(old[head]) == key(new[head]) {
-            new[head].start = old[head].start
-            new[head].end = old[head].end
-            new[head].ruby = old[head].ruby
-            new[head].id = old[head].id
+            let text = new[head].text
+            new[head] = old[head]
+            new[head].text = text
             head += 1
         }
         var tail = 0
         while tail < min(old.count, new.count) - head, key(old[old.count - 1 - tail]) == key(new[new.count - 1 - tail]) {
             let o = old[old.count - 1 - tail]
-            new[new.count - 1 - tail].start = o.start
-            new[new.count - 1 - tail].end = o.end
-            new[new.count - 1 - tail].ruby = o.ruby
-            new[new.count - 1 - tail].id = o.id
+            let text = new[new.count - 1 - tail].text
+            new[new.count - 1 - tail] = o
+            new[new.count - 1 - tail].text = text
             tail += 1
         }
         lines[index].syllables = new
@@ -465,7 +515,7 @@ extension LyricsDraft {
         let parts = characters.enumerated().map { k, character in
             Syllable(text: character + (k == characters.count - 1 ? trailing : ""),
                      start: k == 0 ? syllable.start : step.map { syllable.start! + Double(k) * $0 },
-                     end: k == characters.count - 1 ? syllable.end : step.map { syllable.start! + Double(k + 1) * $0 })
+                     end: k == characters.count - 1 ? syllable.end : step.map { syllable.start! + Double(k + 1) * $0 }, agentIDs: syllable.agentIDs)
         }
         lines[position.line].syllables.replaceSubrange(position.syllable...position.syllable, with: parts)
     }
@@ -475,8 +525,21 @@ extension LyricsDraft {
         guard contains(next) else { return }
         let a = self[position]
         let b = self[next]
-        var merged = Syllable(id: a.id, text: a.text + b.text, start: a.start ?? b.start, end: b.end ?? b.start ?? a.end)
+        guard a.isRest == b.isRest else { return }
+        let inherited = lines[position.line].agentIDs
+        guard (a.agentIDs.isEmpty ? inherited : a.agentIDs) == (b.agentIDs.isEmpty ? inherited : b.agentIDs) else { return }
+        var merged = Syllable(id: a.id, text: a.text + b.text, start: a.start ?? b.start, end: b.end ?? b.start ?? a.end, agentIDs: a.agentIDs)
         merged.ruby = Self.ruby(merging: [a, b], into: merged)
+        merged.isRest = a.isRest
+        merged.hasRelease = b.hasRelease
+        if a.checkpoints != nil || b.checkpoints != nil {
+            merged.checkpoints = [a, b].flatMap { part in
+                (part.checkpoints ?? [0]).map { checkpoint -> TimeInterval? in
+                    guard let checkpoint, let origin = merged.start, let start = part.start else { return nil }
+                    return start + checkpoint - origin
+                }
+            }
+        }
         lines[position.line].syllables.replaceSubrange(position.syllable...next.syllable, with: [merged])
     }
 
@@ -539,7 +602,7 @@ extension LyricsDraft {
         if first.line == last.line, positions.count == lines[first.line].syllables.count { return first.line }
         let source = lines[first.line]
         let sources = lineIDs(of: positions)
-        let line = Line(syllables: take(positions), singer: source.singer, isBackground: source.isBackground, track: source.track)
+        let line = Line(syllables: take(positions), singer: source.singer, isBackground: source.isBackground, track: source.track, agentIDs: source.agentIDs)
         lines.insert(line, at: last.line + 1)
         dropEmpty(sources)
         return lines.firstIndex { $0.id == line.id }
@@ -578,6 +641,9 @@ extension LyricsDraft {
     public mutating func mergeSyllables(_ positions: [Position]) -> Position? {
         let positions = valid(positions)
         guard let first = positions.first, positions.count > 1, Self.isRun(positions) else { return nil }
+        let inherited = lines[first.line].agentIDs
+        let agents = self[first].agentIDs.isEmpty ? inherited : self[first].agentIDs
+        guard positions.allSatisfy({ (self[$0].agentIDs.isEmpty ? inherited : self[$0].agentIDs) == agents && self[$0].isRest == self[first].isRest }) else { return nil }
         for _ in 1..<positions.count { mergeWithNext(at: first) }
         return first
     }
@@ -591,12 +657,35 @@ extension LyricsDraft {
 
     public mutating func mergeLineWithNext(_ index: Int) {
         guard lines.indices.contains(index + 1) else { return }
+        let windows = lineWindows()
+        let hasRomanizationTiming = lines[index].romanizationTiming != nil || lines[index + 1].romanizationTiming != nil
+        var timedRomanization: [LyricSyllable] = []
+        if hasRomanizationTiming {
+            for source in index...(index + 1) {
+                let syllables = Self.fill(lines[source].syllables, window: windows[source])
+                let start = syllables.map(\.start).min() ?? windows[source].lowerBound
+                let end = syllables.map(\.end).max() ?? windows[source].upperBound
+                let pieces = RomanizationSegment.absolute(lines[source].romanizationTiming, start: start, end: end)?.flatMap(\.syllables)
+                    ?? lines[source].romanization.nonEmpty.map { [LyricSyllable(start: start, end: end, text: $0)] } ?? []
+                if !pieces.isEmpty, let last = timedRomanization.indices.last, !timedRomanization[last].text.hasSuffix(" ") { timedRomanization[last].text += " " }
+                timedRomanization += pieces
+            }
+        }
         let next = lines.remove(at: index + 1)
         if let end = lines[index].syllables.indices.last, let first = next.syllables.first { Self.join(&lines[index].syllables[end], before: first) }
-        lines[index].syllables += next.syllables
+        lines[index].syllables += next.syllables.map { syllable in
+            var syllable = syllable
+            if syllable.agentIDs.isEmpty { syllable.agentIDs = next.agentIDs }
+            return syllable
+        }
         lines[index].translation = [lines[index].translation, next.translation].compactMap(\.nonEmpty).joined(separator: " ")
         lines[index].romanization = [lines[index].romanization, next.romanization].compactMap(\.nonEmpty).joined(separator: " ")
         lines[index].end = next.end ?? lines[index].end
+        if hasRomanizationTiming {
+            let syllables = Self.fill(lines[index].syllables, window: lineWindows()[index])
+            let start = syllables.map(\.start).min() ?? 0, end = syllables.map(\.end).max() ?? start
+            lines[index].romanizationTiming = RomanizationSegment.relative(LyricWordGrouping.words(from: timedRomanization), start: start, end: end)
+        }
     }
 
     /// The lines that move with line `index`: a line with the background vocals under it, or a
@@ -652,6 +741,8 @@ extension LyricsDraft {
             for (s, syllable) in lines[index].syllables.enumerated() {
                 if picked.contains(s) {
                     if let last = taken.indices.last, previous != Position(line: index, syllable: s - 1) { Self.join(&taken[last], before: syllable) }
+                    var syllable = syllable
+                    if syllable.agentIDs.isEmpty { syllable.agentIDs = lines[index].agentIDs }
                     taken.append(syllable)
                     previous = Position(line: index, syllable: s)
                     gap = !kept.isEmpty
@@ -686,5 +777,56 @@ extension String {
     var nonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+extension LyricsDraft {
+    private enum CodingKeys: String, CodingKey { case lines, metadata, tracks, agents }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        lines = try values.decode([Line].self, forKey: .lines)
+        metadata = try values.decode([String: String].self, forKey: .metadata)
+        tracks = try values.decode([Track].self, forKey: .tracks)
+        agents = try values.decodeIfPresent([LyricAgent].self, forKey: .agents) ?? []
+    }
+}
+
+extension LyricsDraft.Line {
+    private enum CodingKeys: String, CodingKey {
+        case id, syllables, translation, romanization, romanizationTiming, singer, isBackground, isParagraphStart, start, end, track, agentIDs
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        syllables = try values.decode([LyricsDraft.Syllable].self, forKey: .syllables)
+        translation = try values.decode(String.self, forKey: .translation)
+        romanization = try values.decode(String.self, forKey: .romanization)
+        romanizationTiming = try values.decodeIfPresent([LyricsDraft.RomanizationSegment].self, forKey: .romanizationTiming)
+        singer = try values.decode(LyricSinger.self, forKey: .singer)
+        isBackground = try values.decode(Bool.self, forKey: .isBackground)
+        isParagraphStart = try values.decode(Bool.self, forKey: .isParagraphStart)
+        start = try values.decodeIfPresent(TimeInterval.self, forKey: .start)
+        end = try values.decodeIfPresent(TimeInterval.self, forKey: .end)
+        track = try values.decodeIfPresent(UUID.self, forKey: .track)
+        agentIDs = try values.decodeIfPresent([String].self, forKey: .agentIDs) ?? []
+    }
+}
+
+extension LyricsDraft.Syllable {
+    private enum CodingKeys: String, CodingKey { case id, text, start, end, ruby, agentIDs, checkpoints, isRest, hasRelease }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        text = try values.decode(String.self, forKey: .text)
+        start = try values.decodeIfPresent(TimeInterval.self, forKey: .start)
+        end = try values.decodeIfPresent(TimeInterval.self, forKey: .end)
+        ruby = try values.decodeIfPresent([LyricsDraft.Ruby].self, forKey: .ruby)
+        agentIDs = try values.decodeIfPresent([String].self, forKey: .agentIDs) ?? []
+        checkpoints = try values.decodeIfPresent([TimeInterval?].self, forKey: .checkpoints)
+        isRest = try values.decodeIfPresent(Bool.self, forKey: .isRest) ?? false
+        hasRelease = try values.decodeIfPresent(Bool.self, forKey: .hasRelease) ?? false
     }
 }

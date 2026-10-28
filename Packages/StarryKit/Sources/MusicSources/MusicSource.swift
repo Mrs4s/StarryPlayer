@@ -516,7 +516,7 @@ public extension DailyRecommendationSource {
 
 public struct RawLyrics: Sendable, Hashable, Codable {
     public enum Format: String, Sendable, Codable, CaseIterable {
-        case ttml, yrc, qrc, krc, lrc
+        case ttml, yrc, qrc, krc, lrc, srt, ass, nicokara, rl, krl
     }
 
     public var format: Format

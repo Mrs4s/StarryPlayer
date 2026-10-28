@@ -4,7 +4,7 @@ import LyricsProviders
 import MusicSources
 
 enum LocalLyrics {
-    static let sidecarExtensions = ["ttml", "yrc", "qrc", "krc", "lrc"]
+    static let sidecarExtensions = ["ttml", "yrc", "qrc", "krc", "krl", "ass", "ssa", "lrc", "kra", "srt", "txt"]
 
     static func find(for song: URL, providerName: String) async -> RawLyrics? {
         if let sidecar = sidecar(for: song, providerName: providerName) { return sidecar }
@@ -29,25 +29,20 @@ enum LocalLyrics {
         for ext in sidecarExtensions {
             guard let name = candidates.first(where: { ($0 as NSString).pathExtension.lowercased() == ext }),
                   let data = try? Data(contentsOf: folder.appending(path: name)) else { continue }
-            let text: String?
-            if ext == "krc" {
-                text = LyricsFile(name: name, data: data)?.text
-            } else {
-                text = TextRepair.decodeText(data)
-            }
+            let text = ext == "krc" ? LyricsFile(name: name, data: data)?.text : TextRepair.decodeText(data)
             guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            let declared = RawLyrics.Format(rawValue: ext) ?? .lrc
-            let detected = RawLyrics.Format(rawValue: LyricsFormatDetector.detect(text).rawValue) ?? declared
-            return RawLyrics(format: ext == "lrc" ? detected : declared, body: text, providerName: providerName)
+            let format = LyricsFormatDetector.detect(text)
+            guard let parsed = try? LyricsParsing.parse(text, format: format), !parsed.isEmpty,
+                  let wire = RawLyrics.Format(rawValue: format.rawValue) else { continue }
+            return RawLyrics(format: wire, body: text, providerName: providerName)
         }
         return nil
     }
 
     /// The format of tag lyrics that have times (LRC, TTML…); nil for plain text.
     static func timedFormat(_ text: String) -> RawLyrics.Format? {
-        let head = text.prefix(4096)
-        if head.contains("<tt") { return .ttml }
-        guard head.firstMatch(of: /\[\d{1,3}:\d{2}/) != nil || head.firstMatch(of: /^\[\d+,\d+\]/.anchorsMatchLineEndings()) != nil else { return nil }
-        return RawLyrics.Format(rawValue: LyricsFormatDetector.detect(text).rawValue) ?? .lrc
+        let format = LyricsFormatDetector.detect(text)
+        guard let parsed = try? LyricsParsing.parse(text, format: format), !parsed.isEmpty else { return nil }
+        return RawLyrics.Format(rawValue: format.rawValue)
     }
 }

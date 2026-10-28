@@ -3,8 +3,7 @@ import Foundation
 /// Lossless JSON project, preserving untimed syllables and editor tracks omitted by TTML.
 public struct LyricsProject: Sendable, Hashable, Codable {
     public static let fileExtension = "starrylyrics"
-    /// 2 adds ruby, which version 1 would drop.
-    public static let currentVersion = 2
+    public static let currentVersion = 4
     static let formatName = "starry-lyrics"
 
     public struct Entry: Sendable, Hashable, Codable {
@@ -53,6 +52,8 @@ public struct LyricsProject: Sendable, Hashable, Codable {
     public func data() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(self)
+        var current = self
+        current.version = Self.currentVersion
+        return try encoder.encode(current)
     }
 }
