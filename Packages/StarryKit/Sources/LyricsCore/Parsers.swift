@@ -84,10 +84,9 @@ public enum LyricsFormatDetector {
         if head.range(of: #"(?m)^\s*\d+:\d{2}:\d{2}[,.]\d+\s*-->"#, options: .regularExpression) != nil { return .srt }
         if head.range(of: #"(?i)^\s*config\s*\{"#, options: .regularExpression) != nil || text.contains("【@") { return .krl }
         if text.range(of: #"\[\d+e?\|\d+:\d{2}:\d{2}\]|(?m)^\s*\[\d+e?\]|\{[^{}\r\n]*\|\[\d+e?\]"#, options: .regularExpression) != nil { return .rl }
+        // Colon fractions also occur in LRC; only Nicokara-specific markers distinguish it.
         if text.range(of: #"(?m)^[ \t]*@(Ruby\d*|Emoji|Title|Artist)=|【sv\d+】|【(?!@)[^】]+】\s*\[\d+:"#, options: .regularExpression) != nil { return .nicokara }
         if text.range(of: #"\{[^{}\r\n]+\|[^{}\r\n]*\}"#, options: .regularExpression) != nil { return .krl }
-        if text.range(of: #"\[\d+:\d{2}:\d{2,3}\]"#, options: .regularExpression) != nil,
-           text.range(of: #"<\d+:\d{2}[.:]"#, options: .regularExpression) == nil { return .nicokara }
         for rawLine in text.split(whereSeparator: \.isNewline).prefix(300) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard let header = KaraokeLine.header(line) else { continue }

@@ -7,6 +7,7 @@ import Testing
         "[00:01.000]<00:01.000>你<00:02.000>好<00:03.000>",
         "[00:01.000]你[00:02.000]好[00:03.000]",
         "[00:01:00]<00:01:00>你<00:02:00>好<00:03:00>",
+        "[00:01:00]你[00:02:00]好[00:03:00]",
     ])
     func wordLRCUsesTagsAsTimingRatherThanText(_ text: String) throws {
         let document = try LRCParser.parse(text)
@@ -29,6 +30,33 @@ import Testing
         #expect(enhanced.lines.map(\.start) == [1, 5])
         #expect(enhanced.lines.map(\.end) == [3, 7])
         #expect(enhanced.lines[1].syllables.map(\.start) == [5, 6])
+    }
+
+    @Test(arguments: [".", ":"])
+    func neteaseCreditsDoNotTurnLineTimedLRCIntoKaraoke(_ separator: String) throws {
+        let text = """
+        {"t":0,"c":[{"tx":"作词: "},{"tx":"KAORU"}]}
+        {"t":570,"c":[{"tx":"作曲: "},{"tx":"Gom"},{"tx":"/"},{"tx":"KAORU"}]}
+        [00:03\(separator)00][00:20\(separator)00]何十年 何百年だって
+        [00:07\(separator)50]色褪せない思い出にしよう
+        """
+        let translation = """
+        {"t":0,"c":[{"tx":"翻译: "},{"tx":"Translator"}]}
+        [00:03\(separator)00][00:20\(separator)00]无论是十年 还是百年
+        [00:07\(separator)50]都要将它化作永不褪色的回忆
+        """
+        #expect(LyricsFormatDetector.detect(text) == .lrc)
+        #expect(LyricsDraftImport.kind(of: text) == .lineTimed)
+        let document = try LyricsParsing.parse(text, format: .lrc, translation: translation)
+        #expect(document.format == .lrc)
+        #expect(document.lines.map(\.text) == ["何十年 何百年だって", "色褪せない思い出にしよう", "何十年 何百年だって"])
+        #expect(document.lines.map(\.start) == [3, 7.5, 20])
+        #expect(!document.hasSyllables)
+        #expect(document.lines.map(\.translation) == ["无论是十年 还是百年", "都要将它化作永不褪色的回忆", "无论是十年 还是百年"])
+        let draft = try LyricsDraftImport.draft(from: text)
+        #expect(draft.lines.map(\.text) == document.lines.map(\.text))
+        #expect(draft.lines.map(\.start) == [3, 7.5, 20])
+        #expect(draft.timedCount == 0)
     }
 
     @Test(arguments: [LyricsExportFormat.lrcEnhanced, .lrcWord, .kra])
