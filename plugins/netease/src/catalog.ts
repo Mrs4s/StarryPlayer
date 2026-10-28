@@ -226,18 +226,27 @@ export async function playlist(id: string): Promise<PlaylistDetail> {
 
 const HOMEPAGE_EXT_INFO = '{"abInfo":{"hp-new-homepageV3.1":"t3"}}';
 
-function homeBlocks(codes: string[]): Promise<any> {
+function homeBlocks(codes: string[], refresh: boolean): Promise<any> {
   const cursor = orderedJSON([
     ['offset', 0],
     ['blockCodeOrderList', codes],
   ]);
-  return request(ep(Discovery.homeBlocks, { cache: 60 }), { cursor, extInfo: HOMEPAGE_EXT_INFO, newStyle: true });
+  return request(ep(Discovery.homeBlocks, { cache: null }), { cursor, extInfo: HOMEPAGE_EXT_INFO, newStyle: true, refresh });
 }
 
-export async function recommendedPlaylists(): Promise<Playlist[]> {
-  const json = await homeBlocks(['HOMEPAGE_BLOCK_PLAYLIST_RCMD']);
-  const block = array(json?.data?.blocks).find((b) => str(b?.blockCode) === 'HOMEPAGE_BLOCK_PLAYLIST_RCMD');
-  return compact(array(block?.creatives).map(map.creativePlaylist));
+export async function recommendedPlaylists(refresh = false): Promise<Playlist[]> {
+  const json = await homeBlocks(['HOMEPAGE_BLOCK_PLAYLIST_RCMD'], refresh);
+  const code = int(json?.code);
+  if (code !== 200) throw businessError(code ?? -1, str(json?.message) ?? str(json?.msg));
+  const blocks = json?.data?.blocks;
+  if (!Array.isArray(blocks)) throw starry.error('invalidResponse', '网易云的首页响应缺少 data.blocks');
+  const block = blocks.find((b) => str(b?.blockCode) === 'HOMEPAGE_BLOCK_PLAYLIST_RCMD');
+  if (!block) return [];
+  const creatives = block.creatives;
+  if (!Array.isArray(creatives)) throw starry.error('invalidResponse', '网易云的推荐歌单响应缺少 creatives');
+  const playlists = uniqueBy(compact(creatives.map(map.creativePlaylist)), (playlist) => playlist.id);
+  if (creatives.length && !playlists.length) throw starry.error('invalidResponse', '网易云的推荐响应没有可解析的歌单');
+  return playlists;
 }
 
 export async function newSongs(): Promise<Track[]> {

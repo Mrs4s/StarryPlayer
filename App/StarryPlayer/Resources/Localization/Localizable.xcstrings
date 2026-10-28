@@ -1164,6 +1164,54 @@
           }
         }
       }
+    },
+    "home.recommendedPlaylists": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推荐歌单"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended Playlists"
+          }
+        }
+      }
+    },
+    "shelf.refresh": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh %@"
+          }
+        }
+      }
+    },
+    "home.recommendedPlaylists.emptyRefresh": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时没有新的推荐歌单"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No new playlist recommendations right now"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

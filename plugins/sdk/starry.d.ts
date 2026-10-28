@@ -315,7 +315,8 @@ export interface Source {
    * after the shelves above: each one kind of item; empty ones are left out.
    */
   homeShelves?(): Promise<HomeShelf[]>;
-  recommendedPlaylists?(): Promise<Playlist[]>;
+  /** `refresh` requests a new batch instead of a cached recommendation response. */
+  recommendedPlaylists?(refresh?: boolean): Promise<Playlist[]>;
   newSongs?(): Promise<Track[]>;
   newAlbums?(page: Page): Promise<Album[]>;
   topArtists?(page: Page): Promise<Artist[]>;

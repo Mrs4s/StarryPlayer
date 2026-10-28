@@ -505,7 +505,7 @@ const settings: SettingsSection[] = [{
 | 歌手分页内容 | `artistSongs`、`artistAlbums`、`similarArtists` | `artistSongOrders` 声明支持 `hot` / `time` 排序 |
 | 综合搜索 | `searchOverview` | 返回最佳匹配及各类前几项；不实现时由宿主组合分类搜索 |
 | 搜索辅助 | `searchSuggestions`、`trendingSearches`、`searchHints` | 按前缀建议、热搜、搜索提示分别提供 |
-| 首页内容 | `homeShelves`、`recommendedPlaylists`、`newSongs`、`newAlbums`、`topArtists` | 每个自定义货架只能含一种数据：歌曲、专辑、歌手或歌单；空货架不显示 |
+| 首页内容 | `homeShelves`、`recommendedPlaylists`、`newSongs`、`newAlbums`、`topArtists` | 每个自定义货架只能含一种数据：歌曲、专辑、歌手或歌单；空货架不显示；`recommendedPlaylists(true)` 表示用户主动刷新，应绕过推荐缓存 |
 | 喜欢和收藏 | `likedTrackIDs`、`setLiked`、`setCollected` | 喜欢的歌曲按最新在前返回；收藏类型由 `collectableKinds` 声明 |
 | 用户歌单 | `userPlaylists`、`likedPlaylistID` | 自己创建的列表标 `isOwned`，有喜欢歌单时将其放在前面 |
 | 歌单编辑 | `createPlaylist`、`editPlaylist`、`deletePlaylist`、`addToPlaylist`、`removeFromPlaylist`、`reorderPlaylist` | `playlistOptions` 声明描述、隐私、名字长度等能力 |
