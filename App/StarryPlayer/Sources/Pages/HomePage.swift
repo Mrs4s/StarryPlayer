@@ -10,6 +10,8 @@ struct HomePage: View {
     @State private var appeared = false
     @State private var backdrop: PageBackdrop
     @State private var loadedKey: AppModel.HomeKey?
+    @State private var recommendationRefreshTask: Task<Void, Never>?
+    @State private var recommendationRequest = 0
 
     init(cached: HomeContent? = nil) {
         _state = State(initialValue: cached.map { .loaded($0) } ?? .idle)
@@ -45,8 +47,13 @@ struct HomePage: View {
             }
         }
         .preference(key: PageBackdropKey.self, value: backdrop)
-        .task(id: model.homeKey) { await load() }
+        .task(id: model.homeKey) {
+            guard !Task.isCancelled else { return }
+            cancelRecommendationRefresh()
+            await load()
+        }
         .onAppear { appeared = true }
+        .onDisappear { cancelRecommendationRefresh() }
     }
 
     private var header: some View {
@@ -138,7 +145,9 @@ struct HomePage: View {
             }
             .frame(maxWidth: .infinity, minHeight: 320)
         case .loaded(let content):
-            HomeSections(content: content, backdrop: backdrop)
+            HomeSections(content: content, backdrop: backdrop,
+                         isRefreshingRecommendations: recommendationRefreshTask != nil,
+                         refreshRecommendations: refreshRecommendations)
         }
     }
 
@@ -146,22 +155,63 @@ struct HomePage: View {
     /// Recent content (another visit to Home a moment ago) is used as is. Another source or
     /// account starts from the skeleton.
     private func load() async {
+        guard !Task.isCancelled else { return }
+        let key = model.homeKey
         if let cached = model.cachedHome() {
             if state.value != cached { state = .loaded(cached) }
+            loadedKey = key
             return
         }
-        if state.value == nil || loadedKey != model.homeKey { state = .loading }
+        if state.value == nil || loadedKey != key { state = .loading }
+        do {
+            let content = try await model.loadHome()
+            guard !Task.isCancelled, model.homeKey == key else { return }
+            loadedKey = key
+            state = .loaded(content)
+        } catch {
+            guard !Task.isCancelled, model.homeKey == key, !(error is CancellationError) else { return }
+            loadedKey = key
+            state = .failed(ErrorText.message(error))
+        }
+    }
+
+    private func refreshRecommendations() {
+        guard recommendationRefreshTask == nil else { return }
         let key = model.homeKey
-        let result = await Loadable.run { try await model.loadHome() }
-        guard !Task.isCancelled else { return }
-        loadedKey = key
-        state = result
+        recommendationRequest += 1
+        let request = recommendationRequest
+        recommendationRefreshTask = Task {
+            defer { if recommendationRequest == request { recommendationRefreshTask = nil } }
+            guard !Task.isCancelled, model.homeKey == key, recommendationRequest == request else { return }
+            do {
+                let playlists = try await model.refreshHomeRecommendations()
+                guard !Task.isCancelled, model.homeKey == key, recommendationRequest == request,
+                      case .loaded(var content) = state else { return }
+                guard !playlists.isEmpty else {
+                    model.showToast(.localized(LocalizedStringResource("home.recommendedPlaylists.emptyRefresh", defaultValue: "暂时没有新的推荐歌单")))
+                    return
+                }
+                content.recommended = playlists
+                state = .loaded(content)
+            } catch {
+                guard !Task.isCancelled, model.homeKey == key, recommendationRequest == request, !(error is CancellationError) else { return }
+                model.showToast(ErrorText.message(error))
+            }
+        }
+    }
+
+    private func cancelRecommendationRefresh() {
+        recommendationRequest += 1
+        recommendationRefreshTask?.cancel()
+        recommendationRefreshTask = nil
     }
 }
 
 private struct HomeSections: View {
     var content: HomeContent
     var backdrop: PageBackdrop
+    var isRefreshingRecommendations: Bool
+    var refreshRecommendations: () -> Void
     @Environment(AppModel.self) private var model
     @State private var shown = false
 
@@ -187,9 +237,12 @@ private struct HomeSections: View {
                 .homeSection(shown, index: 1)
             }
             if !content.recommended.isEmpty {
-                Shelf(title: "推荐歌单", items: content.recommended) { playlist in
+                Shelf(title: .localized(LocalizedStringResource("home.recommendedPlaylists", defaultValue: "推荐歌单")),
+                      items: content.recommended, refreshAction: refreshRecommendations,
+                      isRefreshing: isRefreshingRecommendations) { playlist in
                     Color.clear.playlistCard(playlist, model: model)
                 }
+                .id(content.recommended.map(\.id))
                 .homeSection(shown, index: 2)
             }
             if !content.newSongs.isEmpty {

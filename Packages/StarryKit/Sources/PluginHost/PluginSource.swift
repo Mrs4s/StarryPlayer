@@ -231,8 +231,12 @@ public final class PluginSource: MusicSource, SearchableSource, CatalogSource, R
     }
 
     public func recommendedPlaylists() async throws -> [Playlist] {
+        try await recommendedPlaylists(refresh: false)
+    }
+
+    public func recommendedPlaylists(refresh: Bool) async throws -> [Playlist] {
         guard plugin.has("source.recommendedPlaylists") else { return [] }
-        let playlists: [WirePlaylist] = try await plugin.call("source.recommendedPlaylists")
+        let playlists: [WirePlaylist] = try await plugin.call("source.recommendedPlaylists", refresh)
         return playlists.map { $0.playlist(source: id) }
     }
 

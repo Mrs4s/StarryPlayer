@@ -457,6 +457,8 @@ public extension CommentSource {
 /// empty shelf is not shown.
 public protocol RecommendationSource: MusicSource {
     func recommendedPlaylists() async throws -> [Playlist]
+    /// A user-requested refresh can bypass the source's cached recommendations.
+    func recommendedPlaylists(refresh: Bool) async throws -> [Playlist]
     func newSongs() async throws -> [Track]
     func newAlbums(page: Page) async throws -> [Album]
     func topArtists(page: Page) async throws -> [Artist]
@@ -464,6 +466,7 @@ public protocol RecommendationSource: MusicSource {
 
 public extension RecommendationSource {
     func recommendedPlaylists() async throws -> [Playlist] { [] }
+    func recommendedPlaylists(refresh: Bool) async throws -> [Playlist] { try await recommendedPlaylists() }
     func newSongs() async throws -> [Track] { [] }
     func newAlbums(page: Page) async throws -> [Album] { [] }
     func topArtists(page: Page) async throws -> [Artist] { [] }

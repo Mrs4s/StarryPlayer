@@ -6,11 +6,13 @@ import SwiftUI
 /// Index-based placement avoids NSScrollView updates during shell animations; only nearby cards
 /// exist.
 struct Shelf<Item: Identifiable, Card: View>: View {
-    var title: String
+    var title: DisplayText
     var items: [Item]
     var minCardWidth: CGFloat = 156
     var spacing: CGFloat = 18
     var moreAction: (() -> Void)? = nil
+    var refreshAction: (() -> Void)? = nil
+    var isRefreshing = false
     @ViewBuilder var card: (Item) -> Card
     @Environment(\.isPageActive) private var pageActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -30,7 +32,8 @@ struct Shelf<Item: Identifiable, Card: View>: View {
         let padding = Metrics.pagePadding, minWidth = minCardWidth, gap = spacing
         let lower = max(start - columns - 1, 0), upper = min(start + 2 * columns + 1, items.count)
         VStack(alignment: .leading, spacing: 12) {
-            ShelfHeader(title: title, moreAction: moreAction, paging: paging, showsPaging: hovering)
+            ShelfHeader(title: title, moreAction: moreAction, paging: paging, showsPaging: hovering,
+                        refreshAction: refreshAction, isRefreshing: isRefreshing)
                 .padding(.horizontal, padding)
             ShelfRow(columns: columns, spacing: spacing, inset: padding, start: start, offset: displayedDrag) {
                 ForEach(Array(items[lower..<upper].enumerated()), id: \.element.id) { offset, item in
@@ -101,6 +104,15 @@ struct Shelf<Item: Identifiable, Card: View>: View {
             start = min(max(target, 0), maxStart)
             drag = 0
         }
+    }
+}
+
+extension Shelf {
+    init(title: String, items: [Item], minCardWidth: CGFloat = 156, spacing: CGFloat = 18,
+         moreAction: (() -> Void)? = nil, refreshAction: (() -> Void)? = nil, isRefreshing: Bool = false,
+         @ViewBuilder card: @escaping (Item) -> Card) {
+        self.init(title: .verbatim(title), items: items, minCardWidth: minCardWidth, spacing: spacing,
+                  moreAction: moreAction, refreshAction: refreshAction, isRefreshing: isRefreshing, card: card)
     }
 }
 
@@ -246,10 +258,13 @@ struct ShelfHeader: View {
         var forward: () -> Void
     }
 
-    var title: String
+    var title: DisplayText
     var moreAction: (() -> Void)? = nil
     var paging: Paging? = nil
     var showsPaging = false
+    var refreshAction: (() -> Void)? = nil
+    var isRefreshing = false
+    @Environment(LocalizationStore.self) private var localization
     @Environment(\.theme) private var theme
     @State private var titleHovering = false
 
@@ -267,13 +282,28 @@ struct ShelfHeader: View {
                 .allowsHitTesting(showsPaging)
                 .animation(Motion.hover, value: showsPaging)
             }
+            if let refreshAction {
+                Button(action: refreshAction) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.onSurfaceVariant)
+                        .opacity(isRefreshing ? 0 : 1)
+                        .frame(width: 28, height: 28)
+                        .overlay { if isRefreshing { ProgressView().controlSize(.mini) } }
+                }
+                .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true))
+                .disabled(isRefreshing)
+                .help(localization.string(LocalizedStringResource("shelf.refresh", defaultValue: "刷新\(localization.string(title))")))
+                .accessibilityLabel(localization.string(LocalizedStringResource("shelf.refresh", defaultValue: "刷新\(localization.string(title))")))
+                .accessibilityValue(isRefreshing ? localization.string(LocalizedStringResource("common.loading", defaultValue: "加载中…")) : "")
+            }
         }
         .frame(height: 28)
     }
 
     @ViewBuilder
     private var titleView: some View {
-        let text = Text(title)
+        let text = DisplayTextView(text: title)
             .font(.system(size: 19, weight: .bold))
             .foregroundStyle(theme.onSurface)
         if let moreAction {
@@ -304,6 +334,14 @@ struct ShelfHeader: View {
         }
         .buttonStyle(VariantButtonStyle(variant: .tertiary, isCircle: true))
         .disabled(!enabled)
+    }
+}
+
+extension ShelfHeader {
+    init(title: String, moreAction: (() -> Void)? = nil, paging: Paging? = nil, showsPaging: Bool = false,
+         refreshAction: (() -> Void)? = nil, isRefreshing: Bool = false) {
+        self.init(title: .verbatim(title), moreAction: moreAction, paging: paging, showsPaging: showsPaging,
+                  refreshAction: refreshAction, isRefreshing: isRefreshing)
     }
 }
 

@@ -566,12 +566,34 @@ final class AppModel {
     }
 
     func loadHome() async throws -> HomeContent {
+        try Task.checkCancellation()
         let key = homeKey
         let generation = homeCacheGeneration
         let content = try await fetchHome(key)
         try Task.checkCancellation()
-        if generation == homeCacheGeneration { homeCache = (content, key, Date()) }
+        guard homeKey == key, homeCacheGeneration == generation else { throw CancellationError() }
+        homeCache = (content, key, Date())
         return content
+    }
+
+    func refreshHomeRecommendations() async throws -> [Playlist] {
+        try Task.checkCancellation()
+        let key = homeKey
+        let source = try require(key.source, as: (any RecommendationSource).self, "推荐歌单")
+        // A full-page load must not restore the previous batch after this refresh.
+        homeCacheGeneration += 1
+        let generation = homeCacheGeneration
+        let playlists = try await source.recommendedPlaylists(refresh: true)
+        try Task.checkCancellation()
+        guard homeKey == key, homeCacheGeneration == generation else { throw CancellationError() }
+        guard !playlists.isEmpty else { return [] }
+        // Full loads started during the refresh may still contain the old batch.
+        homeCacheGeneration += 1
+        if var cached = homeCache, cached.key == key {
+            cached.content.recommended = playlists
+            homeCache = cached
+        }
+        return playlists
     }
 
     private func fetchHome(_ key: HomeKey) async throws -> HomeContent {
