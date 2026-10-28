@@ -70,6 +70,46 @@ import Testing
         #expect(abs(state.input!.range.upperBound - 5.35) < 0.001)
     }
 
+    @Test(arguments: [false, true])
+    func quickAlignmentAppliesAndCanBeUndone(timed: Bool) async throws {
+        let session = try timed ? manuallyTimedSession() : session()
+        let before = session.draft
+        let state = LyricsEditorAlignmentState(line: before.lines[0], revision: session.revision, duration: 20, playhead: 10)
+        state.analyze(applyingTo: session) { _ in evidence() }
+        try await wait(state)
+        #expect(session.draft.lines[0].syllables.map(\.start) == [2.05, 2.65, 3.9])
+        session.undo()
+        #expect(session.draft == before)
+    }
+
+    @Test(arguments: [false, true])
+    func quickAlignmentCannotOverwriteEditsEvenAfterUndo(undoesEdit: Bool) async throws {
+        let session = try session()
+        let state = LyricsEditorAlignmentState(line: session.draft.lines[0], revision: session.revision, duration: 20, playhead: 0)
+        let gate = Gate()
+        state.analyze(applyingTo: session) { _ in await gate.read() }
+        while !gate.started { await Task.yield() }
+        session.edit { $0.lines[0].translation = "edited during analysis" }
+        if undoesEdit { session.undo() }
+        let before = session.draft
+        gate.finish(evidence())
+        try await wait(state)
+        #expect(session.draft == before)
+        #expect(state.error != nil)
+        #expect(session.flashText == "歌词已改变，本次自动排字结果未应用")
+    }
+
+    @Test func failedQuickAlignmentPreservesTimingAndReportsTheError() async throws {
+        let session = try manuallyTimedSession()
+        let before = session.draft
+        let state = LyricsEditorAlignmentState(line: before.lines[0], revision: session.revision, duration: 20, playhead: 0)
+        state.analyze(applyingTo: session) { _ in throw CocoaError(.fileReadNoSuchFile) }
+        try await wait(state)
+        #expect(session.draft == before)
+        #expect(state.error != nil)
+        #expect(session.flashText?.hasPrefix("自动排字未能完成：") == true)
+    }
+
     @Test func lastLrcLineWithoutAnEndCanUseTheSongEnding() throws {
         let session = try session("[00:12.00]星空很美")
         let state = LyricsEditorAlignmentState(line: session.draft.lines[0], revision: session.revision, duration: 20, playhead: 0)
@@ -91,11 +131,12 @@ import Testing
         #expect(session.draft.lines[0].syllables.allSatisfy { $0.start == nil })
     }
 
-    @Test func cancelledAnalysisCannotRestoreAPreviewOrChangeTheDraft() async throws {
+    @Test(arguments: [false, true])
+    func cancelledAnalysisCannotRestoreAPreviewOrChangeTheDraft(appliesAutomatically: Bool) async throws {
         let session = try session()
         let state = LyricsEditorAlignmentState(line: session.draft.lines[0], revision: session.revision, duration: 20, playhead: 0)
         let gate = Gate()
-        state.analyze { _ in await gate.read() }
+        state.analyze(applyingTo: appliesAutomatically ? session : nil) { _ in await gate.read() }
         while !gate.started { await Task.yield() }
         state.cancel()
         gate.finish(evidence())

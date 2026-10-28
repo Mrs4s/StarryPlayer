@@ -70,7 +70,7 @@ struct LyricsEditorTimeline: View {
                                 .frame(height: 22)
                         }
                         .buttonStyle(.plain)
-                        .help("自动对齐当前行，或校准已有逐字时间")
+                        .help("自动对齐当前行，或校准已有逐字时间；按 L 使用默认参数分析并应用")
                         onsetSwitch
                         if onsetHints { sensitivityMenu }
                         vocalsSwitch

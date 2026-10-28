@@ -19,6 +19,7 @@ struct LyricsEditorView: View {
     @State private var keyMonitor: Any?
     @State private var findingLyrics = false
     @State private var autoAlignment = LyricsEditorAutoAlignment()
+    @State private var quickAlignment: LyricsEditorAlignmentState?
     @State private var aiTiming = LyricsEditorAITimingState()
     @AppStorage("starry.lyricsEditor.autoAlignAfterTiming") private var autoAlignAfterTiming = false
     @AppStorage("starry.lyricsEditor.splitOnsetHints") private var splitOnsetHints = false
@@ -139,6 +140,7 @@ struct LyricsEditorView: View {
         .onDisappear {
             removeKeys()
             autoAlignment.cancelAll()
+            quickAlignment?.cancel()
             aiTiming.dispose()
         }
     }
@@ -176,6 +178,7 @@ struct LyricsEditorView: View {
     }
 
     private func show(_ panel: Panel) {
+        quickAlignment?.cancel()
         if panel == .aiTiming { autoAlignment.cancelAll() }
         withAnimation(Motion.popover) { self.panel = panel }
     }
@@ -184,6 +187,16 @@ struct LyricsEditorView: View {
         NSApp.keyWindow?.makeFirstResponder(nil)
         guard let position = session.caret ?? session.lastStarted, session.draft.contains(position) else { return }
         show(.alignment(session.draft.lines[position.line].id))
+    }
+
+    private func quickAlignCurrentLine() {
+        guard audio.isPrecise else { return session.flash("本曲暂时无法自动排字") }
+        guard let position = session.caret ?? session.lastStarted, session.draft.contains(position) else { return }
+        guard quickAlignment?.isWorking != true else { return session.flash("正在自动排字，请稍候") }
+        let state = LyricsEditorAlignmentState(line: session.draft.lines[position.line], revision: session.revision,
+                                               duration: audio.duration, playhead: audio.currentTime)
+        quickAlignment = state
+        state.analyze(applyingTo: session) { try await audio.alignmentAnalysis(in: $0.range, voice: $0.voice) }
     }
 
     private func setPreviewLayout(_ layout: PreviewLayout) {
@@ -560,7 +573,6 @@ struct LyricsEditorView: View {
         keyMonitor = nil
     }
 
-    /// Returns true when the editor consumes the key; ignores keys while text is being edited.
     private func handle(_ event: NSEvent) -> Bool {
         guard event.window?.identifier?.rawValue == AppModel.lyricsEditorIdentifier, !PopMenuController.isAnyOpen else { return false }
         if let text = event.window?.firstResponder as? NSTextView, text.isEditable { return false }
@@ -627,6 +639,7 @@ struct LyricsEditorView: View {
             case "r": moveAndPlay(by: -1)
             case "y": moveAndPlay(by: 1)
             case "q": if let caret = session.caret ?? session.lastStarted { play(from: LyricsDraft.Position(line: caret.line, syllable: 0), preroll: 1) }
+            case "l" where !shift && !option: if !repeated { quickAlignCurrentLine() }
             case "p": audio.togglePlayPause()
             case "[": audio.stepRate(-1)
             case "]": audio.stepRate(1)

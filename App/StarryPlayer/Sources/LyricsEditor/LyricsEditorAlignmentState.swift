@@ -75,12 +75,19 @@ final class LyricsEditorAlignmentState {
         isWorking = false
     }
 
-    func analyze(using analyze: @escaping @MainActor (Input) async throws -> VocalOnsetDetector.Analysis) {
+    func analyze(applyingTo session: LyricsEditorSession? = nil,
+                 using analyze: @escaping @MainActor (Input) async throws -> VocalOnsetDetector.Analysis) {
         invalidate()
-        guard let input else { error = "请填写有效的行范围，结束时间不能超过歌曲时长。"; return }
+        guard let input else {
+            let message = "请填写有效的行范围，结束时间不能超过歌曲时长。"
+            error = message
+            session?.flash(message)
+            return
+        }
         let id = request
         let line = original
         isWorking = true
+        session?.flash("正在准备人声并自动排字…")
         work = Task { [weak self] in
             do {
                 let analysis = try await analyze(input)
@@ -95,11 +102,15 @@ final class LyricsEditorAlignmentState {
                 self.completedInput = input
                 self.isWorking = false
                 self.work = nil
+                if let session, !self.apply(in: session) {
+                    session.flash("歌词已改变，本次自动排字结果未应用")
+                }
             } catch {
                 guard let self, self.request == id, !Task.isCancelled else { return }
                 self.error = error.localizedDescription
                 self.isWorking = false
                 self.work = nil
+                session?.flash("自动排字未能完成：\(error.localizedDescription)")
             }
         }
     }
