@@ -9,6 +9,7 @@ import LyricsCore
 struct FuriganaLayout {
     /// The ruby as a line: a word per annotated syllable, whose syllables are the ruby pieces.
     var line: LyricLine
+    var baseSyllables: [Int]
     /// A row over every main row that carries ruby, in the voice's coordinates.
     var text: LineTextLayout
 
@@ -27,8 +28,9 @@ struct FuriganaLayout {
     static func layout(line: LyricLine, metrics m: Metrics) -> (text: LineTextLayout, furigana: FuriganaLayout)? {
         let syllables = line.syllables
         var rubyWords: [LyricWord] = []
+        var baseSyllables: [Int] = []
         var group: [Int?] = []  // the ruby word over each syllable
-        for syllable in syllables {
+        for (index, syllable) in syllables.enumerated() {
             var pieces = syllable.ruby.compactMap { r -> LyricSyllable? in
                 let text = r.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.isEmpty ? nil : LyricSyllable(start: r.start, end: r.end, text: text)
@@ -40,6 +42,7 @@ struct FuriganaLayout {
             // Ending in a space keeps the ruby of neighbouring syllables from shaping together.
             pieces[pieces.count - 1].text += " "
             group.append(rubyWords.count)
+            baseSyllables.append(index)
             rubyWords.append(LyricWord(start: pieces[0].start, end: pieces.map(\.end).max() ?? pieces[0].end,
                                        text: pieces.map(\.text).joined(), syllables: pieces))
         }
@@ -134,6 +137,6 @@ struct FuriganaLayout {
             y += mainRows[i].height
         }
         return (LineTextLayout(rows: mainRows, size: CGSize(width: width, height: y), font: m.font),
-                FuriganaLayout(line: rubyLine, text: LineTextLayout(rows: rubyRows.compactMap { $0 }, size: CGSize(width: width, height: y), font: m.rubyFont)))
+                FuriganaLayout(line: rubyLine, baseSyllables: baseSyllables, text: LineTextLayout(rows: rubyRows.compactMap { $0 }, size: CGSize(width: width, height: y), font: m.rubyFont)))
     }
 }

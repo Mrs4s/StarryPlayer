@@ -177,6 +177,12 @@ final class GlyphLayer: NoAnimationLayer {
     var rest: CGPoint = .zero
     var wordX: CGFloat = 0
     var phase: Phase = .rest
+    var ruby: RubyMotion?
+}
+
+struct RubyMotion {
+    var layer: RowLayer
+    var rest: CGPoint
 }
 
 final class SyllableLayer: NoAnimationLayer {
@@ -186,6 +192,7 @@ final class SyllableLayer: NoAnimationLayer {
     /// Advance rect of the syllable in row coordinates (without bitmap padding).
     var contentRect: CGRect = .zero
     private(set) var isLifted = false
+    var ruby: RowLayer?
 
     init(syllableIndex: Int, syllable: LyricSyllable) {
         self.syllableIndex = syllableIndex
@@ -244,9 +251,12 @@ final class SyllableLayer: NoAnimationLayer {
         let y: CGFloat = lifted ? -lift : 0
         if let spring {
             LyricsAnimation.animate(self, "transform.translation.y", to: y, spring: spring, key: "lift")
+            if let ruby { LyricsAnimation.animate(ruby, "transform.translation.y", to: y, spring: spring, key: "lift") }
         } else {
             removeAnimation(forKey: "lift")
             transform = CATransform3DMakeTranslation(0, y, 0)
+            ruby?.removeAnimation(forKey: "lift")
+            ruby?.transform = transform
         }
     }
 }
@@ -353,15 +363,18 @@ final class WordLayer: NoAnimationLayer {
             offset = CGPoint(x: 0, y: -lift)
             scale = 1
         }
-        let position = CGPoint(x: glyph.rest.x + offset.x, y: glyph.rest.y + offset.y)
-        if let spring {
-            LyricsAnimation.animate(glyph, "position", to: NSValue(point: position), spring: spring, key: "emphasisPosition")
-            LyricsAnimation.animate(glyph, "transform.scale", to: scale, spring: spring, key: "emphasisScale")
-        } else {
-            glyph.removeAnimation(forKey: "emphasisPosition")
-            glyph.removeAnimation(forKey: "emphasisScale")
-            glyph.position = position
-            glyph.transform = CATransform3DMakeScale(scale, scale, 1)
+        let moving: [(CALayer, CGPoint)] = [(glyph, glyph.rest)] + (glyph.ruby.map { [($0.layer, $0.rest)] } ?? [])
+        for (layer, rest) in moving {
+            let position = CGPoint(x: rest.x + offset.x, y: rest.y + offset.y)
+            if let spring {
+                LyricsAnimation.animate(layer, "position", to: NSValue(point: position), spring: spring, key: "emphasisPosition")
+                LyricsAnimation.animate(layer, "transform.scale", to: scale, spring: spring, key: "emphasisScale")
+            } else {
+                layer.removeAnimation(forKey: "emphasisPosition")
+                layer.removeAnimation(forKey: "emphasisScale")
+                layer.position = position
+                layer.transform = CATransform3DMakeScale(scale, scale, 1)
+            }
         }
     }
 
@@ -411,6 +424,12 @@ final class RowLayer: NoAnimationLayer {
     private(set) var start: CGFloat = 0
     /// Syllables lift once they start; romanization rows do not.
     var liftsSyllables = true
+    private(set) var followsProgress = false
+    private var progressFollowers: [(row: RowLayer, scale: CGFloat, offset: CGFloat)] = []
+    private weak var progressSource: RowLayer?
+    private var progressScale: CGFloat = 1
+    private var progressOffset: CGFloat = 0
+    private var progressRange: ClosedRange<CGFloat>?
 
     override init() {
         super.init()
@@ -431,12 +450,13 @@ final class RowLayer: NoAnimationLayer {
     var finalEdge: CGFloat { steps.last?.target ?? start - feather }
     var startEdge: CGFloat { isTimed ? start - feather : finalEdge }
 
-    func configure(rect: CGRect, overflow: CGSize, feather: CGFloat, tint: CGColor, steps: [Step], timed: Bool = true, start: CGFloat = 0, words: [WordLayer]) {
+    func configure(rect: CGRect, overflow: CGSize, feather: CGFloat, tint: CGColor, steps: [Step], timed: Bool = true, start: CGFloat = 0, words: [WordLayer], progressRange: ClosedRange<CGFloat>? = nil) {
         frame = rect
         self.feather = feather
         self.steps = steps
         isTimed = timed
         self.start = start
+        self.progressRange = progressRange
         let area = bounds.insetBy(dx: -overflow.width, dy: -overflow.height)
         unsungLayer.frame = area
         unsungLayer.backgroundColor = tint
@@ -455,15 +475,32 @@ final class RowLayer: NoAnimationLayer {
         setEdge(startEdge)
     }
 
+    private func clampedEdge(_ s: CGFloat) -> CGFloat {
+        guard let progressRange else { return s }
+        return min(max(s, progressRange.lowerBound), progressRange.upperBound)
+    }
+
     /// Places the progress layer so the row is sung up to `s` (right edge at `s + feather`).
-    func setEdge(_ s: CGFloat) {
+    func setEdge(_ value: CGFloat) {
+        let s = clampedEdge(value)
         guard s != edge || progressLayer.animation(forKey: "finish") != nil else { return }
         progressLayer.removeAnimation(forKey: "finish")
         edge = s
         progressLayer.position = CGPoint(x: s + feather, y: unsungLayer.frame.minY)
+        for follower in progressFollowers { follower.row.setEdge(s * follower.scale + follower.offset) }
+    }
+
+    func addProgressFollower(_ row: RowLayer, scale: CGFloat, offset: CGFloat) {
+        row.followsProgress = true
+        row.progressSource = self
+        row.progressScale = scale
+        row.progressOffset = offset
+        progressFollowers.append((row, scale, offset))
+        row.setEdge(edge * scale + offset)
     }
 
     func edge(at t: TimeInterval) -> CGFloat {
+        if let progressSource { return clampedEdge(progressSource.edge(at: t) * progressScale + progressOffset) }
         var previous = startEdge
         for step in steps {
             if t < step.start { return previous }
@@ -484,9 +521,19 @@ final class RowLayer: NoAnimationLayer {
         let target = finalEdge
         guard edge != target else { return }
         guard duration > 0 else { return setEdge(target) }
+        let from = (progressLayer.presentation() ?? progressLayer).position.x - feather
         edge = target
         LyricsAnimation.animate(progressLayer, "position.x", to: target + feather, duration: duration,
                                 curve: CAMediaTimingFunction(name: .linear), delay: delay, key: "finish")
+        for follower in progressFollowers {
+            let a = from * follower.scale + follower.offset
+            let b = target * follower.scale + follower.offset
+            let span = max(b - a, 0.001)
+            // Clip the sweep without changing its speed.
+            let begin = min(max((follower.row.startEdge - a) / span, 0), 1)
+            let end = min(max((follower.row.finalEdge - a) / span, begin), 1)
+            follower.row.finish(duration: duration * Double(end - begin), delay: delay + duration * Double(begin))
+        }
     }
 }
 
@@ -748,11 +795,15 @@ final class VoiceLayer: NoAnimationLayer {
     private func makeRows(specs: LyricsSpecs) -> [RowLayer] {
         var result = rowLayers(textLayout, line: line, lifts: true, specs: specs)
         if let ruby = layout.ruby { result += rowLayers(ruby.text, line: ruby.line, lifts: false, specs: specs) }
-        if let furigana = layout.furigana { result += rowLayers(furigana.text, line: furigana.line, lifts: false, specs: specs) }
+        if let furigana = layout.furigana {
+            result += rowLayers(furigana.text, line: furigana.line, lifts: false, specs: specs,
+                                furiganaBases: furigana.baseSyllables, mainRows: result)
+        }
         return result
     }
 
-    private func rowLayers(_ text: LineTextLayout, line: LyricLine, lifts: Bool, specs: LyricsSpecs) -> [RowLayer] {
+    private func rowLayers(_ text: LineTextLayout, line: LyricLine, lifts: Bool, specs: LyricsSpecs,
+                           furiganaBases: [Int]? = nil, mainRows: [RowLayer] = []) -> [RowLayer] {
         let scale = renderScale
         let lineSyllables = line.syllables
         let padding = glyphPadding
@@ -798,7 +849,7 @@ final class VoiceLayer: NoAnimationLayer {
                 layer.frame = rect
                 layer.contentRect = fragment.rect
                 layer.setContent(image: image, imageOrigin: imageOrigin, imageSize: imageSize, scale: scale)
-                if timed, specs.emphasisEnabled, words[words.count - 1].isEmphasized {
+                if furiganaBases == nil, timed, specs.emphasisEnabled, words[words.count - 1].isEmphasized {
                     let starts = fragment.clusters.flatMap { $0.positions.map(\.x) }.sorted()
                     let edges = [rect.minX] + starts.dropFirst().filter { $0 > rect.minX && $0 < rect.maxX } + [rect.maxX]
                     layer.splitIntoGlyphs(edges: edges, baselineY: row.ascent, image: image, imageOrigin: imageOrigin, imageSize: imageSize, scale: scale)
@@ -811,7 +862,45 @@ final class VoiceLayer: NoAnimationLayer {
                     s.frame = s.frame.offsetBy(dx: -frame.minX, dy: -frame.minY)
                     word.addSublayer(s)
                 }
-                if timed { word.configureEmphasis(glowRadius: glow, rowHeight: rowHeight, scale: scale) }
+                if furiganaBases == nil, timed { word.configureEmphasis(glowRadius: glow, rowHeight: rowHeight, scale: scale) }
+            }
+
+            if let furiganaBases {
+                for word in words {
+                    let base = furiganaBases[word.wordIndex]
+                    guard let mainRow = mainRows.first(where: { $0.liftsSyllables && $0.syllables.contains { $0.syllableIndex == base } }),
+                          let syllable = mainRow.syllables.first(where: { $0.syllableIndex == base }),
+                          let fragment = textLayout.rows.flatMap(\.fragments).first(where: { $0.syllable == base }),
+                          let baseInk = fragment.ink else { continue }
+                    let fragments = row.fragments.filter { f in word.syllables.contains { $0.syllableIndex == f.syllable } }
+                    guard let lo = fragments.compactMap(\.ink?.lowerBound).min(),
+                          let hi = fragments.compactMap(\.ink?.upperBound).max() else { continue }
+                    let ratio = max(hi - lo, 0.001) / max(baseInk.upperBound - baseInk.lowerBound, 0.001)
+                    let offset = lo - baseInk.lowerBound * ratio
+                    let rubyFeather = mainRow.feather * ratio
+                    let edgeRange = (lo - rubyFeather)...hi
+                    let annotation = RowLayer()
+                    annotation.liftsSyllables = false
+                    annotation.configure(rect: CGRect(x: 0, y: row.origin.y, width: width, height: rowHeight), overflow: overflow,
+                                         feather: rubyFeather, tint: rowTint,
+                                         steps: mainRow.steps.map { .init(start: $0.start, end: $0.end, target: min(max($0.target * ratio + offset, edgeRange.lowerBound), edgeRange.upperBound)) },
+                                         timed: mainRow.isTimed, start: lo, words: [word], progressRange: edgeRange)
+                    mainRow.addProgressFollower(annotation, scale: ratio, offset: offset)
+                    if !syllable.glyphLayers.isEmpty {
+                        let glyph = syllable.glyphLayers[syllable.glyphLayers.count / 2]
+                        let baseWord = syllable.superlayer?.frame.origin ?? .zero
+                        let pivot = CGPoint(x: mainRow.frame.minX + baseWord.x + syllable.frame.minX + glyph.rest.x,
+                                            y: mainRow.frame.minY + baseWord.y + syllable.frame.minY + glyph.rest.y)
+                        let frame = annotation.frame
+                        annotation.anchorPoint = CGPoint(x: (pivot.x - frame.minX) / frame.width, y: (pivot.y - frame.minY) / frame.height)
+                        annotation.position = pivot
+                        glyph.ruby = RubyMotion(layer: annotation, rest: pivot)
+                    } else {
+                        syllable.ruby = annotation
+                    }
+                    result.append(annotation)
+                }
+                continue
             }
 
             let steps = timed
@@ -1027,12 +1116,12 @@ final class VoiceLayer: NoAnimationLayer {
 
     func updateSyllables(time t: TimeInterval, specs: LyricsSpecs) {
         if !ignoresProgress {
-            for row in rows { row.setEdge(row.edge(at: t)) }
+            for row in rows where !row.followsProgress { row.setEdge(row.edge(at: t)) }
         }
         guard line.hasSyllableTiming, specs.perSyllableEnabled else { return }
         let liftSpring: LyricsSpecs.Spring? = specs.springEnabled && !snapsNextUpdate ? specs.syllableLiftSpring : nil
         snapsNextUpdate = false
-        for row in rows {
+        for row in rows where !row.followsProgress {
             for word in row.words {
                 // Emphasised glyphs carry their own lift, so their syllables stay put;
                 // romanization rows never lift.
@@ -1054,7 +1143,7 @@ final class VoiceLayer: NoAnimationLayer {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         Self.finishInSequence(rows.filter(\.liftsSyllables), duration: duration)
-        Self.finishInSequence(rows.filter { !$0.liftsSyllables }, duration: duration)
+        Self.finishInSequence(rows.filter { !$0.liftsSyllables && !$0.followsProgress }, duration: duration)
         CATransaction.commit()
     }
 

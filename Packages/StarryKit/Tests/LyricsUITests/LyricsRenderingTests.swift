@@ -797,7 +797,8 @@ private final class Harness {
         let line = h.line(2)!
         #expect(line.main.layout.furigana != nil)
         let rows = line.main.rows.count
-        #expect(line.main.rows.filter { !$0.liftsSyllables }.count * 2 == rows)
+        let mainRows = line.main.rows.filter(\.liftsSyllables).count
+        #expect(line.main.rows.filter(\.followsProgress).count == line.line.syllables.count)
         let rubyHeight = line.contentHeight
 
         var specs = LyricsSpecs.windowed
@@ -808,7 +809,7 @@ private final class Harness {
         #expect(h.line(2) === line)
         #expect(h.maxJump(before, h.startTops()) < 0.5)
         #expect(line.main.layout.furigana == nil)
-        #expect(line.main.rows.count == rows / 2)
+        #expect(line.main.rows.count == mainRows)
         #expect(line.contentHeight < rubyHeight)
 
         specs.showRomanization = true
