@@ -11,10 +11,13 @@ public struct LyricsAIAlignmentResult: Sendable {
     public var resolvedReadings: Int
     public var uncertainReadings: Int
     public var uncertainReadingDescriptions: [String]
+    public var uncertainTimingDescriptions: [String]
+    public var uncertainTimings: Int { uncertainTimingDescriptions.count }
 
     public init(draft: LyricsDraft, alignedLines: Int, alignedSyllables: Int,
                 estimatedReadings: Int = 0, skippedBackgroundLines: Int = 0,
-                resolvedReadings: Int = 0, uncertainReadings: Int = 0, uncertainReadingDescriptions: [String] = []) {
+                resolvedReadings: Int = 0, uncertainReadings: Int = 0, uncertainReadingDescriptions: [String] = [],
+                uncertainTimingDescriptions: [String] = []) {
         self.draft = draft
         self.alignedLines = alignedLines
         self.alignedSyllables = alignedSyllables
@@ -23,6 +26,7 @@ public struct LyricsAIAlignmentResult: Sendable {
         self.resolvedReadings = resolvedReadings
         self.uncertainReadings = uncertainReadings
         self.uncertainReadingDescriptions = uncertainReadingDescriptions
+        self.uncertainTimingDescriptions = uncertainTimingDescriptions
     }
 }
 
@@ -87,19 +91,22 @@ public actor LyricsAIAligner {
             cached = (key, evidence)
         }
         progress(.init(0.85, "定位歌词时间…"))
-        var initialSpans = try LyricsAICTC.align(evidence, tokens: plan.tokens) { fraction in
+        var alignment = try LyricsAICTC.decode(evidence, tokens: plan.tokens) { fraction in
             progress(.init(0.85 + fraction * 0.08, "定位歌词时间…"))
         }
         progress(.init(0.94, "核对歌词读音…"))
-        let readings = try LyricsAIReadingSelector.select(draft: draft, plan: plan, spans: initialSpans, evidence: evidence,
+        let readings = try LyricsAIReadingSelector.select(draft: draft, plan: plan, spans: alignment.spans, evidence: evidence,
                                                           vocabulary: bundle.vocabulary, english: bundle.englishReadings)
         if readings.resolvedCount > 0 {
             plan = readings.plan
-            initialSpans = try LyricsAICTC.align(evidence, tokens: plan.tokens) { fraction in
+            alignment = try LyricsAICTC.decode(evidence, tokens: plan.tokens) { fraction in
                 progress(.init(0.95 + fraction * 0.04, "定位歌词时间…"))
             }
         }
-        let spans = try LyricsAIRepeatedVowels.refine(initialSpans, evidence: evidence, tokens: plan.tokens, vocals: vocals)
+        let displayBoundaries = Set(plan.units.flatMap { [$0.tokens.lowerBound] + $0.ruby.map(\.lowerBound) })
+        let refinement = try LyricsAIRepeatedVowels.refinement(alignment.spans, evidence: evidence, tokens: plan.tokens,
+                                                               rawSpans: alignment.raw, displayBoundaries: displayBoundaries, vocals: vocals)
+        let spans = refinement.spans
         try Task.checkCancellation()
         guard try bundle.stamp() == stamp else { throw LyricsAIError.invalidModel("模型文件在执行期间发生变化，请重试") }
         let currentAudio = try vocals.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -107,6 +114,9 @@ public actor LyricsAIAligner {
             throw LyricsAIError.alignment("人声音频在执行期间发生变化，请重试")
         }
         var result = try Self.apply(spans, plan: plan, to: draft, englishSplit: englishSplit)
+        result.uncertainTimingDescriptions = LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence,
+                                                                              rawSpans: alignment.raw, spans: spans,
+                                                                              sharedSounds: refinement.sharedSounds)
         result.resolvedReadings = readings.resolvedCount
         result.uncertainReadings = readings.uncertainCount
         result.uncertainReadingDescriptions = readings.decisions.filter(\.uncertain).map {

@@ -1,0 +1,37 @@
+{
+  "format_version": 2,
+  "generator": "scripts/build-japanese-readings.py",
+  "words": {
+    "source": "SudachiDict Core",
+    "version": "20260723",
+    "url": "https://github.com/WorksApplications/SudachiDict/tree/v20260723",
+    "records_sha256": "cd64c906f051fe594a8533870fd66de70f11484ad349f40ac407c686358f0db5",
+    "keys": 37586,
+    "readings": 80309
+  },
+  "characters": {
+    "source": "KANJIDIC2",
+    "url": "https://www.edrdg.org/kanjidic/kanjidic2.xml.gz",
+    "sha256": "30a3cb91b2dfeb3befc11deb173d724f7539901b238acaf4e5a83867a95fa39f",
+    "database_version": "2026-302",
+    "date": "2026-10-29",
+    "keys": 12356,
+    "readings": 35559,
+    "transformation": "Japanese on/kun only; NFKC, hiragana, strip okurigana/affix markers; no nanori or exceptions"
+  },
+  "layout": {
+    "header_bytes": 40,
+    "key_record_bytes": 12,
+    "reading_record_bytes": 9,
+    "metadata_bits": {
+      "POS": "0..9",
+      "reserved_zero": "10..13",
+      "word": 14,
+      "character": 15
+    },
+    "strings": "Shared deduplicated pool; UTF-8 keys and one-byte kana",
+    "order": "UTF-8 keys; original word reading order and metadata preserved"
+  },
+  "bytes": 2099622,
+  "sha256": "75396ef8285dca4cbe53380d0ad8cf29642b9670ab56a549816b861a94a305f8"
+}

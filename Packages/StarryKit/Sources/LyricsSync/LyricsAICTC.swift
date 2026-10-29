@@ -17,6 +17,8 @@ enum LyricsAICTC {
         var sustainClass: Int
         var endsLine: Bool = false
         var isStandaloneVowel: Bool = false
+        var isMoraContinuation: Bool = false
+        var isLongMark: Bool = false
     }
 
     struct Span: Sendable, Equatable {
@@ -24,8 +26,18 @@ enum LyricsAICTC {
         var end: Double
     }
 
+    struct Alignment: Sendable {
+        var raw: [Span]
+        var spans: [Span]
+    }
+
     static func align(_ evidence: Evidence, tokens: [Token], maximumCells: Int = 160_000_000,
                       progress: @Sendable (Double) -> Void = { _ in }) throws -> [Span] {
+        try decode(evidence, tokens: tokens, maximumCells: maximumCells, progress: progress).spans
+    }
+
+    static func decode(_ evidence: Evidence, tokens: [Token], maximumCells: Int = 160_000_000,
+                       progress: @Sendable (Double) -> Void = { _ in }) throws -> Alignment {
         let frames = evidence.frames, states = tokens.count * 2 + 1
         let (cells, overflow) = frames.multipliedReportingOverflow(by: states)
         guard !overflow, cells <= maximumCells else { throw LyricsAIError.tooLarge }
@@ -79,8 +91,15 @@ enum LyricsAICTC {
             if frame > 0 { state -= Int(back[frame * states + state]) }
         }
         try Task.checkCancellation()
+        let raw = try spans(in: path, count: tokens.count, evidence: evidence)
         fill(&path, evidence: evidence, tokens: tokens)
-        var starts = [Int](repeating: -1, count: tokens.count)
+        let filled = try spans(in: path, count: tokens.count, evidence: evidence)
+        progress(1)
+        return .init(raw: raw, spans: filled)
+    }
+
+    private static func spans(in path: [Int], count: Int, evidence: Evidence) throws -> [Span] {
+        var starts = [Int](repeating: -1, count: count)
         var ends = starts
         for (frame, state) in path.enumerated() where state % 2 == 1 {
             let token = state / 2
@@ -88,8 +107,7 @@ enum LyricsAICTC {
             ends[token] = frame + 1
         }
         guard starts.allSatisfy({ $0 >= 0 }) else { throw LyricsAIError.alignment("对齐结果缺少部分歌词") }
-        progress(1)
-        return tokens.indices.map {
+        return (0..<count).map {
             Span(start: Double(starts[$0]) * evidence.frameSeconds,
                  end: min(evidence.duration, Double(ends[$0]) * evidence.frameSeconds))
         }

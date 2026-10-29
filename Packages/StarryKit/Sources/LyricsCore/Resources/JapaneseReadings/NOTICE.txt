@@ -1,0 +1,22 @@
+Japanese reading dictionary: shared binary storage, separate word/character views.
+
+Word alternatives: derived from SudachiDict Core 20260723.
+Copyright (c) 2017-2023 Works Applications Co., Ltd.
+https://github.com/WorksApplications/SudachiDict/tree/v20260723
+The original indexed Han-containing polyphones, coarse POS masks, signed word costs
+and reading order are preserved. No Sudachi runtime or connection matrix is included.
+See Sudachi/LEGAL and Sudachi/LICENSE-2.0.txt for source and incorporated-data licences.
+
+Character readings: derived from KANJIDIC2 (2026-10-29).
+Copyright James William BREEN and the Electronic Dictionary Research and Development Group.
+https://www.edrdg.org/wiki/KANJIDIC_Project.html
+The derived character data is distributed under CC BY-SA 4.0.
+Retained Japanese on/kun readings only; normalized to hiragana and removed
+okurigana/affix markers, other languages, meanings and indices. No lyric-specific entries.
+See KANJIDIC2/DOCUMENTATION.html, KANJIDIC2/EDRDG-LICENCE.html and
+KANJIDIC2/LICENSE-CC-BY-SA-4.0.html.
+
+Purpose flags retain the distinction between sources and uses, including shared readings.
+Version, source identities, record counts and binary hash are in provenance.json.
+Rebuild with scripts/build-japanese-readings.py using an indexed word snapshot
+and kanjidic2.xml.gz from https://www.edrdg.org/kanjidic/.

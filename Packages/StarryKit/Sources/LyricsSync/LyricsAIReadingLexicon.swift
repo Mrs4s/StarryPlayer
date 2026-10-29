@@ -2,11 +2,6 @@ import Foundation
 import LyricsCore
 
 enum LyricsAIReadingLexicon {
-    private static let dictionary: LyricsAIReadingIndex? = {
-        guard let url = Bundle.module.url(forResource: "readings", withExtension: "bin", subdirectory: "JapaneseReadings") else { return nil }
-        return LyricsAIReadingIndex(contentsOf: url)
-    }()
-
     private static let supplements: [String: [String]] = [
         "明日": ["あした", "あす", "みょうにち"],
         "昨日": ["きのう", "さくじつ"],
@@ -29,7 +24,7 @@ enum LyricsAIReadingLexicon {
 
     static func candidates(for surface: String, defaultReading: String?) -> [String] {
         let key = surface.precomposedStringWithCompatibilityMapping
-        let entries = dictionary?.entries(for: key) ?? []
+        let entries = JapaneseReadingDictionary.shared?.wordReadings(for: key) ?? []
         let preferred = normalizedReading(defaultReading ?? "")
         let parts = entries.filter { $0.reading == preferred }.reduce(0) { $0 | $1.partOfSpeech }
         let ordered = entries.sorted { a, b in

@@ -231,6 +231,12 @@ public enum LyricRomanizationAligner {
 
     static func spread(_ reading: [Character], over parts: [String]) -> [[Character]] {
         guard parts.count > 1 else { return [reading] }
+        let latin = String(reading).replacingOccurrences(of: "nn", with: "n'n")
+        if let kana = latin.applyingTransform(StringTransform("Latin-Hiragana"), reverse: false),
+           let aligned = JapaneseReadingAlignment.align(reading: kana, to: parts) {
+            let values = aligned.map { fold($0.reading.applyingTransform(.toLatin, reverse: false) ?? $0.reading) }
+            if values.flatMap({ $0 }) == reading { return values }
+        }
         let own = parts.map(ownReading)
         if own.allSatisfy({ $0 != nil }) { return own.map { $0! } }
         var result = [[Character]](repeating: [], count: parts.count)

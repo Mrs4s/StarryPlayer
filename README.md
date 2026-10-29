@@ -65,6 +65,7 @@ open StarryPlayer.xcodeproj
 
 - [AMLL TTML 歌词库](https://github.com/Steve-xmh/amll-ttml-db): 逐字歌词来源
 - [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next): 部分功能和逻辑参考
+- [KANJIDIC2 / EDRDG](https://www.edrdg.org/wiki/KANJIDIC_Project.html): 日语汉字读音数据（James William BREEN 与 EDRDG，CC BY-SA 4.0）
 
 ## 声明
 

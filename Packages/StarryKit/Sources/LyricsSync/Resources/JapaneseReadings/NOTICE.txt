@@ -1,7 +1,0 @@
-Japanese reading alternatives derived from SudachiDict Core 20260723.
-Copyright (c) 2017-2023 Works Applications Co., Ltd.
-Source: https://github.com/WorksApplications/SudachiDict/tree/v20260723
-Modified by Starry Player: filtered to indexed Han-containing polyphones; normalized,
-deduplicated and reduced to readings, coarse POS masks and dictionary costs.
-The application does not include the Sudachi runtime or connection matrix.
-See LICENSE-2.0.txt and LEGAL for upstream and incorporated-data notices.

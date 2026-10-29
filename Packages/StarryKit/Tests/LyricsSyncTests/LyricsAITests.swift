@@ -79,8 +79,9 @@ import Testing
     }
 
     @Test func sustainEvidenceRestoresTheHeldPartWithoutExtendingIntoSilence() throws {
-        let spans = try LyricsAICTC.align(evidence(), tokens: [.init(label: 1, sustainClass: 1), .init(label: 2, sustainClass: 2, endsLine: true)])
-        #expect(spans == [.init(start: 0.02, end: 0.10), .init(start: 0.10, end: 0.16)])
+        let alignment = try LyricsAICTC.decode(evidence(), tokens: [.init(label: 1, sustainClass: 1), .init(label: 2, sustainClass: 2, endsLine: true)])
+        #expect(alignment.spans == [.init(start: 0.02, end: 0.10), .init(start: 0.10, end: 0.16)])
+        #expect(alignment.raw == [.init(start: 0.02, end: 0.06), .init(start: 0.10, end: 0.14)])
     }
 
     @Test func repeatedSoundsKeepTheRequiredBlankBetweenTheirIntervals() throws {
@@ -129,6 +130,7 @@ import Testing
         let draft = LyricsDraft(lines: [.init(syllables: [.init(text: "客", ruby: [.init(text: "きゃく")])])])
         let plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: ["き": 33, "ゃ": 87, "く": 35], english: [:])
         #expect(plan.tokens.map(\.sustainClass) == [1, 1, 3])
+        #expect(plan.tokens.map(\.isMoraContinuation) == [false, true, false])
     }
 
     @Test func silenceAndAReal400PointToneUseTheExpectedMelConvention() throws {

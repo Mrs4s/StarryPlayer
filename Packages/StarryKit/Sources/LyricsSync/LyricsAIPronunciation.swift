@@ -113,14 +113,15 @@ struct LyricsAIPronunciation: Sendable {
                 let own: Int
                 if group == ["ー"] { own = (1...5).contains(previousClass) ? previousClass : -1 }
                 else { own = sustainClass(group.last!) }
-                for character in group {
+                for (position, character) in group.enumerated() {
                     if character == unknown {
                         result.tokens.append(.init(label: 122, sustainClass: -1))
                     } else {
                         let char = vocabulary[String(character)] == nil ? (fallback[character] ?? character) : character
                         guard let id = vocabulary[String(char)], id != 121 else { throw LyricsAIError.unreadable(String(character)) }
                         result.tokens.append(.init(label: id, sustainClass: own,
-                                                   isStandaloneVowel: group.count == 1 && "あいうえお".contains(char)))
+                                                   isStandaloneVowel: group.count == 1 && "あいうえお".contains(char),
+                                                   isMoraContinuation: position > 0, isLongMark: char == "ー"))
                         known += 1
                     }
                 }
@@ -175,7 +176,13 @@ struct LyricsAIPronunciation: Sendable {
                     return
                 }
             }
-            // Whole-word readings cannot determine display boundaries; flag the mora split as estimated.
+            if let aligned = JapaneseReadingAlignment.align(reading: String(replacement ?? kana), to: parts) {
+                for (index, part) in zip(indices, aligned) {
+                    result.values[index] += Array(part.reading)
+                    if part.isEstimated { result.estimated.insert(index) }
+                }
+                return
+            }
             let groups = morae(kana)
             var original: [[Character]] = []
             for (position, index) in indices.enumerated() {

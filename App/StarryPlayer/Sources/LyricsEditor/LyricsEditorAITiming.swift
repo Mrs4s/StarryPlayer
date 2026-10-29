@@ -446,13 +446,17 @@ private struct AITimingResultPreview: View {
                     Tag(text: "\(result.uncertainReadings) 处多读音待核对", style: .amber, soft: true)
                         .help(result.uncertainReadingDescriptions.joined(separator: "\n"))
                 }
+                if result.uncertainTimings > 0 {
+                    Tag(text: "\(result.uncertainTimings) 处时间待核对", style: .amber, soft: true)
+                        .help(result.uncertainTimingDescriptions.joined(separator: "\n"))
+                }
                 if result.skippedBackgroundLines > 0 {
                     Tag(text: "\(result.skippedBackgroundLines) 行背景未修改", soft: true)
                 }
                 Spacer(minLength: 0)
             }
-            if result.estimatedReadings > 0 || result.uncertainReadings > 0 {
-                Text("估计的读音或词内边界建议重点试听；特殊读法可补充注音后重新打轴。")
+            if result.estimatedReadings > 0 || result.uncertainReadings > 0 || result.uncertainTimings > 0 {
+                Text("估计的读音、词内边界和待核对时间建议重点试听；特殊读法可补充注音后重新打轴。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
