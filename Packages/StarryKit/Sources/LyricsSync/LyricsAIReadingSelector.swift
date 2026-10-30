@@ -4,6 +4,7 @@ import LyricsCore
 enum LyricsAIReadingSelector {
     struct Decision: Sendable {
         var line: Int
+        var syllables: Range<Int>
         var text: String
         var original: String
         var reading: String
@@ -41,7 +42,7 @@ enum LyricsAIReadingSelector {
             let upper = min(evidence.frames, Int((spans[last.tokens.upperBound - 1].end / evidence.frameSeconds).rounded(.up)) + 10)
             let window = lower..<upper
             guard !window.isEmpty, window.count <= 1500 else {
-                decisions += words.map { .init(line: lineIndex, text: $0.text, original: $0.reading, reading: $0.reading, gain: nil, uncertain: true) }
+                decisions += words.map { .init(line: lineIndex, syllables: $0.syllables, text: $0.text, original: $0.reading, reading: $0.reading, gain: nil, uncertain: true) }
                 continue
             }
             let draft = LyricsDraft(lines: [draft.lines[lineIndex]])
@@ -54,7 +55,7 @@ enum LyricsAIReadingSelector {
                 return try LyricsAICTC.sequenceLogProbability(evidence, labels: plan.tokens.map(\.label), frames: window)
             }
             guard var currentScore = try score(local), currentScore.isFinite else {
-                decisions += words.map { .init(line: lineIndex, text: $0.text, original: $0.reading, reading: $0.reading, gain: nil, uncertain: true) }
+                decisions += words.map { .init(line: lineIndex, syllables: $0.syllables, text: $0.text, original: $0.reading, reading: $0.reading, gain: nil, uncertain: true) }
                 continue
             }
             for word in words {
@@ -91,7 +92,7 @@ enum LyricsAIReadingSelector {
                         } else { uncertain = true }
                     } else { uncertain = true }
                 }
-                decisions.append(.init(line: lineIndex, text: word.text, original: word.reading,
+                decisions.append(.init(line: lineIndex, syllables: word.syllables, text: word.text, original: word.reading,
                                        reading: reading, gain: gain, uncertain: uncertain))
             }
             accepted += overrides.map { .init(line: lineIndex, range: $0.range, reading: $0.reading) }

@@ -2,10 +2,10 @@ import Foundation
 import LyricsCore
 
 enum LyricsAITimingReview {
-    static func descriptions(plan: LyricsAIPronunciation, draft: LyricsDraft, evidence: LyricsAICTC.Evidence,
-                             rawSpans: [LyricsAICTC.Span], spans: [LyricsAICTC.Span], sharedSounds: [Range<Int>] = []) -> [String] {
+    static func issues(plan: LyricsAIPronunciation, draft: LyricsDraft, evidence: LyricsAICTC.Evidence,
+                       rawSpans: [LyricsAICTC.Span], spans: [LyricsAICTC.Span], sharedSounds: [Range<Int>] = []) -> [LyricsAIReviewIssue] {
         guard rawSpans.count == plan.tokens.count, spans.count == plan.tokens.count else { return [] }
-        var result: [String] = []
+        var result: [LyricsAIReviewIssue] = []
         var previous: LyricsAIPronunciation.Unit?
         for unit in plan.units where !unit.tokens.isEmpty {
             defer { previous = unit }
@@ -40,8 +40,9 @@ enum LyricsAITimingReview {
                 }
             }
             if !reasons.isEmpty {
-                let text = draft.lines[unit.line].syllables[unit.syllable].text.prefix(40)
-                result.append("第 \(unit.line + 1) 行「\(text)」：" + reasons.joined(separator: "；"))
+                let syllable = draft.lines[unit.line].syllables[unit.syllable]
+                result.append(.init(syllableIDs: [syllable.id], kind: .uncertainTiming,
+                                    message: "第 \(unit.line + 1) 行「\(syllable.text.prefix(40))」：" + reasons.joined(separator: "；")))
             }
         }
         return result

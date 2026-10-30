@@ -58,7 +58,8 @@ import Testing
             .init(syllables: [.init(text: "beautiful", start: 8, end: 9)], isBackground: true)
         ], metadata: ["title": "fixture"])
         let plan = try plan(original, dictionary: ["beautiful": "びゅーてぃふる"])
-        let result = try LyricsAIAligner.apply(spans([0.2, 0.1, 0.1, 0.25, 0.1, 0.1, 0.2, 0.35]), plan: plan, to: original)
+        let issue = LyricsAIReviewIssue(syllableIDs: [original.lines[0].syllables[1].id], kind: .uncertainTiming, message: "声学证据偏弱")
+        let result = try LyricsAIAligner.apply(spans([0.2, 0.1, 0.1, 0.25, 0.1, 0.1, 0.2, 0.35]), plan: plan, to: original, reviewIssues: [issue])
         let line = result.draft.lines[0]
         #expect(line.syllables.map(\.text) == ["あ", "👩‍🚀“Beau", "ti", "ful!”  "])
         #expect(line.syllables.compactMap(\.start).map { Int(($0 * 1000).rounded()) } == [1000, 1200, 1650, 1850])
@@ -72,6 +73,7 @@ import Testing
         #expect(result.draft.lines[1] == original.lines[1])
         #expect(result.draft.metadata == original.metadata)
         #expect(result.alignedSyllables == 4 && result.skippedBackgroundLines == 1)
+        #expect(result.reviewIssues.first?.syllableIDs == line.syllables.dropFirst().map(\.id))
         let roundTrip = try TTMLParser.parse(TTMLWriter.write(result.draft.document()))
         #expect(roundTrip.lines[0].syllables.map(\.text) == line.syllables.map { $0.text.trimmingCharacters(in: .whitespaces) })
         #expect(roundTrip.lines[0].syllables.map(\.start).map { Int(($0 * 1000).rounded()) } == [1000, 1200, 1650, 1850])

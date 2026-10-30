@@ -141,7 +141,10 @@ final class LyricsEditorAITimingState {
                     throw LyricsAIError.alignment("歌词或人声已改变，请重新打轴")
                 }
                 self.result = result
-                self.retimedLines = zip(draft.lines, result.draft.lines).filter { $0.0 != $0.1 }.map { $0.1.id }
+                let reviewIDs = Set(result.reviewIssues.flatMap(\.syllableIDs)).union(session.aiReviewNotes.keys)
+                self.retimedLines = zip(draft.lines, result.draft.lines).filter {
+                    $0.0 != $0.1 || $0.1.syllables.contains { reviewIDs.contains($0.id) }
+                }.map { $0.1.id }
                 self.selection = Set(self.retimedLines)
                 self.completed = (configuration, revision, audio.identity)
                 self.progress = .init(1, "打轴完成，请试听后应用")
@@ -181,7 +184,15 @@ final class LyricsEditorAITimingState {
         for index in draft.lines.indices where lines.contains(draft.lines[index].id) {
             draft.lines[index] = result.draft.lines[index]
         }
-        session.edit { $0 = draft }
+        let originalIDs = Set(session.draft.lines.filter { lines.contains($0.id) }.flatMap { $0.syllables.map(\.id) })
+        let appliedIDs = Set(draft.lines.filter { lines.contains($0.id) }.flatMap { $0.syllables.map(\.id) })
+        var notes = session.aiReviewNotes.filter { !originalIDs.contains($0.key) }
+        for issue in result.reviewIssues {
+            for id in issue.syllableIDs where appliedIDs.contains(id) {
+                if !(notes[id]?.contains(issue.message) ?? false) { notes[id, default: []].append(issue.message) }
+            }
+        }
+        session.edit(aiReviewNotes: notes) { $0 = draft }
         session.flash("已应用 \(lines.count) 行 AI 时间，请试听复核，可用 ⌘Z 撤销")
         self.result = nil; completed = nil
         retimedLines = []; selection = []

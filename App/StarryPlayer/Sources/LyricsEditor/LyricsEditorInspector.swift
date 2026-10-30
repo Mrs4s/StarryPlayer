@@ -5,6 +5,7 @@ import SwiftUI
 struct LyricsEditorInspector: View {
     let session: LyricsEditorSession
     var manageRoles: () -> Void = {}
+    var reviewAI: (Bool) -> Void = { _ in }
     @Environment(\.theme) private var theme
 
     private var position: LyricsDraft.Position? {
@@ -14,6 +15,7 @@ struct LyricsEditorInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !session.aiReviewNotes.isEmpty { aiReview }
             if let position {
                 let syllable = session.draft[position]
                 let line = session.draft.lines[position.line]
@@ -65,6 +67,39 @@ struct LyricsEditorInspector: View {
         }
         .animation(Motion.hover, value: position)
         .animation(Motion.popover, value: session.draft.agents.isEmpty)
+    }
+
+    private var aiReview: some View {
+        let id = position.map { session.draft[$0].id }
+        let notes = id.flatMap { session.aiReviewNotes[$0] } ?? []
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Label("AI 待核对 \(session.aiReviewNotes.count)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.warning)
+                Spacer(minLength: 0)
+                IconButton(systemName: "chevron.left", size: 22, iconSize: 10, help: "上一处 AI 待核对音节") { reviewAI(true) }
+                    .accessibilityLabel("上一处 AI 待核对音节")
+                IconButton(systemName: "chevron.right", size: 22, iconSize: 10, help: "下一处 AI 待核对音节") { reviewAI(false) }
+                    .accessibilityLabel("下一处 AI 待核对音节")
+                Button {
+                    if let id { session.markAIReviewed(id); reviewAI(false) }
+                } label: {
+                    Label("已核对", systemImage: "checkmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(notes.isEmpty ? theme.onSurfaceVariant : theme.primary)
+                }
+                .buttonStyle(.plain)
+                .disabled(notes.isEmpty)
+                .help("清除当前音节的复核标记并跳到下一处，可撤销")
+                .accessibilityLabel("标记当前音节已核对")
+            }
+            Text(notes.isEmpty ? "选择琥珀色字块，或跳到下一处" : notes.joined(separator: "；"))
+                .font(.system(size: 10.5))
+                .foregroundStyle(theme.onSurfaceVariant)
+                .lineLimit(2)
+                .help(notes.joined(separator: "\n"))
+        }
     }
 
     private func set(_ key: WritableKeyPath<LyricsDraft.Syllable, TimeInterval?>, _ value: TimeInterval?, at position: LyricsDraft.Position) {

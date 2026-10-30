@@ -17,6 +17,25 @@ struct LyricsEditorSessionTests {
         session.draft.lines[line].syllables.map { [$0.start, $0.end] }
     }
 
+    @Test func aiReviewSurvivesTimingEditsAndConfirmationCanBeUndone() throws {
+        let session = try session("你好")
+        let id = session.draft.lines[0].syllables[0].id
+        session.edit(aiReviewNotes: [id: ["声学证据偏弱"]]) { $0.lines[0].syllables[0].start = 1 }
+        session.edit { $0.lines[0].syllables[0].start = 1.2 }
+        #expect(session.aiReviewNotes[id] == ["声学证据偏弱"])
+        session.markAIReviewed(id)
+        #expect(session.aiReviewNotes.isEmpty)
+        session.undo()
+        #expect(session.aiReviewNotes[id] == ["声学证据偏弱"])
+        #expect(session.draft.lines[0].syllables[0].start == 1.2)
+        session.edit { $0.lines[0].syllables[0].text = "再" }
+        #expect(session.aiReviewNotes.isEmpty)
+        session.undo()
+        #expect(session.aiReviewNotes[id] == ["声学证据偏弱"])
+        session.replace(with: LyricsDraft())
+        #expect(session.aiReviewNotes.isEmpty)
+    }
+
     @Test func differentNamedPerformersDoNotShareTheSameTimingVoice() {
         let alice = LyricsDraft.Line(syllables: [.init(text: "A")], singer: .secondary, agentIDs: ["alice"])
         let bob = LyricsDraft.Line(syllables: [.init(text: "B")], singer: .secondary, agentIDs: ["bob"])

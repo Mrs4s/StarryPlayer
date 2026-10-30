@@ -36,7 +36,7 @@ struct LyricsEditorDock: View {
                 transport
             }
             .frame(maxWidth: .infinity)
-            LyricsEditorInspector(session: session, manageRoles: manageRoles)
+            LyricsEditorInspector(session: session, manageRoles: manageRoles, reviewAI: reviewAI)
                 .frame(width: 300)
         }
         .padding(.horizontal, 16)
@@ -45,6 +45,19 @@ struct LyricsEditorDock: View {
         .background(theme.surfaceAlt.ignoresSafeArea())
         .overlay(alignment: .top) { Rectangle().fill(theme.outlineVariant.opacity(0.7)).frame(height: 1) }
         .overlay(alignment: .top) { resizeHandle }
+    }
+
+    private func reviewAI(backwards: Bool) {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        guard let position = session.adjacentAIReview(backwards: backwards) else { return }
+        session.select(position)
+        let syllable = session.draft[position]
+        guard let start = syllable.start else { viewport.manual = nil; return }
+        let end = syllable.end ?? start + 0.3
+        let span = max(4, end - start + 2)
+        let lower = max(0, (start + end - span) / 2)
+        viewport.hold(lower...(lower + span))
+        if audio.isReady { audio.seek(to: max(0, start - 0.3)) }
     }
 
     private var resizeHandle: some View {
@@ -164,7 +177,6 @@ private struct VolumeControl: View {
     }
 }
 
-/// The position over the song's length; a leaf, so the clock re-runs only this.
 private struct DockClock: View {
     let clock: LyricsEditorClock
     var duration: TimeInterval

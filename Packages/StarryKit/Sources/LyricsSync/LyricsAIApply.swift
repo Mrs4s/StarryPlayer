@@ -3,10 +3,13 @@ import LyricsCore
 
 extension LyricsAIAligner {
     nonisolated static func apply(_ spans: [LyricsAICTC.Span], plan: LyricsAIPronunciation,
-                                  to source: LyricsDraft, englishSplit: LyricsAIEnglishSplit = .automatic) throws -> LyricsAIAlignmentResult {
+                                  to source: LyricsDraft, englishSplit: LyricsAIEnglishSplit = .automatic,
+                                  reviewIssues: [LyricsAIReviewIssue] = []) throws -> LyricsAIAlignmentResult {
         guard spans.count == plan.tokens.count else { throw LyricsAIError.alignment("结果与歌词数量不一致") }
         var draft = source
         var alignedSyllables = 0
+        var issues = reviewIssues
+        var splitIDs: [UUID: [UUID]] = [:]
         for lineIndex in plan.lines {
             guard draft.lines.indices.contains(lineIndex) else { throw LyricsAIError.alignment("歌词结构已改变") }
             var line = draft.lines[lineIndex]
@@ -23,6 +26,11 @@ extension LyricsAIAligner {
             try placeStructuralUnits(&timing)
             for unit in units {
                 guard let span = timing[unit.syllable] else { throw LyricsAIError.alignment("结果缺少字块时间") }
+                if unit.approximate {
+                    let syllable = line.syllables[unit.syllable]
+                    issues.append(.init(syllableIDs: [syllable.id], kind: .estimatedReading,
+                                        message: "第 \(lineIndex + 1) 行「\(syllable.text.prefix(40))」：读音或词内边界为估计值"))
+                }
                 line.syllables[unit.syllable].start = span.start
                 line.syllables[unit.syllable].end = span.end
                 if var ruby = line.syllables[unit.syllable].ruby, ruby.count == unit.ruby.count, !ruby.isEmpty {
@@ -48,6 +56,7 @@ extension LyricsAIAligner {
                         syllable.end = piece.end
                         return syllable
                     }
+                    splitIDs[original.id] = replacements.map(\.id)
                     line.syllables.replaceSubrange(unit.syllable...unit.syllable, with: replacements)
                 }
             }
@@ -56,8 +65,13 @@ extension LyricsAIAligner {
             line.end = nil
             draft.lines[lineIndex] = line
         }
+        issues = issues.map { issue in
+            var issue = issue
+            issue.syllableIDs = issue.syllableIDs.flatMap { splitIDs[$0] ?? [$0] }
+            return issue
+        }
         return .init(draft: draft, alignedLines: plan.lines.count, alignedSyllables: alignedSyllables,
-                     estimatedReadings: plan.estimatedCount, skippedBackgroundLines: plan.backgroundCount)
+                     skippedBackgroundLines: plan.backgroundCount, reviewIssues: issues)
     }
 
     private struct EnglishPiece {

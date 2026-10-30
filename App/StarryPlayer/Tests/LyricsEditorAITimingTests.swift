@@ -62,6 +62,22 @@ import Testing
         #expect(session.draft.lines[0].translation == "keep")
     }
 
+    @Test func unchangedTimingCanStillApplyReviewMarkers() async throws {
+        let session = session(), source = source
+        session.edit { $0 = Self.aligned($0).draft }
+        let before = session.draft, id = before.lines[0].syllables[0].id
+        let state = LyricsEditorAITimingState { request, _ in
+            .init(draft: request.draft, alignedLines: 1, alignedSyllables: 2,
+                  reviewIssues: [.init(syllableIDs: [id], kind: .uncertainTiming, message: "声学证据偏弱")])
+        }
+        state.start(configuration: configuration, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
+        try await wait(state)
+        #expect(state.selection == [before.lines[0].id])
+        #expect(state.apply(in: session, configuration: configuration, audioIdentity: source.identity))
+        #expect(session.draft == before)
+        #expect(session.aiReviewNotes[id] == ["声学证据偏弱"])
+    }
+
     @Test func cancelledWorkCannotPublishEvenWhenTheWorkerReturnsAResult() async throws {
         let gate = Gate(), session = session(), before = session.draft
         let state = LyricsEditorAITimingState { request, _ in await gate.wait(); return Self.aligned(request.draft) }
@@ -144,7 +160,13 @@ import Testing
 
     @Test func applyWritesOnlyTheSelectedLinesAsOneUndoableEdit() async throws {
         let session = twoLineSession(), before = session.draft, source = source
-        let state = LyricsEditorAITimingState { request, _ in Self.alignedEveryLine(request.draft) }
+        let state = LyricsEditorAITimingState { request, _ in
+            var result = Self.alignedEveryLine(request.draft)
+            result.reviewIssues = result.draft.lines.map {
+                .init(syllableIDs: $0.syllables.map(\.id), kind: .uncertainTiming, message: "声学证据偏弱")
+            }
+            return result
+        }
         state.start(configuration: configuration, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
         try await wait(state)
         let result = try #require(state.result)
@@ -159,9 +181,13 @@ import Testing
         #expect(state.apply(in: session, configuration: configuration, audioIdentity: source.identity))
         #expect(session.draft.lines[0] == before.lines[0])
         #expect(session.draft.lines[1] == result.draft.lines[1])
+        #expect(session.aiReviewNotes == [before.lines[1].syllables[0].id: ["声学证据偏弱"]])
         #expect(state.selection.isEmpty)
         session.undo()
         #expect(session.draft == before)
         #expect(!session.canUndo)
+        #expect(session.aiReviewNotes.isEmpty)
+        session.redo()
+        #expect(session.aiReviewNotes == [before.lines[1].syllables[0].id: ["声学证据偏弱"]])
     }
 }

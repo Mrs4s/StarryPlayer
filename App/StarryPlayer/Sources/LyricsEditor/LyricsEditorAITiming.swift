@@ -22,7 +22,6 @@ struct LyricsEditorAITiming: View {
 
     private enum Stage: Hashable { case setup, working, result }
 
-    // Exclude progress ticks so they do not restart the layout animation.
     private struct Layout: Hashable {
         var stage: Stage
         var messages: [String?]
@@ -429,6 +428,12 @@ private struct AITimingResultPreview: View {
         result.draft.lines.enumerated().filter { !$0.element.isBackground }.map { Entry(number: $0.offset + 1, line: $0.element) }
     }
 
+    private var reviewNotes: [UUID: [String]] {
+        result.reviewIssues.reduce(into: [:]) { notes, issue in
+            for id in issue.syllableIDs { notes[id, default: []].append(issue.message) }
+        }
+    }
+
     var body: some View {
         let retimed = Set(state.retimedLines)
         let selected = state.selection.intersection(retimed).count
@@ -456,7 +461,7 @@ private struct AITimingResultPreview: View {
                 Spacer(minLength: 0)
             }
             if result.estimatedReadings > 0 || result.uncertainReadings > 0 || result.uncertainTimings > 0 {
-                Text("估计的读音、词内边界和待核对时间建议重点试听；特殊读法可补充注音后重新打轴。")
+                Text("琥珀色字块需要重点试听；应用后可在时间轴逐个核对，特殊读法可补充注音后重新打轴。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
@@ -481,6 +486,7 @@ private struct AITimingResultPreview: View {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                             AITimingLineRow(number: entry.number, line: entry.line, audio: audio,
+                                            reviewNotes: reviewNotes,
                                             isSelectable: retimed.contains(entry.id), isSelected: state.selection.contains(entry.id),
                                             isExpanded: expanded.contains(entry.id)) {
                                 if state.selection.remove(entry.id) == nil { state.selection.insert(entry.id) }
@@ -506,6 +512,7 @@ private struct AITimingLineRow: View {
     let number: Int
     let line: LyricsDraft.Line
     let audio: LyricsEditorAudio
+    var reviewNotes: [UUID: [String]]
     var isSelectable: Bool
     var isSelected: Bool
     var isExpanded: Bool
@@ -529,6 +536,8 @@ private struct AITimingLineRow: View {
                         .foregroundStyle(theme.onSurfaceVariant)
                         .frame(width: 24, alignment: .trailing)
                     Text(line.text).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                    let count = line.syllables.filter { reviewNotes[$0.id] != nil }.count
+                    if count > 0 { Tag(text: "\(count) 处待核对", style: .amber, soft: true) }
                     Text(range).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(theme.onSurfaceVariant)
                 }
                 .opacity(dimmed ? 0.45 : 1)
@@ -551,16 +560,25 @@ private struct AITimingLineRow: View {
             if isExpanded {
                 LyricsFlowLayout(spacing: 4, lineSpacing: 4) {
                     ForEach(line.syllables) { syllable in
+                        let notes = reviewNotes[syllable.id] ?? []
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(syllable.text).font(.system(size: 12.5)).foregroundStyle(theme.onSurface)
+                            HStack(spacing: 3) {
+                                Text(syllable.text).font(.system(size: 12.5)).foregroundStyle(theme.onSurface)
+                                if !notes.isEmpty {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(theme.warning)
+                                }
+                            }
                             Text(LyricsEditorFormat.time(syllable.start))
                                 .font(.system(size: 9.5).monospacedDigit())
                                 .foregroundStyle(theme.onSurfaceVariant)
                         }
                         .padding(.horizontal, 7)
                         .padding(.vertical, 4)
-                        .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .help(time(syllable.start) + " – " + time(syllable.end))
+                        .background(notes.isEmpty ? theme.onSurface.opacity(0.05) : theme.warning.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .help(([time(syllable.start) + " – " + time(syllable.end)] + notes).joined(separator: "\n"))
                     }
                 }
                 .opacity(dimmed ? 0.45 : 1)

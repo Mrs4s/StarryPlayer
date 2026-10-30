@@ -4,29 +4,24 @@ import Observation
 import StarryCore
 import SwiftUI
 
-/// Retained by `AppModel` across editor window closures.
 @MainActor @Observable
 final class LyricsEditorSession {
     typealias Position = LyricsDraft.Position
 
     let track: Track
     private(set) var draft: LyricsDraft
-    /// The syllable the next tap starts; nil once the last one is timed.
     var caret: Position?
-    /// Taps land this much earlier than they are pressed, for the time it takes to react.
     var tapLead: TimeInterval = 0
     var editingLine: UUID?
-    /// Bumped to move the keyboard focus to the inspector's ruby field.
     private(set) var rubyFocusRequest = 0
-    /// IDs preserve selection when syllables move between lines.
     private(set) var selection: Set<UUID> = []
     @ObservationIgnored private var selectionAnchor: UUID?
     /// The song's `amll:meta` entries, in order; a key may repeat (one entry per artist).
     var metadata: [MetadataEntry]
-    /// The syllable tapped last and a count of taps, for the chip to bounce.
     private(set) var lastTapped: UUID?
     private(set) var tapSerial = 0
     private(set) var revision = 0
+    private(set) var aiReviewNotes: [UUID: [String]] = [:]
     /// Undo/redo/import invalidate asynchronous edits even if a line later looks identical.
     @ObservationIgnored private(set) var historyEpoch = 0
     private var savedRevision = 0
@@ -40,7 +35,6 @@ final class LyricsEditorSession {
     @ObservationIgnored private var previewCache: (revision: Int, document: LyricsDocument)?
     @ObservationIgnored private var rangesCache: (revision: Int, ranges: [ClosedRange<TimeInterval>?], end: TimeInterval)?
     @ObservationIgnored private var windowsCache: (revision: Int, windows: [ClosedRange<TimeInterval>])?
-    /// Restores durations and gaps when syllables are placed back from the tray.
     @ObservationIgnored private(set) var staged: [UUID: StagedTiming] = [:]
 
     struct StagedTiming: Hashable {
@@ -52,6 +46,7 @@ final class LyricsEditorSession {
     private struct Snapshot {
         var draft: LyricsDraft
         var caret: Position?
+        var aiReviewNotes: [UUID: [String]]
         var metadata: [MetadataEntry]? = nil
     }
 
@@ -101,8 +96,6 @@ final class LyricsEditorSession {
         return document
     }
 
-    /// Shared by the clock, overview and timeline. Pointer movement and selection do not
-    /// change timing, so they must not scan every syllable or interpolate the whole draft.
     var timedRanges: [ClosedRange<TimeInterval>?] {
         if let rangesCache, rangesCache.revision == revision { return rangesCache.ranges }
         let ranges = draft.lines.map(\.timedRange)
@@ -136,15 +129,28 @@ final class LyricsEditorSession {
 
     // MARK: Editing
 
-    func edit(_ change: (inout LyricsDraft) -> Void) {
-        let before = Snapshot(draft: draft, caret: caret)
+    func edit(aiReviewNotes notes: [UUID: [String]]? = nil, _ change: (inout LyricsDraft) -> Void) {
+        let before = Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes)
         var next = draft
         change(&next)
-        guard next != draft else { return }
+        var nextNotes = notes ?? aiReviewNotes
+        if !nextNotes.isEmpty {
+            let original = Dictionary(uniqueKeysWithValues: draft.lines.flatMap { $0.syllables.map { ($0.id, $0) } })
+            nextNotes = Dictionary(uniqueKeysWithValues: next.lines.flatMap(\.syllables).compactMap { syllable in
+                guard let messages = nextNotes[syllable.id], !messages.isEmpty else { return nil }
+                if notes == nil {
+                    guard let previous = original[syllable.id], previous.text == syllable.text,
+                          previous.ruby?.map(\.text) == syllable.ruby?.map(\.text) else { return nil }
+                }
+                return (syllable.id, messages)
+            })
+        }
+        guard next != draft || nextNotes != aiReviewNotes else { return }
         undoStack.append(before)
         if undoStack.count > 300 { undoStack.removeFirst() }
         redoStack.removeAll()
         draft = next
+        aiReviewNotes = nextNotes
         revision += 1
         clampCaret()
         pruneSelection()
@@ -152,7 +158,7 @@ final class LyricsEditorSession {
 
     func editMetadata(_ entries: [MetadataEntry]) {
         guard entries != metadata else { return }
-        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: metadata))
+        undoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: metadata))
         if undoStack.count > 300 { undoStack.removeFirst() }
         redoStack.removeAll()
         metadata = entries
@@ -161,7 +167,7 @@ final class LyricsEditorSession {
 
     func replace(with draft: LyricsDraft) {
         historyEpoch += 1
-        edit { $0 = draft }
+        edit(aiReviewNotes: [:]) { $0 = draft }
         staged = [:]
         caret = draft.firstUntimed ?? draft.firstPosition(fromLine: 0)
         adoptMetadata(of: draft)
@@ -170,9 +176,10 @@ final class LyricsEditorSession {
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
         historyEpoch += 1
-        redoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
+        redoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        aiReviewNotes = snapshot.aiReviewNotes
         if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
@@ -181,9 +188,10 @@ final class LyricsEditorSession {
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
         historyEpoch += 1
-        undoStack.append(Snapshot(draft: draft, caret: caret, metadata: snapshot.metadata == nil ? nil : metadata))
+        undoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
+        aiReviewNotes = snapshot.aiReviewNotes
         if let metadata = snapshot.metadata { self.metadata = metadata }
         revision += 1
         pruneSelection()
@@ -196,6 +204,26 @@ final class LyricsEditorSession {
         } else {
             self.caret = draft.firstPosition(fromLine: caret.line) ?? draft.firstPosition(throughLine: caret.line)
         }
+    }
+
+    var aiReviewPositions: [Position] {
+        draft.lines.indices.flatMap { line in
+            draft.lines[line].syllables.indices.compactMap { syllable in
+                aiReviewNotes[draft.lines[line].syllables[syllable].id] == nil ? nil : Position(line: line, syllable: syllable)
+            }
+        }
+    }
+
+    func adjacentAIReview(backwards: Bool) -> Position? {
+        let positions = aiReviewPositions
+        guard let current = caret ?? lastStarted else { return backwards ? positions.last : positions.first }
+        return backwards ? positions.last { $0 < current } ?? positions.last : positions.first { $0 > current } ?? positions.first
+    }
+
+    func markAIReviewed(_ id: UUID) {
+        var notes = aiReviewNotes
+        guard notes.removeValue(forKey: id) != nil else { return }
+        edit(aiReviewNotes: notes) { _ in }
     }
 
     // MARK: Selection
@@ -242,7 +270,6 @@ final class LyricsEditorSession {
             let hi = l == to.line ? to.syllable : syllables.count - 1
             if lo <= hi { ids.formUnion(syllables[lo...hi].map(\.id)) }
         }
-        // Avoid observation updates on every mouse move.
         if selection != ids { selection = ids }
     }
 
@@ -448,7 +475,6 @@ final class LyricsEditorSession {
     func tap(at time: TimeInterval, rate: Double = 1) -> UUID? {
         guard let caret, draft.contains(caret) else { return nil }
         let time = max(0, time - tapLead * rate)
-        // Another voice may still be singing when this one starts.
         let previous = draft.position(before: caret).flatMap { previous in
             Self.sameVoice(draft.lines[previous.line], draft.lines[caret.line]) ? previous : nil
         }
@@ -458,7 +484,6 @@ final class LyricsEditorSession {
                 draft[previous].end = time
             }
             draft[caret].start = time
-            // Timed again: its old end no longer holds.
             draft[caret].end = nil
         }
         lastTapped = draft[caret].id

@@ -17,6 +17,8 @@ struct Theme: Equatable {
     var outlineVariant: Color
     var accent: Color
 
+    var warning: Color { Color(hex: isDark ? "#F5B94E" : "#B7791F") }
+
     static let darkBase = Theme(
         isDark: true,
         primary: .rgb(244, 244, 245), primaryContainer: .rgb(63, 63, 70), onPrimary: .rgb(24, 24, 27),
@@ -37,13 +39,11 @@ struct Theme: Equatable {
         accent: .rgb(24, 24, 27)
     )
 
-    /// Build a palette from a seed. `tintSurfaces` washes the surfaces with the seed too, so the
-    /// pages take on the cover's colour.
     static func make(seed: Color?, dark: Bool, tintSurfaces: Bool) -> Theme {
         var theme = dark ? darkBase : lightBase
         guard let seed, let hsb = seed.hsb, hsb.saturation > 0.05 else { return theme }
         let h = hsb.hue
-        let chroma = min(hsb.saturation, 0.7) / 0.7  // 0…1 how colourful the seed is
+        let chroma = min(hsb.saturation, 0.7) / 0.7
         if dark {
             theme.primary = .hsb(h, 0.18 * chroma + 0.04, 0.96)
             theme.primaryContainer = .hsb(h, 0.38 * chroma + 0.05, 0.36)
@@ -99,9 +99,6 @@ enum Metrics {
     static let headerHeight: CGFloat = 64
     static let playerBarHeight: CGFloat = 64
     static let playerBarMargin: CGFloat = 14
-    /// The bar's widest: past it the bar centres in the content column instead of stretching,
-    /// so its three groups do not drift apart across a wide window (at 1280 pt the stretched
-    /// bar was ~1000 pt wide with ~200 pt of empty glass either side of the transport).
     static let playerBarMaxWidth: CGFloat = 800
     static let playerBarInset: CGFloat = playerBarHeight + playerBarMargin + 10
     static let songRowHeight: CGFloat = 60
@@ -126,9 +123,6 @@ enum Motion {
     static let nowPlaying = Animation.timingCurve(0.7, 0, 0.3, 1, duration: 0.5)
     static var nowPlayingTiming: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.7, 0, 0.3, 1) }
     static let nowPlayingDuration: CFTimeInterval = 0.5
-    /// Sidebar width (collapse / expand): a quick ease-out with a bounded length. The content
-    /// column is laid out again on every frame of it, so a spring's long settling tail costs
-    /// frames for movement no one sees.
     static let sidebar = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32)
     static let sidebarPeek = Animation.spring(response: 0.21, dampingFraction: 0.82)
     static let sidebarUnpeek = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15)
@@ -145,18 +139,11 @@ enum Motion {
     static let deal = Animation.spring(response: 0.5, dampingFraction: 0.78)
     static let listEdit = Animation.spring(response: 0.42, dampingFraction: 0.86)
     static let pause = Animation.spring(response: 0.45, dampingFraction: 0.62)
-    /// The cover colour (`PlayerController.accentColor`) moving to a new song's: slow enough to
-    /// read as the light changing, not a switch.
     static let accent = Animation.easeInOut(duration: 0.8)
-    /// The search box lifting from its capsule into the card with the panel, and settling back.
-    /// Closing is quicker and does not overshoot: the pages are what the user went back to.
     static let searchOpen = Animation.spring(response: 0.38, dampingFraction: 0.84)
     static let searchClose = Animation.spring(response: 0.26, dampingFraction: 1)
-    /// The notch player dropping open out of the notch (a little overshoot), and drawing back
-    /// into it without one.
     static let notchOpen = Animation.spring(response: 0.42, dampingFraction: 0.78)
     static let notchClose = Animation.spring(response: 0.36, dampingFraction: 1)
-    /// The closed island widening and narrowing with the line being sung.
     static let notchResize = Animation.spring(response: 0.4, dampingFraction: 0.88)
     static let searchResize = Animation.spring(response: 0.3, dampingFraction: 0.9)
     static let hint = Spring(response: 0.6, dampingRatio: 0.9)

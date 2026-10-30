@@ -116,7 +116,7 @@ struct Tag: View {
     private var color: Color {
         switch style {
         case .neutral: theme.onSurfaceVariant
-        case .amber: Color(hex: theme.isDark ? "#F5B94E" : "#B7791F")
+        case .amber: theme.warning
         case .red: Color(hex: theme.isDark ? "#F0625D" : "#DC3F3A")
         case .primary: theme.primary
         }

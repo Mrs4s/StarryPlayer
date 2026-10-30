@@ -16,10 +16,10 @@ import Testing
             units: [.init(line: 0, syllable: 0, tokens: 0..<1, ruby: [], approximate: false)],
             lines: [0], estimatedCount: 0, backgroundCount: 0)
         let spans: [LyricsAICTC.Span] = [.init(start: 0, end: 0.8)]
-        #expect(LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(), rawSpans: spans, spans: spans).isEmpty)
-        let review = LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(weak: true), rawSpans: spans, spans: spans)
+        #expect(LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(), rawSpans: spans, spans: spans).isEmpty)
+        let review = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(weak: true), rawSpans: spans, spans: spans)
         #expect(review.count == 1)
-        #expect(review[0].contains("声学证据偏弱"))
+        #expect(review[0].message.contains("声学证据偏弱"))
     }
 
     @Test func recoveredRepeatsRemainReviewableButInternalReadingsDoNotCreateDisplayWarnings() {
@@ -30,11 +30,12 @@ import Testing
             lines: [0], estimatedCount: 0, backgroundCount: 0)
         let raw: [LyricsAICTC.Span] = [.init(start: 0, end: 0.72), .init(start: 0.74, end: 0.76)]
         let spans: [LyricsAICTC.Span] = [.init(start: 0, end: 0.4), .init(start: 0.4, end: 0.8)]
-        let review = LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(), rawSpans: raw, spans: spans)
+        let review = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(), rawSpans: raw, spans: spans)
         #expect(review.count == 1)
-        #expect(review[0].contains("分配值"))
+        #expect(review[0].message.contains("分配值"))
+        #expect(review[0].syllableIDs == [draft.lines[0].syllables[1].id])
         plan.units = [.init(line: 0, syllable: 0, tokens: 0..<2, ruby: [], approximate: false)]
-        #expect(LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(), rawSpans: raw, spans: spans).isEmpty)
+        #expect(LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(), rawSpans: raw, spans: spans).isEmpty)
     }
 
     @Test func aSharedSoundIsDescribedAsDisplayTimingInsteadOfAWeakPhonemeMatch() {
@@ -46,13 +47,13 @@ import Testing
             lines: [0], estimatedCount: 0, backgroundCount: 0)
         let raw: [LyricsAICTC.Span] = [.init(start: 0, end: 0.72), .init(start: 0.74, end: 0.76)]
         let spans: [LyricsAICTC.Span] = [.init(start: 0, end: 0.4), .init(start: 0.4, end: 0.8)]
-        let review = LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(),
+        let review = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(),
                                                        rawSpans: raw, spans: spans, sharedSounds: [0..<2])
         #expect(review.count == 1)
-        #expect(review[0].contains("分配值"))
-        #expect(!review[0].contains("声学证据偏弱"))
+        #expect(review[0].message.contains("分配值"))
+        #expect(!review[0].message.contains("声学证据偏弱"))
         plan.units = [.init(line: 0, syllable: 0, tokens: 0..<2, ruby: [], approximate: false)]
-        #expect(LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence(),
+        #expect(LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence(),
                                                 rawSpans: raw, spans: spans, sharedSounds: [0..<2]).isEmpty)
     }
 }

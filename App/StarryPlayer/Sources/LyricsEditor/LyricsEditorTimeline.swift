@@ -58,7 +58,7 @@ struct LyricsEditorTimeline: View {
                 LyricsTimelineSurface(session: session, audio: audio, clock: clock, viewport: viewport,
                                       revision: session.revision, caret: session.caret, range: range,
                                       theme: theme, accent: NSColor(accent), onSpectrogram: onSpectrogram,
-                                      canPlay: audio.isReady, onsets: onsets)
+                                      canPlay: audio.isReady, onsets: onsets, aiReviewNotes: session.aiReviewNotes)
                 HStack(spacing: 6) {
                     tracksMenu
                     if onSpectrogram {
@@ -312,7 +312,6 @@ private struct TimelineWaveform: View {
             var x: CGFloat = 0
             while x < size.width {
                 let t = range.lowerBound + Double(x) / Double(size.width) * span
-                // A square root lifts quiet passages enough to see.
                 let level = CGFloat(sqrt(waveform.peak(from: t, to: t + secondsPerStep)))
                 let half = max(0.5, level * middle)
                 path.addRect(CGRect(x: x, y: middle - half, width: step - 0.6, height: half * 2))
@@ -323,7 +322,6 @@ private struct TimelineWaveform: View {
     }
 }
 
-/// Keeps the previous image at its original span until the debounced render completes.
 private struct TimelineSpectrogram: View {
     let audio: LyricsEditorAudio
     var range: ClosedRange<TimeInterval>
@@ -359,7 +357,6 @@ private struct TimelineSpectrogram: View {
                 }
             }
             .task(id: Request(range: range, size: geo.size, gain: gain, scale: displayScale, vocalsOnly: vocalsOnly, voice: voice, splitReady: splitReady)) {
-                // Spans change on every frame of a drag: draw once they settle.
                 try? await Task.sleep(for: .milliseconds(picture == nil ? 0 : 40))
                 guard !Task.isCancelled else { return }
                 let width = Int(geo.size.width * displayScale), height = Int(geo.size.height * displayScale)

@@ -17,6 +17,7 @@ struct LyricsTimelineSurface: NSViewRepresentable {
     var onSpectrogram: Bool
     var canPlay: Bool
     var onsets: [VocalOnset] = []
+    var aiReviewNotes: [UUID: [String]] = [:]
 
     func makeNSView(context: Context) -> LyricsTimelineView { LyricsTimelineView() }
     func updateNSView(_ view: LyricsTimelineView, context: Context) {
@@ -25,7 +26,6 @@ struct LyricsTimelineSurface: NSViewRepresentable {
     static func dismantleNSView(_ view: LyricsTimelineView, coordinator: ()) { view.disconnect() }
 }
 
-/// Blocks redraw independently of the static waveform/spectrogram and the playhead layer.
 final class LyricsTimelineView: NSView {
     static let trayHeight: CGFloat = 34
     private static let trayLeading: CGFloat = 56
@@ -39,6 +39,7 @@ final class LyricsTimelineView: NSView {
         var rect: NSRect
         var background: Bool
         var label: NSAttributedString
+        var reviewNotes: [String]
         var mark = Mark.none
     }
     private struct Drag {
@@ -47,7 +48,6 @@ final class LyricsTimelineView: NSView {
         var translation: CGFloat = 0
         var onsets: [TimeInterval]
         var snapping = true
-        /// Over the tray: on release the block, or the line, leaves the timeline.
         var lifting = false
         var lane = LyricsTimelineLane.unchanged
         var activeOnsets: [TimeInterval] { snapping ? onsets : [] }
@@ -127,7 +127,7 @@ final class LyricsTimelineView: NSView {
         if old?.revision != new.revision { rebuildTray() }
         if old?.revision != new.revision || old?.caret != new.caret || old?.range != new.range
             || old?.theme != new.theme || old?.onSpectrogram != new.onSpectrogram || old?.accent != new.accent
-            || old?.onsets != new.onsets {
+            || old?.onsets != new.onsets || old?.aiReviewNotes != new.aiReviewNotes {
             rebuildBlocks()
         }
         if old?.revision != new.revision || old?.caret != new.caret { revealTrayTarget() }
@@ -185,8 +185,6 @@ final class LyricsTimelineView: NSView {
         hints = []
         lanes = c.session.draft.lanes
         laneHeight = min(74, max(trayTop - 34, 30) / CGFloat(lanes.count))
-        // Avoid a solid curtain of hints when zoomed out. Only visible hints can attract
-        // a drag, and their positions are frozen for the duration of the interaction.
         for onset in c.onsets where c.onSpectrogram && c.range.contains(onset.time) {
             if let last = hints.last, (onset.time - last.time) * scale < 5 {
                 if onset.strength > last.strength { hints[hints.count - 1] = onset }
@@ -233,7 +231,7 @@ final class LyricsTimelineView: NSView {
                 .foregroundColor: c.onSpectrogram ? NSColor.white : NSColor(c.theme.onSurface)
             ])
             blocks.append(Block(position: .init(line: index, syllable: s), syllable: syllable, rect: rect, background: slot.background,
-                                label: label, mark: marked.contains(s) ? mark : .none))
+                                label: label, reviewNotes: c.aiReviewNotes[syllable.id] ?? [], mark: marked.contains(s) ? mark : .none))
         }
     }
 
@@ -279,8 +277,6 @@ final class LyricsTimelineView: NSView {
         }
     }
 
-    /// Only the changed line is redrawn, keeping the ruler and the spectrogram's backing
-    /// image untouched throughout pointer tracking.
     private func refreshLine(_ index: Int) {
         let oldRects = blocks.filter { $0.position.line == index }.map(\.rect)
         blocks.removeAll { $0.position.line == index }
@@ -374,6 +370,12 @@ final class LyricsTimelineView: NSView {
         var alpha: CGFloat = block.position.line == caretLine || activeLines.contains(block.position.line) ? 1 : 0.5
         var fill = c.onSpectrogram ? (selected ? c.accent.withAlphaComponent(0.42) : .black.withAlphaComponent(0.45)) : NSColor(c.theme.primary).withAlphaComponent(selected ? 0.32 : 0.16)
         var stroke = c.onSpectrogram ? (selected ? c.accent : .white.withAlphaComponent(0.42)) : NSColor(c.theme.primary).withAlphaComponent(selected ? 0.9 : 0.3)
+        let needsReview = !block.reviewNotes.isEmpty
+        let warning = NSColor(c.onSpectrogram ? Theme.darkBase.warning : c.theme.warning)
+        if needsReview {
+            stroke = warning
+            alpha = max(alpha, 0.85)
+        }
         switch block.mark {
         case .none: break
         case .placing:
@@ -389,14 +391,28 @@ final class LyricsTimelineView: NSView {
         path.fill()
         stroke.withAlphaComponent(stroke.alphaComponent * alpha).setStroke()
         path.lineWidth = selected ? 1.5 : 1
-        if block.mark != .none { path.setLineDash([4, 3], count: 2, phase: 0) }
+        if block.mark != .none || needsReview { path.setLineDash([4, 3], count: 2, phase: 0) }
         path.stroke()
+        let badge = needsReview && block.rect.width >= 36 && block.rect.height >= 18
+        var labelRect = block.rect.insetBy(dx: 3, dy: 0)
+        if badge { labelRect.size.width -= 13 }
         NSGraphicsContext.saveGraphicsState()
-        block.rect.insetBy(dx: 3, dy: 0).clip()
+        labelRect.clip()
         NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         let size = block.label.size()
-        block.label.draw(at: NSPoint(x: max(block.rect.minX + 4, block.rect.midX - size.width / 2), y: block.rect.midY - size.height / 2))
+        block.label.draw(at: NSPoint(x: max(labelRect.minX + 1, labelRect.midX - size.width / 2), y: block.rect.midY - size.height / 2))
         NSGraphicsContext.restoreGraphicsState()
+        if badge {
+            let rect = NSRect(x: block.rect.maxX - 14, y: block.rect.minY + 4, width: 10, height: 10)
+            warning.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            let mark = NSAttributedString(string: "!", attributes: [
+                .font: NSFont.systemFont(ofSize: 8, weight: .heavy),
+                .foregroundColor: c.onSpectrogram ? NSColor.black : NSColor(c.theme.onPrimary)
+            ])
+            let size = mark.size()
+            mark.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        }
     }
 
     private func drawHints(in dirtyRect: NSRect) {
@@ -528,7 +544,6 @@ final class LyricsTimelineView: NSView {
         return tray.firstIndex { $0.line > caret.line || ($0.line == caret.line && $0.run.upperBound > caret.syllable) }
     }
 
-    // Keep visible runs stationary under the pointer.
     private func revealTrayTarget() {
         guard let index = trayTarget() ?? tray.indices.last else { return }
         let rect = tray[index].rect
@@ -790,6 +805,7 @@ final class LyricsTimelineView: NSView {
         } else if let block = hit(point) {
             (part(at: point, in: block.rect) == .body ? NSCursor.openHand : NSCursor.resizeLeftRight).set()
             toolTip = "\(LyricsEditorFormat.time(block.syllable.start, digits: 3)) – \(LyricsEditorFormat.time(block.syllable.end, digits: 3))\n⌘ 拖动整行，可上下换轨；拖到下方暂存区移出时间轴"
+            if !block.reviewNotes.isEmpty { toolTip = "AI 待核对\n" + block.reviewNotes.joined(separator: "\n") + "\n\n" + (toolTip ?? "") }
         } else {
             NSCursor.iBeam.set()
             if let hint = hints.min(by: { abs(x($0.time) - point.x) < abs(x($1.time) - point.x) }), abs(x(hint.time) - point.x) <= 5 {
@@ -802,7 +818,8 @@ final class LyricsTimelineView: NSView {
     private func rebuildAccessibility() {
         accessible = blocks.map { block in
             LyricsEditorActionElement(host: self,
-                                      label: "\(block.syllable.text)，\(LyricsEditorFormat.time(block.syllable.start, digits: 3)) 至 \(LyricsEditorFormat.time(block.syllable.end, digits: 3))",
+                                      label: "\(block.syllable.text)，\(LyricsEditorFormat.time(block.syllable.start, digits: 3)) 至 \(LyricsEditorFormat.time(block.syllable.end, digits: 3))"
+                                        + (block.reviewNotes.isEmpty ? "" : "，AI 待核对，" + block.reviewNotes.joined(separator: "；")),
                                       rect: block.rect) { [weak self] in
                 guard let c = self?.configuration else { return }
                 c.viewport.hold(c.range)

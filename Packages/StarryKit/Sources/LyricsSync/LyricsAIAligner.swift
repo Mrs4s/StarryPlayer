@@ -6,27 +6,24 @@ public struct LyricsAIAlignmentResult: Sendable {
     public var draft: LyricsDraft
     public var alignedLines: Int
     public var alignedSyllables: Int
-    public var estimatedReadings: Int
     public var skippedBackgroundLines: Int
     public var resolvedReadings: Int
-    public var uncertainReadings: Int
-    public var uncertainReadingDescriptions: [String]
-    public var uncertainTimingDescriptions: [String]
+    public var reviewIssues: [LyricsAIReviewIssue]
+    public var estimatedReadings: Int { reviewIssues.filter { $0.kind == .estimatedReading }.count }
+    public var uncertainReadings: Int { uncertainReadingDescriptions.count }
+    public var uncertainReadingDescriptions: [String] { reviewIssues.filter { $0.kind == .uncertainReading }.map(\.message) }
+    public var uncertainTimingDescriptions: [String] { reviewIssues.filter { $0.kind == .uncertainTiming }.map(\.message) }
     public var uncertainTimings: Int { uncertainTimingDescriptions.count }
 
     public init(draft: LyricsDraft, alignedLines: Int, alignedSyllables: Int,
-                estimatedReadings: Int = 0, skippedBackgroundLines: Int = 0,
-                resolvedReadings: Int = 0, uncertainReadings: Int = 0, uncertainReadingDescriptions: [String] = [],
-                uncertainTimingDescriptions: [String] = []) {
+                skippedBackgroundLines: Int = 0, resolvedReadings: Int = 0,
+                reviewIssues: [LyricsAIReviewIssue] = []) {
         self.draft = draft
         self.alignedLines = alignedLines
         self.alignedSyllables = alignedSyllables
-        self.estimatedReadings = estimatedReadings
         self.skippedBackgroundLines = skippedBackgroundLines
         self.resolvedReadings = resolvedReadings
-        self.uncertainReadings = uncertainReadings
-        self.uncertainReadingDescriptions = uncertainReadingDescriptions
-        self.uncertainTimingDescriptions = uncertainTimingDescriptions
+        self.reviewIssues = reviewIssues
     }
 }
 
@@ -113,16 +110,16 @@ public actor LyricsAIAligner {
         guard currentAudio.fileSize == audioValues.fileSize, currentAudio.contentModificationDate == audioValues.contentModificationDate else {
             throw LyricsAIError.alignment("人声音频在执行期间发生变化，请重试")
         }
-        var result = try Self.apply(spans, plan: plan, to: draft, englishSplit: englishSplit)
-        result.uncertainTimingDescriptions = LyricsAITimingReview.descriptions(plan: plan, draft: draft, evidence: evidence,
-                                                                              rawSpans: alignment.raw, spans: spans,
-                                                                              sharedSounds: refinement.sharedSounds)
-        result.resolvedReadings = readings.resolvedCount
-        result.uncertainReadings = readings.uncertainCount
-        result.uncertainReadingDescriptions = readings.decisions.filter(\.uncertain).map {
+        var issues = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence,
+                                                rawSpans: alignment.raw, spans: spans, sharedSounds: refinement.sharedSounds)
+        issues += readings.decisions.filter(\.uncertain).map {
             let reading = $0.reading.contains("\u{E000}") ? "未确定" : $0.reading
-            return "第 \($0.line + 1) 行「\($0.text)」：\(reading)"
+            let ids = draft.lines[$0.line].syllables[$0.syllables].map(\.id)
+            return LyricsAIReviewIssue(syllableIDs: ids, kind: .uncertainReading,
+                                       message: "第 \($0.line + 1) 行「\($0.text)」：多读音待核对，当前读音为\(reading)")
         }
+        var result = try Self.apply(spans, plan: plan, to: draft, englishSplit: englishSplit, reviewIssues: issues)
+        result.resolvedReadings = readings.resolvedCount
         progress(.init(1, "打轴完成，请预览并试听"))
         return result
     }
