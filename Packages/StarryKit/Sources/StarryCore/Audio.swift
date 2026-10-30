@@ -54,7 +54,6 @@ public struct QualityTier: Sendable, Hashable, Codable, Identifiable {
     /// nothing of ours (equalizer, spectrum, vocal attenuation) goes between, and a stereo file never stands
     /// in for it or the other way round.
     public var isSpatial: Bool
-    /// Tag text in lists and the player bar (`无损`, `Hi-Res`, `杜比`); nil for lossy tiers.
     public var badge: String?
 
     public init(id: String, name: String, detail: String? = nil, level: AudioQuality, isSpatial: Bool = false, badge: String? = nil) {
@@ -132,7 +131,6 @@ public struct ReplayGain: Sendable, Hashable, Codable {
         self.albumPeak = albumPeak
     }
 
-    /// nil when no gain is known.
     public var nonEmpty: ReplayGain? { trackGain == nil && albumGain == nil ? nil : self }
 
     /// The linear volume factor for `mode` with `preamp` dB on top, no louder than the peak

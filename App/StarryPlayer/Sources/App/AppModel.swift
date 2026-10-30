@@ -45,8 +45,6 @@ final class AppModel {
     private var history = NavigationHistory()
     var route: Route { history.current.route }
     var currentEntry: HistoryEntry { history.current }
-    /// Entries whose pages stay mounted (hidden when not current): the current one and up to 8
-    /// back.
     var livePages: [HistoryEntry] { history.live }
     var canGoBack: Bool { history.canGoBack }
 
@@ -83,10 +81,8 @@ final class AppModel {
     @ObservationIgnored var lyricsEditorTrack: TrackRef?
     @ObservationIgnored var lyricsEditorAudio: LyricsEditorAudio?
     @ObservationIgnored var draggedTracks: [Track] = []
-    /// Local music: built in, there with or without plugins; nil without `keepsData`.
     @ObservationIgnored private(set) var localSource: LocalSource?
     @ObservationIgnored private var followsFirstAccount = true
-    /// Goes up when the local library's songs change (a scan), so pages showing them load again.
     private(set) var localRevision = 0
     private(set) var localStatus = LibraryStatus()
 
@@ -178,8 +174,6 @@ final class AppModel {
         registry.source(for: id)?.webURL(for: page)
     }
 
-    /// `id`'s source when it has the ability `T` (a sub-protocol such as `any CatalogSource`);
-    /// nil when it is not registered or cannot do it. The UI hides what this finds nothing for.
     func source<T>(_ id: SourceID, as type: T.Type) -> T? {
         registry.source(for: id)?.capability(type)
     }
@@ -260,8 +254,6 @@ final class AppModel {
     @ObservationIgnored private var songThreads: [(track: TrackRef, thread: SongCommentThread)] = []
     @ObservationIgnored private var songThreadsAccount: String?
 
-    /// The song's comment thread, kept while the song is among the last few asked for, so the
-    /// panel comes back as it was left. Nil when the song's source has no comments.
     func commentThread(for track: Track) -> SongCommentThread? {
         guard let source = commentSource(track.id.source) else { return nil }
         let account = accounts.profile(of: track.id.source)?.userID
@@ -413,8 +405,6 @@ final class AppModel {
         playlistsBySource[id] = playlists
     }
 
-    /// The songs `id`'s account likes, as its source just listed them (also by the liked songs page, so
-    /// songs liked on another device or client get their hearts).
     func setLikedSongs(_ ids: [String], of id: SourceID) {
         player.liked = player.liked.filter { $0.source != id }.union(ids.map { TrackRef(source: id, id: $0) })
     }
@@ -446,8 +436,6 @@ final class AppModel {
         }
     }
 
-    /// Adding an account: keeps the signed-in account of `id` aside for another to sign in. False when the
-    /// login dialog should not open (the account could not be kept; the toast says why).
     func addAccount(_ id: SourceID) async -> Bool {
         guard let source = accountSource(id) else { return false }
         do {
@@ -458,8 +446,6 @@ final class AppModel {
         }
     }
 
-    /// A login dialog for `id` closed: after adding an account without a new login, the account kept aside
-    /// signs in again (nothing happens otherwise).
     func loginDialogClosed(_ id: SourceID) async {
         guard let source = accountSource(id) else { return }
         do {
@@ -509,14 +495,12 @@ final class AppModel {
         source(track.id.source, as: (any UserLibrarySource).self) != nil
     }
 
-    /// A song liked or unliked in this session, so the liked songs page can follow without reloading.
     struct LikeChange: Equatable {
         var track: Track
         var liked: Bool
         var serial: Int
     }
 
-    /// The latest like or unlike (also the undoing of one the source refused).
     private(set) var likeChange: LikeChange?
 
     func toggleLike(_ track: Track) {
@@ -635,8 +619,6 @@ final class AppModel {
             guard let self else { throw PlaybackError.sourceUnreachable }
             return try await resolver.resolve(track, options: ResolveOptions(allowTrialPlay: settings.settings.allowTrialPlay, tier: tier ?? requestedTier(for: track)))
         }
-        // Lyrics: the plugins' lyric providers, the AMLL TTML DB
-        // and an optional local TTML folder, chosen by the lyric source settings.
         let cache = LyricsCache(directory: keepsData ? LyricsCache.defaultDirectory : nil)
         lyricsCache = cache
         rebuildLyricsResolver()
@@ -702,8 +684,6 @@ final class AppModel {
         Task { await localSource.start() }
     }
 
-    /// The local library's songs changed: Home and the lists showing them load again, and so
-    /// do its liked songs and playlists.
     private func localLibraryChanged() {
         localRevision += 1
         Task { await refreshUserLibrary(.local) }
@@ -764,7 +744,6 @@ final class AppModel {
             ?? VocalSeparationModelLocator.defaultDirectory(in: DataDirectory.defaultURL)
     }
 
-    /// The model in use is one the app comes with (in its `Resources/Models`), not a side-loaded one.
     var vocalModelIsBuiltIn: Bool {
         guard let directory = vocalModel.directory, let models = Bundle.main.resourceURL?.appending(path: "Models") else { return false }
         return directory.standardizedFileURL.path.hasPrefix(models.standardizedFileURL.path + "/")
@@ -823,7 +802,6 @@ final class AppModel {
         reloadPlugins()
     }
 
-    /// The plugins' lyric providers, the AMLL TTML DB and an optional local TTML folder.
     private func rebuildLyricsResolver() {
         guard let cache = lyricsCache else { return }
         let pluginLyrics = plugins.lyricsProviders(cache: cache) { self.settings.settings.sourceSettings($0) }
@@ -869,7 +847,6 @@ final class AppModel {
         lyricsResolver?.detail(of: id) ?? id.detail
     }
 
-    /// Whether a lyric platform comes from a plugin the app does not come with.
     func isAddedLyricPlugin(_ id: LyricsProviderID) -> Bool {
         plugins.plugins.contains { $0.isLyricsProvider && $0.lyricsProviderID == id && plugins.origin(of: $0) != .builtIn }
     }
@@ -887,7 +864,6 @@ final class AppModel {
         lyricsResolver?.searchProviders(options: lyricOptions()) ?? []
     }
 
-    /// The lyrics of a song from lyric search, or nil when it has none.
     func lyrics(of result: LyricsSearchResult, for track: Track) async throws -> ResolvedLyrics? {
         try await lyricsResolver?.lyrics(of: result, for: track, options: lyricOptions())
     }
@@ -906,8 +882,6 @@ final class AppModel {
         }
     }
 
-    /// Reads a lyric file (opened or dropped) for `track` and pins the song to it; says so in
-    /// a toast either way.
     @discardableResult
     func loadLyricsFile(at url: URL, for track: Track) -> Bool {
         let name = url.lastPathComponent
@@ -1027,7 +1001,6 @@ final class AppModel {
         notch.apply(settings.settings.notch)
     }
 
-    /// Songs kept after they were heard; nil without `keepsData`.
     @ObservationIgnored private(set) var songCache: SongCache?
     @ObservationIgnored private var appliedSongCacheLimit: Int64?
 
@@ -1082,8 +1055,6 @@ final class AppModel {
         navigate(.artist(Artist(id: artist.id, source: track.id.source, name: artist.name)))
     }
 
-    /// Whether the playing queue's origin is a page to go to (personal FM, a local folder or a
-    /// hand-built queue are not).
     func canOpenPlaybackOrigin(_ context: PlaybackContext) -> Bool {
         context.originType == .user ? context.originID != nil && hasUserPages(context.source) : route(for: context) != nil
     }
@@ -1295,8 +1266,6 @@ final class AppModel {
 
     @ObservationIgnored private let snapshotQueue = DispatchQueue(label: "moe.mrs4s.starry-player.playback-state", qos: .utility)
 
-    /// Opens the queue left at the last quit (paused), and saves it again at this one (unless
-    /// the launch said otherwise: `LaunchOptions.keepsPlayback`).
     private func restorePlayback() {
         guard keepsPlayback else { return }
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1333,9 +1302,6 @@ final class AppModel {
         if scheme != preferredColorScheme { preferredColorScheme = scheme }
     }
 
-    /// Whether the player bar uses Liquid Glass: the saved style, on
-    /// macOS 26 and later — before that the system has no Liquid Glass and the bar stays
-    /// classic. Stored and written only on change, like `preferredColorScheme`.
     private(set) var playerBarUsesGlass = false
 
     private func updatePlayerBarStyle() {

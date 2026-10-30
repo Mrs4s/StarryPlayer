@@ -230,7 +230,6 @@ public final class MenuBarLyricsView: NSView {
         return slot
     }
 
-    /// The line with any line breaks as spaces, so it lays out as one row.
     static func singleRow(_ line: LyricLine) -> LyricLine {
         guard line.text.contains(where: \.isNewline) else { return line }
         var line = line
@@ -327,7 +326,6 @@ struct MenuBarTrack: Equatable {
 }
 
 final class MenuBarSlotLayer: NoAnimationLayer {
-    /// Opacity of the part of a line not sung yet.
     static let unsungOpacity: Float = 0.38
     static let readingPosition: CGFloat = 0.65
     static let fadeWidth: CGFloat = 12

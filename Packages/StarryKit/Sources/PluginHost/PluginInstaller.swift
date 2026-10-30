@@ -1,6 +1,5 @@
 import Foundation
 
-/// A plugin file read but not installed: what the plugin settings ask the listener to confirm.
 public struct PluginPackage: Sendable {
     public let manifest: PluginManifest
     public let isSource: Bool

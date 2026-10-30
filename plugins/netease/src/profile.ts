@@ -1,6 +1,3 @@
-// Request identity and eapi envelope. Every API call is an eapi POST to
-// `https://interface.music.163.com/eapi/...` with `e_r = true`.
-
 import { md5Hex } from './crypto';
 import { numberText, orderedJSON, sortedJSON } from './util';
 

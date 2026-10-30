@@ -21,7 +21,6 @@ public enum SourceID: Hashable, Sendable, Codable {
         }
     }
 
-    /// The source `key` stands for; nil for a string that is not a key.
     public init?(key: String) {
         switch key {
         case "netease": self = .netease

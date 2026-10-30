@@ -20,7 +20,6 @@ export function str(value: unknown): string | undefined {
   return undefined;
 }
 
-/** A string that is there and not empty. */
 export function text(value: unknown): string | undefined {
   const string = str(value);
   return string ? string : undefined;

@@ -16,7 +16,6 @@ struct TrackListRows: View {
     var locator: TrackListLocator? = nil
     @Environment(AppModel.self) private var model
     @State private var shown = false
-    /// Where a dragged row would land (before the row at this position), and the row under the pointer.
     @State private var insertion: Int?
     @State private var hoveredRow: Int?
 
@@ -75,8 +74,6 @@ struct TrackListRows: View {
     }
 }
 
-/// Where a dragged row would land: a line of the accent colour between two rows, with a ring at
-/// its start, as Finder draws it.
 private struct InsertionLine: View {
     @Environment(\.theme) private var theme
 
@@ -208,9 +205,6 @@ struct TrackListEnd<Footer: View>: View {
 }
 
 extension View {
-    /// Copies `text` into `settled` once typing pauses for `delay` (at once when cleared): a
-    /// long list refilters once a pause instead of on every keystroke, as replacing the rows on
-    /// screen is costly whatever the list's length.
     func settled(_ text: String, into settled: Binding<String>, delay: Duration = .milliseconds(150)) -> some View {
         task(id: text) {
             if !text.isEmpty { try? await Task.sleep(for: delay) }

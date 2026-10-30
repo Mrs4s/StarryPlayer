@@ -9,7 +9,6 @@ enum APETag {
         var picture: EmbeddedPicture?
     }
 
-    /// The tag ending at the end of the file (or before its ID3v1 tag), nil when there is none.
     static func read(_ file: FileReader, lyrics: Bool = false) -> Tag? {
         var end = file.size
         if ID3v2.hasV1(file) { end -= 128 }

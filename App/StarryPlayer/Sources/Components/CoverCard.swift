@@ -45,7 +45,6 @@ struct CoverCard: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay(ArtworkView(artwork: artwork, circle: circle, zoom: hovering ? 1.06 : 1).brightness(hovering ? -0.05 : 0))
             .clipShape(shape)
-            // A hairline edge, so pale covers do not melt into a light page.
             .overlay(shape.stroke(theme.onSurface.opacity(0.07), lineWidth: 1))
             .overlay(alignment: circle ? .bottom : .bottomTrailing) {
                 if let onPlay {

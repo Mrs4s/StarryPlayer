@@ -215,7 +215,6 @@ struct WireTTMLKey: Codable {
         id = container.decodeLenientStringIfPresent(forKey: .id)?.trimmingCharacters(in: .whitespaces)
     }
 
-    /// nil when the folder or the id is missing or blank.
     var key: TTMLKey? {
         guard let folder, !folder.isEmpty, let id, !id.isEmpty else { return nil }
         return TTMLKey(folder: folder, id: id)
@@ -522,7 +521,6 @@ struct WireAsset: Decodable {
     var info: Info?
     var supportsOverlap: Bool?
     var decrypt: JSONValue?
-    /// The server makes the file while sending it: no length, no ranges.
     var transcoded: Bool?
     var gain: Gain?
 
@@ -923,7 +921,6 @@ struct WireGenre: Decodable {
     }
 }
 
-/// `account.connect`: the server reached.
 struct WireServerInfo: Decodable {
     var address: String
     var name: String?

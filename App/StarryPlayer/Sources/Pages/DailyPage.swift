@@ -210,7 +210,6 @@ private struct DailyRecommendationsContent: View {
             : .verbatim(title)
     }
 
-    /// Anchored below the button, kept inside the page and clear of the player bar.
     @ViewBuilder
     private func stylePickerOverlay(_ anchor: Anchor<CGRect>?) -> some View {
         if let request = stylePicker, let anchor {

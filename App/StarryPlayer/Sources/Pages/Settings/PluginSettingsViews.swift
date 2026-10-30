@@ -5,11 +5,6 @@ import StarryCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-// The plugins settings page: a row per plugin, the files that did not load, and the two ways
-// to install. Changes apply at once (`AppModel.reloadPlugins`).
-
-/// One plugin: what it is and gives, where it came from and the sites it may reach; its switch,
-/// and update / homepage / reveal (not built-in) / remove.
 struct PluginRow: View {
     var plugin: Plugin
     @Environment(AppModel.self) private var model
@@ -143,7 +138,6 @@ struct PluginIcon: View {
     }
 }
 
-/// A file that did not load, and why; one in the plugin folder can be removed from here.
 struct PluginFailureRow: View {
     var failure: PluginManager.Failure
     @Environment(AppModel.self) private var model
@@ -269,8 +263,6 @@ struct PluginAddressInstaller: View {
 }
 
 extension View {
-    /// Asks before `pending` is installed: what it gives, the sites it may reach, what it replaces.
-    /// `failed` gets the reason an install did not go through.
     func pluginInstallConfirmation(_ pending: Binding<AppModel.PendingPlugin?>, failed: @escaping (String) -> Void) -> some View {
         modifier(PluginInstallConfirmation(pending: pending, failed: failed))
     }

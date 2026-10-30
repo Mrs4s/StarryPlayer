@@ -23,9 +23,7 @@ extension ControlActiveState {
 }
 
 extension View {
-    /// The system glass (`glassEffect`) in `shape`. Only the glass bar uses it, which exists on
-    /// macOS 26+ only, so older systems (without the API) never get here and draw nothing.
-    /// Disabled it is the identity glass, so switching it keeps the view's identity.
+    /// Use identity glass when disabled to preserve the view's identity.
     @ViewBuilder
     func barGlass(_ enabled: Bool = true, tint: Color? = nil, clear: Bool = false, interactive: Bool = false, in shape: some Shape) -> some View {
         if #available(macOS 26, *) {
@@ -35,8 +33,6 @@ extension View {
         }
     }
 
-    /// A `GlassEffectContainer` around the view when `enabled` (macOS 26+): its glass shapes
-    /// render together and flow into each other when they come within `spacing`.
     @ViewBuilder
     func barGlassContainer(_ enabled: Bool, spacing: CGFloat? = nil) -> some View {
         if enabled, #available(macOS 26, *) {
@@ -126,8 +122,6 @@ struct GlassPlayButtonStyle: ButtonStyle {
     }
 }
 
-/// A soft pool of the accent colour inside the glass under the progress head, as if the head lit
-/// the glass. A leaf view on the 4 Hz clock, like `BarProgress`.
 private struct GlassProgressSpill: View {
     var override: TimeInterval?
     @Environment(AppModel.self) private var model
@@ -150,10 +144,6 @@ private struct GlassProgressSpill: View {
     }
 }
 
-/// The glass bar's progress line along `edge`: a faint groove and the played part as light —
-/// dim where it began, full accent along the way, white-hot for the last stretch before its
-/// head — drawn over a blurred copy of itself (the bloom). Dark glass adds the light (plus
-/// lighter); light glass lays a coloured glow instead, which reads on a bright surface.
 struct GlassProgressLine: View {
     var edge: BarEdge
     var fraction: CGFloat
@@ -191,9 +181,7 @@ struct GlassProgressLine: View {
     }
 }
 
-/// The light at the progress head: a small glowing point that grows into a bead under the
-/// pointer and, while dragging, shrinks back to a point inside a clear glass lens. It never
-/// leaves the view tree (inserted views' geometry starts late in the bar, see `Ticker`).
+/// Keep the progress head mounted; insertion during bar layout starts its geometry too late.
 struct GlassProgressHead: View {
     var active: Bool
     var scrubbing: Bool
@@ -225,8 +213,7 @@ struct GlassProgressHead: View {
     }
 }
 
-/// A clear glass lens that swells in over a slider's thumb while it is dragged. Kept in the
-/// tree and switched between the identity glass and clear glass, so it grows in place.
+/// Switch between identity and clear glass in place to preserve the thumb's geometry.
 struct GlassLens: View {
     var shown: Bool
     var size: CGFloat

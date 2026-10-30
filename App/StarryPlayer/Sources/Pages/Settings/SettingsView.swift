@@ -34,8 +34,6 @@ struct SettingsView: View {
         .tint(theme.accent)
         .environment(\.settingsRevealing, revealing)
         .background {
-            // Esc: first clears the search, then closes. A key equivalent, so it works whatever
-            // has the focus.
             Button("") {
                 if query.isEmpty { close() } else { query = "" }
             }
@@ -233,8 +231,6 @@ struct SettingsView: View {
     }
 }
 
-/// A rail row: 32 pt, a 20 pt symbol and a 13 pt title. The selected one carries the accent pill
-/// (shared, so it slides) and the filled symbol; a click dips the symbol and springs it back.
 private struct SettingsRailItem: View {
     var info: SettingsPageInfo
     var active: Bool

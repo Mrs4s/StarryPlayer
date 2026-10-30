@@ -93,8 +93,6 @@ enum CoverSleeves {
         var key: String
     }
 
-    /// Up to two sleeves: the playing song's cover first while the list plays, then the first
-    /// songs' covers; each image once, and never the list's own cover.
     static func sleeves(tracks: [Track]?, current: Track?, excluding own: Artwork?) -> [Sleeve] {
         guard let tracks, !tracks.isEmpty else { return [] }
         var seen: Set<String> = own.map { [key($0)] } ?? []

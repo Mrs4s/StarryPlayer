@@ -27,7 +27,6 @@ async function writeBack(server: Server, id: string, songs: string[]): Promise<s
     after = (await call(server, 'getPlaylist', { id }).catch(() => undefined))?.playlist;
   }
   if (!info || !after) return songs;
-  // A server that drops the rest when it overwrites (none seen yet): put them back.
   const restore: Record<string, string | boolean> = {};
   if (typeof info.name === 'string' && after.name !== info.name) restore.name = info.name;
   if (typeof info.comment === 'string' && info.comment && after.comment !== info.comment) restore.comment = info.comment;

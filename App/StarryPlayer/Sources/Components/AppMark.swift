@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The app's mark: a coral play glyph and two white sparkles on a night-blue sky, flat fills only.
-/// The app icon is rendered from this view too, so keep it self-contained.
+/// Keep this view self-contained; it also renders the app icon.
 struct AppMark: View {
     var size: CGFloat
 

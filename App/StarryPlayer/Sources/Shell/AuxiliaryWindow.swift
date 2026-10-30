@@ -41,8 +41,6 @@ final class AuxiliaryWindowController: NSObject, NSWindowDelegate {
         host.view.layoutSubtreeIfNeeded()
         window.setContentSize(initialContentSize ?? host.view.fittingSize)
         if centerOnScreen, let screen {
-            // Work within the usable screen, leaving room around the editor and accounting
-            // for the menu bar, Dock and window chrome. Small screens keep the minimum size.
             let visible = screen.visibleFrame
             var frame = window.frame
             frame.size.width = min(frame.width, max(visible.width - 48, window.minSize.width))
@@ -66,7 +64,6 @@ final class AuxiliaryWindowController: NSObject, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Closes the window as its close button would.
     func close() {
         window?.performClose(nil)
     }

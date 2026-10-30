@@ -40,23 +40,16 @@ struct NotchGeometry: Equatable {
                   leftArea: screen.auxiliaryTopLeftArea?.width, rightArea: screen.auxiliaryTopRightArea?.width)
     }
 
-    /// The screen the player goes on: the first with a notch; without one, the first screen
-    /// (the one with the menu bar), unless only a notch will do.
     static func screen<Screen>(among screens: [Screen], notchedOnly: Bool, hasNotch: (Screen) -> Bool) -> Screen? {
         screens.first(where: hasNotch) ?? (notchedOnly ? nil : screens.first)
     }
 }
 
-/// The island in one phase: its size, how far its middle sits right of the notch's (the closed
-/// island grows to the right of the notch for the lyrics), its outline, and where the cover,
-/// bars, lyric line and controls go. Frames are in the island's space, from its top-left corner.
+/// Island layout in local coordinates with a top-left origin.
 struct NotchLayout: Equatable {
     enum Phase: Equatable {
-        /// Back in the notch (gone, on a screen without one): nothing playing, or paused a while.
         case hidden
-        /// The cover and bars beside the notch, the line being sung after them.
         case compact
-        /// The controls, dropped open under the notch.
         case expanded
     }
 
@@ -68,12 +61,9 @@ struct NotchLayout: Equatable {
     var cover: CGRect
     var coverRadius: CGFloat
     var bars: CGRect
-    /// The closed island's line; nil without one (lyrics off, or not closed).
     var lyric: CGRect?
-    /// The open island's title, progress and controls; nil unless open.
     var controls: CGRect?
 
-    /// The closed island's longest line, before it is cut short with "…".
     static let lyricsMaxWidth: CGFloat = 220
     static let lyricGap: CGFloat = 8
     static let expandedWidth: CGFloat = 440
@@ -85,8 +75,6 @@ struct NotchLayout: Equatable {
         self.phase = phase
         let h = geometry.height
         let notch = geometry.notch.width
-        // The closed island's parts scale with the menu bar: 22 pt covers in a 32 pt notch,
-        // 16 pt in a 24 pt menu bar.
         let flare = (h * 0.19).rounded()
         let side = max(((h - h * 0.68) / 2).rounded(), 6)
         let c = max((h * 0.68).rounded(), 14)
@@ -95,8 +83,6 @@ struct NotchLayout: Equatable {
 
         switch phase {
         case .hidden:
-            // Inside the notch, where nothing shows; on a screen without one the island shrinks
-            // away as it fades.
             let width = geometry.hasNotch ? notch : c * 2
             size = CGSize(width: width, height: h)
             offset = 0
@@ -110,7 +96,6 @@ struct NotchLayout: Equatable {
             controls = nil
 
         case .compact:
-            // Cover | notch | line, bars. Without a notch the line follows the cover directly.
             let lead = geometry.hasNotch ? side : 0
             let line = lyricWidth.map { min($0, Self.lyricsMaxWidth) }
             let right = lead + (line.map { $0 + Self.lyricGap } ?? 0) + c + side + flare
@@ -131,7 +116,6 @@ struct NotchLayout: Equatable {
             let edge: CGFloat = 14
             let pad = edge + 16
             let row = top + 14
-            // Cover row, progress, transport (`NotchControls`), then the bottom margin.
             let height = row + Self.expandedCover + 12 + 18 + 4 + 38 + 14
             size = CGSize(width: width, height: height)
             offset = 0
@@ -156,14 +140,11 @@ struct NotchLayout: Equatable {
         return CGRect(x: geometry.top.x - half, y: geometry.top.y - height, width: half * 2, height: height)
     }
 
-    /// The island's own rect on the screen.
     func islandFrame(on geometry: NotchGeometry) -> CGRect {
         CGRect(x: geometry.top.x + offset - size.width / 2, y: geometry.top.y - size.height, width: size.width, height: size.height)
     }
 }
 
-/// The island's outline: a flat top along the screen's edge that flares into the sides, the way
-/// the notch meets the menu bar (`topRadius`), straight sides, and round bottom corners.
 struct NotchShape: Shape {
     var topRadius: CGFloat
     var bottomRadius: CGFloat

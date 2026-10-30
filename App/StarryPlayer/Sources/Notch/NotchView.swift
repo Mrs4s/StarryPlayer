@@ -2,7 +2,6 @@ import AppKit
 import StarryCore
 import SwiftUI
 
-/// The notch panel's content: the island at the top, centred (the panel is centred on the notch).
 struct NotchRoot: View {
     let island: NotchModel
     let actions: NotchActions
@@ -17,8 +16,6 @@ struct NotchRoot: View {
     }
 }
 
-/// Black like the notch, in the cover's colour where it has one. The cover and bars are one view
-/// each in every phase, so they travel between their places as the island opens and closes.
 private struct NotchIsland: View {
     let island: NotchModel
     let actions: NotchActions
@@ -65,7 +62,6 @@ private struct NotchIsland: View {
             shape.fill(.black)
                 .shadow(color: .black.opacity(layout.phase == .expanded ? 0.45 : 0), radius: 16, y: 8)
         }
-        // Without a notch to stay in, the hidden island fades away as it shrinks.
         .opacity(shown || island.geometry.hasNotch ? 1 : 0)
         .contentShape(shape)
         .onHover { actions.hover($0) }
@@ -75,7 +71,6 @@ private struct NotchIsland: View {
     }
 }
 
-/// Settles back while paused, like the player bar's; open, a click goes to the Now Playing page.
 private struct NotchCover: View {
     var track: Track
     var radius: CGFloat
@@ -111,8 +106,6 @@ private struct NotchCover: View {
     }
 }
 
-/// The open island beside the cover (which floats in the space left for it): title, artist and
-/// the line being sung, then the progress and the transport.
 private struct NotchControls: View {
     var layout: NotchLayout
     var onScrub: @MainActor (Bool) -> Void
@@ -159,7 +152,6 @@ private struct NotchControls: View {
     }
 }
 
-/// Times either side of the bar; dragging it seeks when let go, like the player bar's.
 private struct NotchProgress: View {
     var onScrub: @MainActor (Bool) -> Void
     @Environment(AppModel.self) private var model
@@ -197,7 +189,6 @@ private struct NotchProgress: View {
     }
 }
 
-/// Like on the left, previous / play / next in the middle, the Now Playing page on the right.
 private struct NotchTransport: View {
     var openNowPlaying: @MainActor () -> Void
     @Environment(AppModel.self) private var model

@@ -1,6 +1,3 @@
-// Playback: NetEase's quality levels as the source's tiers, and the player URL
-// (`/api/song/enhance/player/url/v1`, one id at a time).
-
 import type { PlayableAsset, QualityLevel, QualityTier, Track } from '../../sdk/starry';
 import { request } from './client';
 import { Song } from './endpoints';

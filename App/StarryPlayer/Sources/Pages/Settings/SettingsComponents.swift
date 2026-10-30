@@ -125,7 +125,6 @@ struct SettingsGroup: Identifiable {
         self.footer = footer.map(DisplayText.localized)
     }
 
-    /// The group as shown with advanced settings on or off; nil when nothing of it shows.
     func visible(advanced showAdvanced: Bool) -> SettingsGroup? {
         guard showAdvanced || !advanced else { return nil }
         var group = self
@@ -220,8 +219,6 @@ private struct SettingsEntryRow: View {
         .frame(maxWidth: .infinity, minHeight: entry.layout == .custom ? 0 : (compact ? 40 : 52), alignment: .leading)
         .background(theme.accent.opacity(lit ? (theme.isDark ? 0.16 : 0.1) : 0))
         .onAppear {
-            // A row brought in by turning advanced settings on glows and fades, so the eye finds
-            // it.
             guard revealing, isAdvanced, !reduceMotion else { return }
             lit = true
             Task { @MainActor in

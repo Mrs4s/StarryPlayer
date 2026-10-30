@@ -116,9 +116,6 @@ extension Shelf {
     }
 }
 
-/// Places a shelf's cards side by side at `columns` to the width, the card with index `start`
-/// at the leading inset, shifted by `offset`. Each card carries its index (`Index`), so the
-/// shelf can hand over only the cards near the visible ones.
 private struct ShelfRow: Layout {
     var columns: Int
     var spacing: CGFloat
@@ -164,10 +161,8 @@ private struct ShelfRow: Layout {
     }
 }
 
-/// Hands horizontal scrolls over a shelf to it and lets everything else through to the page:
-/// a trackpad gesture locks to an axis on its first movement; a horizontal one drags the shelf,
-/// and its momentum is swallowed; shift + mouse wheel pages. Holds the shelf's frame in window
-/// coordinates without making it view state, so moving the shelf re-renders nothing.
+/// Lock trackpad gestures to their initial axis and consume horizontal momentum.
+/// Keep frame measurements outside view state to avoid re-rendering during scrolling.
 @MainActor
 private final class ShelfScrollRouter {
     /// In the hosting view's (SwiftUI global) coordinates, top-left origin.
@@ -207,7 +202,6 @@ private final class ShelfScrollRouter {
         return frame.contains(CGPoint(x: point.x, y: view.isFlipped ? point.y : view.bounds.height - point.y))
     }
 
-    /// Handles `event` if it is the shelf's; true when the page must not see it.
     private func consumes(_ event: NSEvent) -> Bool {
         if !event.momentumPhase.isEmpty {
             guard lock == .horizontal else { return false }

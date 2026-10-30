@@ -15,8 +15,6 @@ enum Route: Hashable {
     case artist(Artist)
     case search(String)
     case user(UserProfile)
-    /// The library (`LibraryBrowsingSource`): the browsing source's albums (of a genre), artists,
-    /// genres, and its folders (a folder's path; nil for the top).
     case libraryAlbums(genre: String?)
     case libraryArtists
     case libraryGenres
@@ -99,7 +97,6 @@ struct NavigationHistory {
         if live.last?.id != current.id { live.append(current) }
     }
 
-    /// Rebuild only the current page, leaving the back stack and its retained pages intact.
     mutating func refreshCurrentPage() {
         let entry = HistoryEntry(route: current.route)
         entries[entries.count - 1] = entry

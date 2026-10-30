@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Entrance: the content fades in, rises `distance` pt and grows from `scale` once `shown`
-/// turns true, after `delay`. Only offset / scale / opacity change, so it never moves layout.
-/// With Reduce Motion on it only fades.
 struct Reveal: ViewModifier {
     var shown: Bool
     var delay: Double = 0

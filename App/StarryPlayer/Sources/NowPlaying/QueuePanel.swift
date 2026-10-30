@@ -127,8 +127,6 @@ private struct NowPlayingQueueRow: View {
     }
 }
 
-/// `来自 <origin>`: the name underlines and brightens on hover and opens the page, with a
-/// chevron saying so; an origin with no page stays plain text.
 private struct QueueOriginLink: View {
     var context: PlaybackContext
     var tint: Color

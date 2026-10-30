@@ -26,7 +26,6 @@ import StarryCore
         #expect(LyricCandidateMatcher.score(candidate, for: LyricQuery(title: "晴天", duration: 300)) == nil)
         #expect(LyricCandidateMatcher.score(candidate, for: LyricQuery(title: "晴")) == nil)
         #expect(LyricCandidateMatcher.score(candidate, for: LyricQuery(title: "晴", artist: "周杰伦")) == 9)
-        // Same title by someone else is rejected when the query names artists.
         #expect(LyricCandidateMatcher.score(candidate, for: LyricQuery(title: "晴天", artist: "孙燕姿")) == nil)
         let duet = LyricCandidate(title: "Lemon (Live)", artists: ["米津玄師 / 菅田将暉"], duration: 255, payload: "2")
         #expect(LyricCandidateMatcher.score(duet, for: LyricQuery(title: "Lemon", artists: ["米津玄師"], duration: 256)) == 12)

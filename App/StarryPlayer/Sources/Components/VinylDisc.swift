@@ -3,10 +3,7 @@ import QuartzCore
 import StarryCore
 import SwiftUI
 
-/// A vinyl record with the cover as its label, for the album page to slide out from behind the
-/// cover. The grooves and the sheen are drawn once and stay still (as the light on a real
-/// record does); only the label turns, on a Core Animation layer (`LabelSpinnerView`), so a
-/// spinning record costs the main thread nothing per frame. Pausing stops it where it is.
+/// Animate only the cover label with Core Animation to avoid per-frame SwiftUI updates.
 struct VinylDisc: View {
     var artwork: Artwork?
     var spinning: Bool

@@ -1,10 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Settings in a window of its own, like the system's settings windows: its traffic lights (or ⌘W,
-/// or esc) close it, it can sit beside the player, and music and shortcuts go on while it is up.
-/// One at a time; each opening builds the page anew, so its rows and groups settle in again. It
-/// opens over the middle of the player's window the first time, then where it was left.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()

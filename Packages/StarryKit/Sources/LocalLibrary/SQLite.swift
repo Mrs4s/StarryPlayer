@@ -37,7 +37,7 @@ final class SQLiteDatabase {
     private var handle: OpaquePointer?
     private var statements: [String: OpaquePointer] = [:]
 
-    /// `path` nil: in memory (tests).
+    /// A nil path opens an in-memory database.
     init(path: String?) throws {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
         let status = sqlite3_open_v2(path ?? ":memory:", &handle, flags, nil)

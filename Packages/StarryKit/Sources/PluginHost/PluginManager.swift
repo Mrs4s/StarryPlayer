@@ -25,7 +25,6 @@ public final class PluginManager: Sendable {
         }
     }
 
-    /// A file that is not a plugin this host runs, and why.
     public struct Failure: Sendable, Hashable {
         public var file: URL
         public var origin: Origin

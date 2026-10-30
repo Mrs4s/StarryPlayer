@@ -2,8 +2,6 @@ import MusicSources
 import Observation
 import StarryCore
 
-/// The loaded pages of one list (an artist's songs in one order, their albums, one kind of search
-/// result). The page owns it, so switching tabs away and back keeps what was loaded.
 @MainActor @Observable
 final class PagedFeed<Item: Identifiable> {
     typealias Fetch = @MainActor @Sendable (Page) async throws -> [Item]
@@ -19,7 +17,6 @@ final class PagedFeed<Item: Identifiable> {
     private(set) var items: [Item] = []
     private(set) var phase: Phase = .idle
     private(set) var hasMore = false
-    /// The last request for more failed; the list offers a retry instead of asking again.
     private(set) var moreFailed = false
     let pageSize: Int
     @ObservationIgnored private var next: Page?

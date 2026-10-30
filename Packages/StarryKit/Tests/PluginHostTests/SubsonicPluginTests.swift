@@ -32,8 +32,6 @@ import Testing
         return "\(profile.userID.split(separator: ":")[0])/\(raw)"
     }
 
-    /// A self-hosted server's source: any host, the server asked for first, a password, several
-    /// accounts, its own Home shelves and library, no platform's extras.
     @Test func standsForAServer() throws {
         let source = try Self.source()
         #expect(source.id == .plugin(id: "moe.mrs4s.subsonic") && source.displayName == "Subsonic")
@@ -58,9 +56,6 @@ import Testing
         #expect(source.plugin.lyricsProviderID == LyricsProviderID(plugin: "moe.mrs4s.subsonic"))
     }
 
-    /// The server, then a user: a token (never the password) in every request, the account named
-    /// after the server; Home, All Media, the library and an album come from it, ids carrying the
-    /// server.
     @Test func signsInAndBrowses() async throws {
         let source = try await Self.signedIn()
         guard case .loggedIn(let profile) = await source.account.state else { Issue.record("not signed in"); return }
@@ -87,8 +82,6 @@ import Testing
         #expect(cover.path == "/rest/getCoverArt" && cover.query?.contains("id=mf-s-mp3") == true && cover.query?.hasSuffix("size=200") == true)
     }
 
-    /// The file itself when it plays here (byte ranges, `format=raw`), with its ReplayGain; a
-    /// WavPack converted to FLAC as the server decides, which the player downloads before it plays.
     @Test func playsFilesAndTranscodes() async throws {
         let source = try await Self.signedIn()
         let lossless = try #require(source.tiers.first { $0.id == "lossless" })
@@ -104,8 +97,6 @@ import Testing
         #expect(decision.httpMethod == "POST" && (body["transcodingProfiles"] as? [[String: Any]])?.first?["container"] as? String == "flac")
     }
 
-    /// Enhanced LRC on the server comes word by word (Navidrome's cues), by the song's id;
-    /// a song without lyrics is none.
     @Test func ownLyricsWordByWord() async throws {
         let source = try await Self.signedIn()
         let provider = try #require(source.plugin.lyricsProvider(cache: LyricsCache(directory: nil)))
@@ -146,12 +137,9 @@ import Testing
     }
 }
 
-/// A Navidrome 0.64 server at `subsonic.test`: one album of three songs (MP3 with enhanced LRC,
-/// WavPack, 96 kHz FLAC), one user `family` with the password `pw`.
 enum SubsonicServer {
     static let host = "subsonic.test"
     private static let seen = OSAllocatedUnfairLock(initialState: [URLRequest]())
-    /// The songs of the playlist made in `editsPlaylists`, as the server keeps them.
     private static let playlist = OSAllocatedUnfairLock(initialState: [String]())
 
     static var requests: [URLRequest] { seen.withLock { $0 } }

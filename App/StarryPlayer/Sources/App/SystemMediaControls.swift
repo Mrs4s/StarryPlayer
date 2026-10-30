@@ -2,7 +2,6 @@ import AppKit
 import MediaPlayer
 import StarryCore
 
-/// App-lifetime bridge between the queue controller and macOS / headset media controls.
 @MainActor
 final class SystemMediaControls: NSObject {
     enum Action: Sendable {

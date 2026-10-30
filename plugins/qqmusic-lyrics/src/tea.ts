@@ -41,7 +41,6 @@ function store(high: number, low: number, bytes: Uint8Array, offset: number): vo
   }
 }
 
-/** `random` makes the padding (tests pass a fixed one). */
 export function teaEncrypt(data: Uint8Array, key: Uint8Array, random: (count: number) => Uint8Array = (count) => starry.crypto.randomBytes(count)): Uint8Array {
   const k = words(key);
   const pad = (8 - ((data.length + 10) % 8)) % 8;

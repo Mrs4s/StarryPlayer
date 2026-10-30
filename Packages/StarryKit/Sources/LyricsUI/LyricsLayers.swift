@@ -1309,7 +1309,6 @@ final class LineLayer: NoAnimationLayer {
         }
         if let background {
             background.build(width: width, specs: specs, tint: tint, scale: scale, colorSpace: colorSpace, translationTint: translationTint)
-            // Only visible while selected, so always in the selected colours.
             background.setColors(unsung: Float(specs.selectedUpcomingBackgroundVocalsAlpha), sung: Float(specs.lineProgressionBackgroundVocalsAlpha), translation: Float(specs.translationAlpha), duration: 0)
             background.opacity = 0
             background.setAffineTransform(CGAffineTransform(scaleX: specs.backgroundVocalsDeselectedScale, y: specs.backgroundVocalsDeselectedScale))
@@ -1705,8 +1704,6 @@ final class LineLayer: NoAnimationLayer {
         removeFilter()
     }
 
-    /// Pointer highlight: rounded background fades in and the line is un-blurred (in 0.2 s (0, 0,
-    /// 0.55, 1), out 0.3 s (0.25, 0.1, 0.25, 0.1)).
     func setHovered(_ hovered: Bool, enabled: Bool) {
         let on = hovered && enabled
         guard on != isHighlighted else { return }

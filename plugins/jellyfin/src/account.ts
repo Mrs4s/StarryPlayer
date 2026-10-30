@@ -1,7 +1,4 @@
-// Signing in: the server first (`connect`), then a user name and
-// password (which may be empty) or Quick Connect, a code entered in a client already signed in. One
-// account is one user on one server; several servers are several accounts (`detail` names the
-// server). Restoring an account never signs in again: that would revoke the token kept for it.
+// Restore saved credentials without signing in again; login would revoke the saved token.
 
 import * as common from '../../common/server';
 import type { Profile, ServerInfo } from '../../sdk/starry';
@@ -11,7 +8,6 @@ import { clearAccountState } from './library';
 /** The oldest server with the lyrics and favourites APIs this plugin uses. */
 const MINIMUM_VERSION = [10, 9];
 
-/** The server `connect` reached, which the login calls that follow sign in to. */
 interface Pending {
   address: string;
   serverId: string;
@@ -20,13 +16,10 @@ interface Pending {
 
 let pending: Pending | undefined;
 
-/** Where to look for the server the user typed; a web client page pasted (`…/web/#/home.html`) is cut back to the server. */
 export const addressCandidates = (typed: string) => common.addressCandidates(typed, [/\/web(\/.*)?$/i]);
 
-/** `12.1.0` is at least `minimum`. */
 export const isAtLeast = (version: unknown, minimum = MINIMUM_VERSION) => common.isAtLeast(version, minimum);
 
-/** Why `/System/Info/Public` does not make a server this plugin can use; undefined when it does. */
 export function refusal(info: any, address: string): string | undefined {
   if (!info || typeof info.Id !== 'string' || !info.Id) return `${address} 不是 Jellyfin 服务器`;
   if (typeof info.ProductName === 'string' && /emby/i.test(info.ProductName)) return '这是 Emby 服务器，目前只支持 Jellyfin';
@@ -69,7 +62,6 @@ function requirePending(): Pending {
   return pending;
 }
 
-/** The account as the app shows it; the server's web pages become the links' templates. */
 export function signedInAs(account: Session): Profile {
   const page = `${account.address}/web/#/details?id={id}&serverId=${account.serverId}`;
   starry.setWebPages({ song: page, album: page, artist: page, playlist: page });
@@ -135,7 +127,6 @@ export function current(): Profile | null {
   return account ? signedInAs(account) : null;
 }
 
-/** Checks the token (`/Users/Me`) and picks up a new name, picture or server name. */
 export async function refresh(): Promise<Profile | null> {
   const account = session();
   if (!account) return null;
@@ -154,7 +145,6 @@ export async function refresh(): Promise<Profile | null> {
   return signedInAs(next);
 }
 
-/** Ends the session on the server too; its token is forgotten. */
 export async function logout(): Promise<void> {
   const account = session();
   if (account) {

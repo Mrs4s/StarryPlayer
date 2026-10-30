@@ -85,7 +85,6 @@ struct AudioSourcePanel: View {
             } else {
                 row("采样率", decodedInfo.sampleRate.map(Self.sampleRate))
                 row("位深", decodedInfo.bitDepth.map { "\($0) bit" })
-                // The source's average for the file; the engine's estimate otherwise.
                 row("比特率", info.bitrate.map(Self.bitrate))
                 row("声道", decodedInfo.channels.map(Self.channels))
                 row("大小", info.fileSize.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) })
@@ -155,8 +154,6 @@ struct AudioSourcePanel: View {
         }
     }
 
-    /// When the stream is not the tier asked for but a lower one (the account cannot have it,
-    /// or the song has no such version), or a stereo file for a spatial mix.
     private var shortfallNote: String? {
         guard let asset, model.registry.source(for: track.id.source)?.offersQualityChoice != false else { return nil }
         let wanted = model.requestedTier(for: track)
@@ -400,8 +397,6 @@ private struct PickedLyrics {
     }
 }
 
-/// A choice in these panels: a faint fill on hover, a firmer one when chosen; dimmed and inert
-/// when it cannot be chosen.
 struct PanelRow<Content: View>: View {
     var selected: Bool
     var enabled: Bool

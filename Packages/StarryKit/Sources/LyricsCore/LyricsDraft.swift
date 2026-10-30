@@ -400,7 +400,6 @@ extension LyricsDraft {
     /// syllable length between the known ones, the window standing in at the ends.
     static func fill(_ syllables: [Syllable], window: ClosedRange<TimeInterval>) -> [LyricSyllable] {
         guard !syllables.isEmpty else { return [] }
-        // Cumulative length before each syllable: syllable k spans offsets[k]…offsets[k + 1].
         var offsets = [0.0]
         for syllable in syllables { offsets.append(offsets[offsets.count - 1] + syllable.weight) }
         var anchors: [(at: Double, time: TimeInterval)] = []
@@ -648,7 +647,6 @@ extension LyricsDraft {
         return first
     }
 
-    /// Whether the syllables follow one another within one line.
     public static func isRun(_ positions: [Position]) -> Bool {
         let positions = Set(positions).sorted()
         guard let first = positions.first else { return false }

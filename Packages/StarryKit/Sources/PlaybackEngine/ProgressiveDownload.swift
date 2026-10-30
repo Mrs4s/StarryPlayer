@@ -69,7 +69,6 @@ final class ProgressiveDownload: NSObject, @unchecked Sendable {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    /// The asset to play: AVFoundation's reads go through this object.
     func makeAsset() -> AVURLAsset {
         let asset = AVURLAsset(url: assetURL)
         asset.resourceLoader.setDelegate(self, queue: queue)
@@ -156,7 +155,6 @@ final class ProgressiveDownload: NSObject, @unchecked Sendable {
         task.resume()
     }
 
-    /// The first byte `request` still waits for, nil when it has everything it can get now.
     private func missingByte(of request: AVAssetResourceLoadingRequest) -> Int64? {
         guard let data = request.dataRequest else { return nil }
         let offset = data.currentOffset
@@ -356,7 +354,6 @@ extension ProgressiveDownload: URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if sideFetches.removeValue(forKey: task.taskIdentifier) != nil {
-            // Whatever it did not bring, the main connection fetches when it gets there.
             guard !isCancelled, failure == nil else { return }
             if let length, have.covers(0..<length) { complete() } else if self.task == nil { scheduleNext() }
             signalArrival()

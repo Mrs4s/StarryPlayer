@@ -3,23 +3,15 @@ import AudioProcessing
 import QuartzCore
 import SwiftUI
 
-/// The parametric equalizer's curve on a log-frequency axis with a handle per band, over the
-/// post-EQ spectrum, rendered with Core Animation like `EqualizerGraph`.
-///
-/// Drag a handle for frequency (across) and gain (up and down; a low- or high-pass's resonance),
-/// with Shift to keep the frequency; scroll on it for Q; double-click it for 0 dB. Double-click
-/// empty space to add a peak there. The arrow keys and Delete act on the selected band.
 struct ParametricEqualizerGraph: View {
     var bands: [ParametricBand]
     var isEnabled: Bool
     var tint: Color
     var selection: Int?
-    /// The spectrum moves (music plays); otherwise it settles to nothing.
     var spectrumLive: Bool
     var spectrum: @MainActor () -> [Float]
     var onSelect: (Int?) -> Void
     var onChange: (ParametricBand) -> Void
-    /// The slot the band went into; nil when all are taken.
     var onAdd: (ParametricBand) -> Int?
     var onRemove: (Int) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -71,7 +63,6 @@ final class ParametricEqualizerGraphView: NSView {
     var onRemove: ((Int) -> Void)?
     var reduceMotion = false
 
-    /// One slot's handle and its part of the curve, springing between the band's values.
     private struct Handle {
         /// The band as last given (kept while it shrinks away).
         var band: ParametricBand?
@@ -131,7 +122,6 @@ final class ParametricEqualizerGraphView: NSView {
     private var curveXs: [CGFloat] = []
     private var sampler: ResponseSampler?
     private var sampledWidth: CGFloat = -1
-    /// What the handles were last coloured for.
     private var knobStyle: [Int] = []
 
     override init(frame: NSRect) {
@@ -198,7 +188,6 @@ final class ParametricEqualizerGraphView: NSView {
             }
             let targets = (Self.position(of: band.frequency), band.filter.hasGain ? band.gain : 0, log(band.q), band.isOn ? 1.0 : 0)
             if !handle.present {
-                // Arriving: in place, growing in.
                 handle.position.jump(to: targets.0)
                 handle.gain.jump(to: targets.1)
                 handle.logQ.jump(to: targets.2)
@@ -237,8 +226,6 @@ final class ParametricEqualizerGraphView: NSView {
         }
     }
 
-    /// Moves the range to the smallest of ±12, ±18 and ±24 dB that holds the handles and the
-    /// curve's peaks; whether it jumped there (no animation).
     private func updateRange() -> Bool {
         let bands = handles.compactMap { $0.present ? $0.band : nil }
         var top = bands.map { abs(Self.level(of: $0)) }.max() ?? 0
@@ -301,7 +288,6 @@ final class ParametricEqualizerGraphView: NSView {
         CGRect(x: Self.axisWidth, y: Self.labelHeight, width: max(bounds.width - Self.axisWidth - Self.rightInset, 1), height: max(bounds.height - Self.labelHeight - Self.topInset, 1))
     }
 
-    /// Half the height the range spans (the handles stay inside the plot).
     private var halfSpan: CGFloat { max(plot.height / 2 - Self.knobSize / 2 - 2, 1) }
 
     static func position(of frequency: Double) -> Double {
@@ -345,7 +331,6 @@ final class ParametricEqualizerGraphView: NSView {
         }
     }
 
-    /// The band as the handle shows it now (on, for its own curve).
     private func animatedBand(_ slot: Int) -> ParametricBand? {
         let handle = handles[slot]
         guard let band = handle.band else { return nil }
@@ -495,7 +480,6 @@ final class ParametricEqualizerGraphView: NSView {
         }
     }
 
-    /// The decibel lines and labels, which follow the range.
     private func layoutGrid() {
         let plot = plot
         let grid = CGMutablePath()
@@ -525,7 +509,6 @@ final class ParametricEqualizerGraphView: NSView {
             for i in total.indices { total[i] += response[i] * weight }
             if slot == selection { own = response.map { $0 * weight } }
         }
-        // Deep cuts (passes, notches) stop at the plot's edge.
         let limit = range.value * Double(plot.height / 2 / halfSpan)
         func path(_ values: [Double]) -> CGMutablePath {
             let path = CGMutablePath()
@@ -641,8 +624,6 @@ final class ParametricEqualizerGraphView: NSView {
         CATransaction.commit()
     }
 
-    /// Filled handles for the bands that play, hollow ones for those off (or all, with the
-    /// equalizer off), a ring round the selected one.
     private func colorKnobs(duration: CFTimeInterval) {
         let style = [enabled ? 1 : 0, selection ?? -1] + handles.map { $0.band?.isOn == false ? 0 : 1 }
         guard style != knobStyle else { return }
@@ -664,8 +645,6 @@ final class ParametricEqualizerGraphView: NSView {
 
     // MARK: Motion
 
-    /// The handles grow in one after another (low to high) as the dialog opens, drawing the
-    /// curve out.
     private func enter() {
         let now = CACurrentMediaTime()
         let order = (0..<Self.slots).filter { handles[$0].present }.sorted { handles[$0].position.target < handles[$1].position.target }
@@ -785,7 +764,6 @@ final class ParametricEqualizerGraphView: NSView {
         convert(event.locationInWindow, from: nil)
     }
 
-    /// The handle under the point (the selected one where they overlap).
     private func handle(at point: CGPoint) -> Int? {
         var best: Int?
         var bestDistance = Self.hitRadius
@@ -873,7 +851,6 @@ final class ParametricEqualizerGraphView: NSView {
         guard dragging != nil else { return }
         dragging = nil
         setHovered(handle(at: location(event)))
-        // The range waited for the drag.
         if updateRange() {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -963,7 +940,6 @@ final class ParametricEqualizerGraphView: NSView {
         onRemove?(item.tag)
     }
 
-    /// Applies an edit here at once (a drag) or springing to it, and hands it on.
     private func change(_ slot: Int, animated: Bool, _ edit: (inout ParametricBand) -> Void) {
         guard var band = handles[slot].band else { return }
         edit(&band)

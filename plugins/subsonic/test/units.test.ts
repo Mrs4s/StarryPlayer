@@ -1,7 +1,3 @@
-// The plugin under Node (`npm test`): its pure parts, and the flows against servers faked in
-// ../../common/test/starry-mock.ts. Answers are shaped as Navidrome 0.64, gonic 0.22, LMS 3.81
-// and Airsonic-Advanced 11 gave them.
-
 import { sent, servers, type Sent } from '../../common/test/starry-mock';
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
@@ -78,7 +74,6 @@ test('connect reads what the server is from a ping without credentials, and its 
   assert.equal(ping.searchParams.get('c'), 'Starry Player');
   assert.equal(ping.searchParams.get('u'), null);
 
-  // Not a Subsonic server; out of reach.
   servers.set('https://web.example.com', () => ({ body: '<html></html>' }));
   await assert.rejects(account.connect('web.example.com'), /不是 Subsonic 服务器/);
   await assert.rejects(account.connect('https://gone.example.com'), /连不上/);
@@ -192,7 +187,6 @@ test('albums, artists and playlists; others’ public playlists are not the acco
   assert.equal(model.album(server, { id: 'al2', name: '合辑', isCompilation: true }).releaseType, '合辑');
   const mine = model.playlist(server, { id: 'p1', name: '我的', owner: 'family', songCount: 2, readonly: false });
   assert.equal(mine.isOwned, true);
-  // Navidrome leaves `public` out when it is false.
   assert.equal(mine.isPrivate, true);
   const theirs = model.playlist(server, { id: 'p2', name: '公开的', owner: 'admin', public: true, readonly: true });
   assert.deepEqual([theirs.isOwned, theirs.isPrivate], [false, false]);
@@ -344,7 +338,6 @@ test('an artist’s songs: its albums’ (only its own on others’ albums) and 
   assert.deepEqual(newest.map((track) => track.id), ['k1/o1', 'k1/o2', 'k1/f1', 'k1/v1']);
   const detail = await catalog.artist('k1/ar4');
   assert.equal(detail.artist.description, 'Born in 1979.');
-  // No top songs from the server: the most played.
   assert.deepEqual(detail.topTracks?.map((track) => track.id), hot.map((track) => track.id));
   assert.deepEqual((await catalog.similarArtists('k1/ar4')).map((artist) => artist.name), ['歌手乙']);
   assert.deepEqual((await catalog.artistAlbums('k1/ar4', { offset: 0, limit: 10 })).map((album) => album.name), ['个人专辑', '华语金曲合辑']);

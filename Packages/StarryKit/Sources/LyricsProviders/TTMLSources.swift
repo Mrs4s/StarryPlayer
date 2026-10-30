@@ -85,7 +85,6 @@ public actor LocalTTMLRepository {
         return file.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
     }
 
-    /// Same title; when both sides name artists they must share one.
     private func byTitle(_ track: Track, _ index: Index) -> URL? {
         let entries = index.titles[LyricCandidateMatcher.normalize(track.title)] ?? []
         let artists = track.artists.map { LyricCandidateMatcher.normalize($0.name) }.filter { !$0.isEmpty }

@@ -1,7 +1,3 @@
-// What the plugin learns as it goes and needs later: the signed-in profile, which playlists are
-// the account's own (v6 detail) and which is its liked list, and the recommendation token (`alg`)
-// personal FM gave each song (liking, skipping and the play report send it back).
-
 import type { Profile } from '../../sdk/starry';
 
 let profile: Profile | undefined;

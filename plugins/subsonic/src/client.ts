@@ -61,7 +61,6 @@ export function requireSession(): Server {
   return signedIn;
 }
 
-/** Signs `next` in here (null: out), and remembers its server. */
 export function setSession(next: Server | null): void {
   current = next;
   if (next) {
@@ -116,7 +115,6 @@ export function forget(server: Server): void {
   starry.storage.set('servers', servers);
 }
 
-/** The key of the server at `address` this computer knows, or a new one. */
 export function keyFor(address: string): string {
   const known = Object.values(knownServers()).find((server) => server.address === address);
   if (known) return known.key;
@@ -130,7 +128,6 @@ export function ref(server: Server, id: unknown): string {
   return typeof id === 'string' && id ? `${server.key}/${id}` : '';
 }
 
-/** The server an id of the plugin's is on, and the server's own id. */
 export function locate(id: string): { server: Server; id: string } {
   const slash = id.indexOf('/');
   if (slash <= 0 || slash === id.length - 1) throw notFound();
@@ -141,7 +138,6 @@ export function locate(id: string): { server: Server; id: string } {
   return { server, id: id.slice(slash + 1) };
 }
 
-/** The server's own id of one of the plugin's ids on `server`, or undefined when it is from elsewhere. */
 export function rawOn(server: Server, id: string): string | undefined {
   return id.startsWith(`${server.key}/`) ? id.slice(server.key.length + 1) : undefined;
 }
@@ -207,7 +203,6 @@ export function send(server: Pick<Server, 'address' | 'version'> & Partial<Serve
   return starry.http.request<string>({ url: `${url}?${all}`, timeout: options.timeout, cookies: false, responseType: 'text' });
 }
 
-/** A call on `server` as its user. */
 export async function call<T = any>(server: Server, method: string, params: Params = {}, options: CallOptions = {}): Promise<T> {
   return answer<T>(await send(server, method, params, options), method);
 }

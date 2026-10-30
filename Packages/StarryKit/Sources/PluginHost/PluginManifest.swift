@@ -105,7 +105,6 @@ struct PluginDescription: Decodable {
     var lyrics: LyricsGroup?
     var account: AccountGroup?
 
-    /// The manifest, or why the plugin cannot load.
     func manifest() throws -> PluginManifest {
         guard let id, PluginManifest.isValidID(id) else {
             throw PluginError.load("id 必须是小写字母、数字和 . _ - 组成的反向域名（如 dev.example.music），而不是 \(id.map { "“\($0)”" } ?? "空")")
@@ -148,12 +147,9 @@ struct PluginDescription: Decodable {
 }
 
 public enum PluginError: Error, Sendable, Equatable, LocalizedError {
-    /// The file could not be read, run or understood.
     case load(String)
     case script(plugin: String, code: String?, message: String)
-    /// A call did not finish in time.
     case timeout(plugin: String, path: String)
-    /// A call returned something that is not what the interface says.
     case badResult(plugin: String, path: String, detail: String)
 
     public var errorDescription: String? {

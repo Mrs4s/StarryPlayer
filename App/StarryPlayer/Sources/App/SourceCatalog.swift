@@ -22,10 +22,6 @@ enum SourceCatalog {
         LocalSource(directory: directory, settings: settings.sourceSettings(.local))
     }
 
-    /// The plugins' sources in load order, except that the first one the app comes with (they load
-    /// in file name order) leads, so it is the one browsed at launch even with plugins installed.
-    /// Those it comes with for a server of the listener's own (Jellyfin, Subsonic) come after its others:
-    /// they have nothing to show before one is signed in to.
     static func pluginSources(settings: AppSettings, plugins: PluginManager) -> [PluginSource] {
         let loaded = plugins.sources { settings.sourceSettings($0) }
         let builtIn = { (source: PluginSource) in plugins.origin(of: source.plugin) == .builtIn }

@@ -31,7 +31,6 @@ struct HomePage: View {
                     .padding(.horizontal, Metrics.pagePadding)
                     .padding(.top, 8)
                     .padding(.bottom, 26)
-                // Its own container, so the skeleton → content swap stays inside it.
                 VStack(alignment: .leading, spacing: 0) {
                     content
                 }
@@ -151,9 +150,6 @@ struct HomePage: View {
         }
     }
 
-    /// Not animated: the page's height changes with it; the sections bring their own entrance.
-    /// Recent content (another visit to Home a moment ago) is used as is. Another source or
-    /// account starts from the skeleton.
     private func load() async {
         guard !Task.isCancelled else { return }
         let key = model.homeKey
@@ -303,8 +299,6 @@ private struct HomeSections: View {
         }
     }
 
-    /// The first tile only with songs on it (a server signed out to has none), the row only with
-    /// a tile.
     @ViewBuilder
     private var picks: some View {
         let hasFirst = !Self.firstTileTracks(content).isEmpty
@@ -328,8 +322,6 @@ private struct HomeSections: View {
         }
     }
 
-    /// Daily recommendations when there is a daily list, otherwise new releases, otherwise the
-    /// source's first shelf of songs (its title as the eyebrow).
     static func firstTileTracks(_ content: HomeContent) -> [Track] {
         if !content.daily.isEmpty { return content.daily }
         if !content.newSongs.isEmpty { return content.newSongs }
@@ -452,8 +444,6 @@ private struct HomeSections: View {
 }
 
 private extension View {
-    /// A home shelf's entrance: rises in after the tiles on first load; one that starts below
-    /// the fold rises in when it scrolls into view instead.
     func homeSection(_ shown: Bool, index: Int) -> some View {
         modifier(HomeSectionEntrance(shown: shown, index: index))
     }
@@ -481,10 +471,6 @@ private enum TileTint: Equatable {
     case hue(Double)
 }
 
-/// A colour tile for the top of Home: a deep two-tone gradient from its cover (so white text
-/// always reads), artwork in the top-right corner, eyebrow / title / detail on the left, a play
-/// button bottom-right. On hover it lifts, the art moves (`art` gets the hover state), a sheen
-/// crosses it once and the play button springs up; the button stays while its queue plays.
 private struct PickTile<Art: View>: View {
     static var height: CGFloat { 196 }
 

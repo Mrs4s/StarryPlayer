@@ -5,14 +5,11 @@ import Observation
 import StarryCore
 import SwiftUI
 
-/// What the island shows; `NotchController` changes it inside the animations that move it.
 @MainActor
 @Observable
 final class NotchModel {
     var geometry = NotchGeometry(top: .zero, notch: CGSize(width: 0, height: NotchGeometry.fallbackHeight))
     var phase: NotchLayout.Phase = .hidden
-    /// The closed island's line, cut to `NotchLayout.lyricsMaxWidth`, and its width; empty with
-    /// the lyrics off.
     var lyric = ""
     var lyricWidth: CGFloat = 0
 
@@ -21,7 +18,6 @@ final class NotchModel {
     }
 }
 
-/// What the island's views report back.
 struct NotchActions {
     var hover: @MainActor (Bool) -> Void
     var tap: @MainActor () -> Void
@@ -29,15 +25,8 @@ struct NotchActions {
     var openNowPlaying: @MainActor () -> Void
 }
 
-/// The player in the notch (`AppSettings.Notch`): a panel over the menu bar, centred on the notch
-/// (or the menu bar of a screen without one), holding an island that grows out of it. While a
-/// song plays the cover and bars sit either side of the notch, with the line being sung after
-/// them; resting the pointer on it drops the controls open. Paused for a while, it goes back
-/// into the notch.
-///
-/// The panel is only as large as the island (and its shadow, open), so the rest of the menu bar
-/// and the windows under it keep their clicks: it grows before the island does and shrinks once
-/// the island has.
+/// Grow the panel before opening the island and shrink it after the animation ends,
+/// keeping the rest of the menu bar available for clicks.
 @MainActor
 final class NotchController {
     private weak var model: AppModel?
@@ -51,7 +40,6 @@ final class NotchController {
     private let lyricTitle = MenuBarLyricsTitle()
 
     private var expanded = false
-    /// Nothing to play, or paused long enough that the island went back into the notch.
     private var idle = true
     private var hovering = false
     private var scrubbing = false
@@ -60,11 +48,9 @@ final class NotchController {
     /// Counts island changes, so a shrink waiting for one to settle does not undo a newer one.
     private var revision = 0
 
-    /// How long a paused song stays out beside the notch.
     static let pauseLinger: Duration = .seconds(20)
     static let lyricFont = NSFont.systemFont(ofSize: 12, weight: .medium)
 
-    /// Keeps the island open whatever the pointer does (screenshots).
     var holdsOpen = false {
         didSet { setExpanded(holdsOpen) }
     }
@@ -188,7 +174,6 @@ final class NotchController {
         update()
     }
 
-    /// The closed island's line follows the song and its clock while the lyrics are on.
     private func syncLyrics() {
         guard let player = model?.player else { return }
         guard options.showsLyrics else {
@@ -250,17 +235,14 @@ final class NotchController {
         return idle ? .hidden : .compact
     }
 
-    /// Moves the island to the phase the player and the pointer call for.
     private func update() {
         let phase = targetPhase
         guard phase != island.phase else { return }
         transition(phase == .expanded ? Motion.notchOpen : Motion.notchClose, phase: phase)
     }
 
-    /// Moves the island to `phase` and the closed line to `lyric` inside `animation`. The panel
-    /// grows to take the new island first and is laid out at once, outside the animation (in
-    /// it, the island would rise from the old panel's bottom edge instead of dropping from the
-    /// top); it shrinks to fit once the island has settled.
+    /// Resize the panel before animating so the island opens from the top edge.
+    /// Defer shrinking until the island has settled.
     private func transition(_ animation: Animation, phase: NotchLayout.Phase? = nil, lyric: String? = nil, width: CGFloat? = nil) {
         let phase = phase ?? island.phase
         let lyric = lyric ?? island.lyric
@@ -305,7 +287,6 @@ final class NotchController {
         hoverTask?.cancel()
         if inside {
             guard options.expandsOnHover, !expanded, canExpand else { return }
-            // A short rest, so a pointer passing over the menu bar does not open it.
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
                 guard let self, !Task.isCancelled, self.hovering else { return }
@@ -360,7 +341,6 @@ final class NotchPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = false
         isMovable = false
-        // Panels hide when their app goes to the background by default; this one stays.
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         isExcludedFromWindowsMenu = true
@@ -372,7 +352,6 @@ final class NotchPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Takes the first click though the app is not active (the island's buttons work at once).
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

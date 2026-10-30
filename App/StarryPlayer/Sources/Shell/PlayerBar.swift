@@ -118,9 +118,6 @@ extension AnyTransition {
     }
 }
 
-/// 44 pt cover: a new song's cover springs in from a smaller size (from the side it came
-/// from), the cover settles back to 0.88 while paused, and hovering shows the way up to the
-/// Now Playing page. Keyframes, not an insertion transition (see `Ticker`).
 private struct BarCover: View {
     var track: Track
     var isPlaying: Bool
@@ -195,7 +192,6 @@ private struct BarTransport: View {
     @Environment(\.theme) private var theme
     @Environment(\.barGlass) private var glass
     @Environment(\.controlActiveState) private var activeState
-    /// The spinner shows only when a switch takes a moment, so quick switches do not flash it.
     @State private var showSpinner = false
 
     var body: some View {
@@ -288,9 +284,6 @@ private struct PlayButtonChrome: ViewModifier {
     }
 }
 
-/// The bar's round buttons: a faint disc on hover, a springy squeeze on press. In the glass bar
-/// a bubble of interactive system glass forms under the pointer instead, and the glass answers
-/// the press itself.
 private struct BarButtonStyle: ButtonStyle {
     var hoverFill = true
     var pressScale: CGFloat = 0.86
@@ -603,9 +596,6 @@ private struct BarVolume: View {
         .onDisappear { hoverTask?.cancel() }
     }
 
-    /// Opens after a short hover so sweeping past does not flash it, closes a little after the
-    /// pointer leaves. Animated in the caller's transaction, so the time label beside it
-    /// slides over instead of jumping.
     private func hoverChanged(_ inside: Bool) {
         hoverTask?.cancel()
         guard inside != expanded else { return }
@@ -669,9 +659,7 @@ private struct BarVolumeSlider: View {
     }
 }
 
-/// Second line under the title: the active lyric line while playing, otherwise the artists.
-/// A new lyric line rises into place; a new song's line moves with its title. A leaf view, so
-/// the 4 Hz clock updates re-run only this and not the bar (see `PlaybackClockText`).
+/// Keep the 4 Hz playback clock confined to this leaf view.
 struct PlayerBarSecondLine: View {
     var track: Track
     var direction: Int = 0

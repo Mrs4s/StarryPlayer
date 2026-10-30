@@ -44,7 +44,6 @@ public enum AudioOutputDevices {
         return id
     }
 
-    /// The Core Audio device with `uid`, nil when it is not connected.
     public static func deviceID(forUID uid: String) -> AudioDeviceID? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var cfUID = uid as CFString

@@ -16,7 +16,6 @@ struct CommentTimeLinkTests {
     }
 
     @Test func leavesOtherNumbersAlone() {
-        // Past the end of the song, part of a clock or a longer number, not a time at all.
         #expect(CommentTimeLinks.times(in: "4:59 结束后还有彩蛋", duration: 240).isEmpty)
         #expect(CommentTimeLinks.times(in: "凌晨 12:30:45 还在听", duration: 3_600).isEmpty)
         #expect(CommentTimeLinks.times(in: "123:45", duration: 10_000).isEmpty)
@@ -65,7 +64,6 @@ struct NowPlayingLayoutTests {
     }
 }
 
-/// A thread of `count` comments with two replies under every third one, paged by offset.
 private final class FakeCommentSource: CommentSource, @unchecked Sendable {
     let id: SourceID = .example
     let displayName = "fake"
@@ -123,7 +121,6 @@ struct SongCommentThreadTests {
         #expect(thread.total == 45)
     }
 
-    /// A page with nothing new adds no row to ask for the next one, so paging goes on by itself.
     @Test func pagesPastARepeatedPage() async {
         let source = FakeCommentSource(count: 60)
         source.repeatAt = 20

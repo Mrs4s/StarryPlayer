@@ -1,7 +1,5 @@
-// Subsonic's Child / AlbumID3 / ArtistID3 / Playlist → the plugin API's models. OpenSubsonic fields are used when they are there (`artists`, `samplingRate`,
-// `releaseDate`…), the classic ones otherwise. Covers need the account's credentials, which stay
-// the same, so a cover's address does too (the app caches pictures by address). Every song seen is
-// kept for `songs(ids)`, as the protocol cannot fetch many by id.
+// Keep every song for songs(ids); Subsonic cannot fetch multiple IDs in one request.
+// Cover URLs keep their credentials so the image cache can reuse them.
 
 import { isLossless, tiersFor } from '../../common/library';
 import { date, positive, text } from '../../common/server';
@@ -18,7 +16,6 @@ export function cover(server: Server, coverArt: unknown): Artwork | undefined {
   return { url: `${base}&size=300`, sizedTemplate: `${base}&size={width}` };
 }
 
-/** An address the server gave (an artist's picture from Last.fm, Navidrome's own); none for an empty one. */
 const plainImage = (value: unknown): Artwork | undefined => {
   const url = text(value);
   return url && /^https?:\/\//i.test(url) ? url : undefined;
@@ -141,7 +138,6 @@ export function genre(item: Item): LibraryGenre | undefined {
   return name && albumCount > 0 ? { name, albumCount } : undefined;
 }
 
-/** A song as it came, with what the server said beyond the model (play count, year, its album's artist). */
 export interface Seen {
   track: Track;
   playCount: number;

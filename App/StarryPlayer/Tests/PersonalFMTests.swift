@@ -72,7 +72,6 @@ struct PersonalFMTests {
         for step in 1...30 {
             player.next()
             try await waitUntil { player.current?.id.id == "fm\(step)" }
-            // Asked for more on reaching the last two songs, so the next one is always there.
             #expect(player.queue.count - player.index! >= 2)
             #expect(player.index! <= PlayerController.endlessHistory)
         }

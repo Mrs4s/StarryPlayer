@@ -26,8 +26,6 @@ struct SidebarContainer: View {
                 .clipShape(shape)
                 .background { SidebarSurface(shape: shape, floating: floating, overPages: mode == .autoHide) }
                 .padding(inset)
-                // Out of sight, the hidden sidebar waits just past the window's edge, shadow and
-                // all; with Reduce Motion it fades instead.
                 .offset(x: shown || reduceMotion ? 0 : -(inset + width + 32))
                 .opacity(shown || !reduceMotion ? 1 : 0)
                 .allowsHitTesting(shown)
@@ -44,8 +42,6 @@ struct SidebarContainer: View {
         }
     }
 
-    /// The strip along the window's left edge: the pointer touching it brings the sidebar out at
-    /// once. Not while a button is held — resizing the window from its left edge passes here.
     private var edgeTrigger: some View {
         Color.clear
             .frame(width: Self.edgeWidth)
@@ -86,10 +82,6 @@ struct SidebarContainer: View {
     }
 }
 
-/// The sidebar's surface. Docked: a faint tone over the window surface with a hairline down its
-/// right edge. Floating: Liquid Glass (macOS 26+), or before that a frosted panel like the classic
-/// player bar, its shadow deeper when it lies over the pages. The two cross-fade as the mode
-/// changes.
 private struct SidebarSurface: View {
     var shape: RoundedRectangle
     var floating: Bool
@@ -144,9 +136,6 @@ final class WindowRef {
     weak var window: NSWindow?
 }
 
-/// Keeps the traffic lights where the sidebar wants them: in the floating panel's top row, and
-/// out of sight with the hidden panel (back while Now Playing covers the shell). A leaf of its own,
-/// so only it follows Now Playing.
 private struct WindowButtonsSync: View {
     var window: WindowRef
     @Environment(AppModel.self) private var model
@@ -192,13 +181,10 @@ final class WindowButtonsView: NSView {
     private var moved = false
     private var hidesButtons = false
     private var fullScreen = false
-    /// Where AppKit put each button, and where this view last put it.
     private var system: [NSWindow.ButtonType: NSPoint] = [:]
     private var placed: [NSWindow.ButtonType: NSPoint] = [:]
-    /// Setting the sidebar's place again is queued (and how many times in a row it did not stick).
     private var placeQueued = false
     private var placeRetries = 0
-    /// Bumped by every change, so the end of a superseded fade does nothing.
     private var generation = 0
     private var observers: [NSObjectProtocol] = []
 
@@ -245,7 +231,6 @@ final class WindowButtonsView: NSView {
         Self.types.compactMap { type in window.standardWindowButton(type).map { (type, $0) } }
     }
 
-    /// A button moved: by this view (where it last put it: nothing to do), or by AppKit.
     private func buttonMoved(_ type: NSWindow.ButtonType, _ button: NSButton) {
         guard button.frame.origin != placed[type] else { return }
         system[type] = button.frame.origin
@@ -253,14 +238,12 @@ final class WindowButtonsView: NSView {
         queuePlace()
     }
 
-    /// Sets the sidebar's place again, where AppKit is not tiling (it has returned).
     private func placeNow() {
         guard moved, !fullScreen, let window else { return }
         let buttons = buttons(in: window)
         if buttons.contains(where: { $0.1.frame.origin != target($0.0, $0.1) }) { place(buttons) }
     }
 
-    /// Sets the sidebar's place again after the current AppKit call (a tiling) has returned.
     private func queuePlace() {
         guard moved, !fullScreen, !placeQueued else { return }
         placeQueued = true

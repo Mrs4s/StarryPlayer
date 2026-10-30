@@ -192,7 +192,6 @@ struct NowPlayingMoreMenu: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        // Above the button: the page is what the menu should open into, not the screen below.
         PopMenu(placement: .above, isPresented: $isOpen) {
             items
         } label: { open in

@@ -218,7 +218,6 @@ struct AlbumPage: View {
         return items
     }
 
-    /// The selected tab as rows of the page's lazy stack (several views, not one container).
     @ViewBuilder private var tabRows: some View {
         switch tab {
         case .songs: songRows
@@ -371,9 +370,6 @@ private struct AlbumCoverStack: View {
     }
 }
 
-/// The album's rows: no covers, the source's track numbers, a "CD n" line between discs when
-/// there is more than one. Rows rise in with a stagger when the list first shows. Its body is
-/// the rows themselves, so they become rows of the page's lazy stack.
 private struct AlbumTrackRows: View {
     var tracks: [Track]
     var queue: [Track]

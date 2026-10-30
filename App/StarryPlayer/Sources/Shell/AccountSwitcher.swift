@@ -3,9 +3,6 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-/// Who the app browses as: a source and an account of it — the one signed in, one kept for
-/// switching, or none. The header's account chip and its switcher name accounts, not sources: the
-/// source is a badge on the avatar and a small grey caption under the name.
 struct AccountIdentity: Identifiable, Hashable {
     enum Kind: Hashable {
         case signedIn
@@ -31,9 +28,6 @@ struct AccountIdentity: Identifiable, Hashable {
 
     var hasAccount: Bool { kind == .signedIn || kind == .kept }
 
-    /// The name line: the account's name. With no account the source is all there is to name, so
-    /// its name stands there (and how it stands goes under it): three rows of `未登录` could only be
-    /// told apart by their small print.
     var title: String {
         switch kind {
         case .signedIn, .kept: nickname ?? sourceName
@@ -42,8 +36,6 @@ struct AccountIdentity: Identifiable, Hashable {
         }
     }
 
-    /// The small line under it: the source (and the server), or how a source with no one signed
-    /// in stands. None for a source without accounts.
     var caption: String? {
         switch kind {
         case .signedIn, .kept, .signingIn: [sourceName, detail].compactMap { $0 }.joined(separator: " · ")
@@ -120,8 +112,6 @@ extension AppModel {
         withAnimation(Motion.switcherClose) { accountSwitcherOpen = false }
     }
 
-    /// The switcher's pick: browses its source as that account. A kept account signs in in place
-    /// of the one signed in there; the chip shows it at once and goes back if it cannot.
     func browse(as identity: AccountIdentity) {
         withAnimation(Motion.switcherPick) {
             accountSwitcherOpen = false
@@ -203,7 +193,6 @@ struct AccountChip: View {
     }
 }
 
-/// Where the header's account chip is, for `MainLayout` to hang the switcher from.
 struct AccountChipKey: PreferenceKey {
     static var defaultValue: Anchor<CGRect>? { nil }
 
@@ -343,8 +332,7 @@ struct AccountSwitcherLayer: View {
     }
 }
 
-/// Folds the switcher when the page changes or Now Playing covers the shell, and listens for Esc
-/// and clicks outside while it is open. A leaf of its own, so only it follows those.
+/// Observe navigation in a separate leaf to keep updates out of the account switcher.
 private struct AccountSwitcherWatch: View {
     var events: AccountSwitcherEvents
     @Environment(AppModel.self) private var model
@@ -724,9 +712,6 @@ private extension AnyTransition {
         )
     }
 
-    /// The chip's name and source: the new ones roll in from below, where the switcher was, the
-    /// old ones roll out above. On the same spring, but the old ones are gone halfway and the new
-    /// ones show only once on their way, so the two never sit on each other.
     static var chipLabel: AnyTransition {
         .asymmetric(
             insertion: .modifier(active: Roll(progress: 0, travel: 14, fadeFrom: 0.3), identity: Roll(progress: 1, travel: 14, fadeFrom: 0.3)),

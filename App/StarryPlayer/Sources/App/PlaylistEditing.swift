@@ -4,7 +4,6 @@ import StarryCore
 
 struct PlaylistChange: Equatable {
     enum Kind: Equatable {
-        /// Songs went in; where they land is the source's to say, so a page showing it loads it again.
         case added
         case removed(Set<TrackRef>)
         case edited
@@ -33,7 +32,6 @@ struct PlaylistEditorRequest: Equatable {
 }
 
 extension AppModel {
-    /// What `id` lets the account do with its playlists; nil when it edits none.
     func playlistEditing(of id: SourceID) -> PlaylistEditing? {
         source(id, as: (any PlaylistEditingSource).self)?.playlistEditing
     }
@@ -42,7 +40,6 @@ extension AppModel {
         (playlistsBySource[id] ?? []).filter { $0.isOwned && $0.id != likedPlaylistIDs[id] }
     }
 
-    /// The account's own playlist, not the liked list, its source's library open.
     private func isEditable(_ playlist: Playlist) -> Bool {
         playlist.isOwned && playlist.id != likedPlaylistIDs[playlist.source] && isLibraryOpen(playlist.source)
     }
@@ -102,8 +99,6 @@ extension AppModel {
         playlistEditorWindow.close()
     }
 
-    /// Makes the playlist; it joins the sidebar after the liked list and takes `tracks`, or opens
-    /// when there are none. A failure to add the songs leaves the new playlist and says so.
     func createPlaylist(in id: SourceID, _ draft: PlaylistDraft, adding tracks: [Track]) async throws {
         let source = try require(id, as: (any PlaylistEditingSource).self, "新建歌单")
         var playlist = try await source.createPlaylist(draft)

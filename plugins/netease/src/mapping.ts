@@ -1,6 +1,3 @@
-// NetEase JSON → the plugin interface's models. Songs come in the v3 shape (`ar` / `al` / `dt`) and
-// the legacy one (`artists` / `album` / `duration`).
-
 import type { Album, AlbumRef, Artist, ArtistDetail, ArtistRef, Artwork, Comment, Playlist, RankedTrack, SearchOverview, Track, User } from '../../sdk/starry';
 import { cities, provinces } from './region-table';
 import { array, bool, compact, int, nonEmpty, num, object, str, unique } from './util';
@@ -31,7 +28,6 @@ export function fee(code: number | undefined): NonNullable<Track['fee']> {
   }
 }
 
-/** `cd` is "1", "01" or "CD 2"; the digits are the disc. */
 export function discNumber(text: string): number | undefined {
   const digits = text.replace(/\D/g, '');
   const number = digits ? parseInt(digits, 10) : 0;
@@ -55,7 +51,6 @@ export function track(json: any, privilege?: any): Track | undefined {
   const cover = artwork(albumJSON?.picUrl);
   const albumID = albumJSON ? str(albumJSON.id) : undefined;
   const album: AlbumRef | undefined = albumID === undefined ? undefined : { id: linkID(albumID), name: str(albumJSON.name) ?? '', artwork: cover };
-  // The tiers are the generic levels (playback.ts), so their ids.
   const tiers = ['lq'];
   if (json.m != null || json.mMusic != null) tiers.push('sq');
   if (json.h != null || json.hMusic != null) tiers.push('hq');
@@ -166,7 +161,6 @@ export function album(json: any): Album | undefined {
   };
 }
 
-/** A user's id, unless missing or 0 (a deleted account). */
 export function userID(user: any): string | undefined {
   const id = str(user?.userId);
   return id === undefined || id === '0' ? undefined : id;
@@ -352,7 +346,6 @@ export function userSummary(json: any, signedIn: boolean): User | undefined {
 
 /** A birthday of 1900-01-01 (-2209017600000) means none was set. */
 const NO_BIRTHDAY_BEFORE = -1_577_923_200_000;
-/** NetEase levels run 0–10. */
 const MAX_LEVEL = 10;
 
 // NetEase date fields use UTC+8 without DST.
@@ -361,7 +354,6 @@ function beijingDate(ms: number): { year: number; month: number; day: number; ti
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), time: date.getTime() % 86_400_000 };
 }
 
-/** `95后`, `00后`: the half decade of the birth year. */
 export function generation(birthday: number): string {
   const year = beijingDate(birthday).year % 100;
   return `${String(Math.floor(year / 5) * 5).padStart(2, '0')}后`;
@@ -376,7 +368,6 @@ export function zodiac(birthday: number): string {
   return SIGNS[day <= SIGN_ENDS[month - 1] ? month - 1 : month];
 }
 
-/** Account age: `村龄 12 年`, months in the first year, nothing in the first month. */
 export function villageAge(created: number, now: number): string | undefined {
   const from = beijingDate(created);
   const to = beijingDate(now);

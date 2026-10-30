@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Command-line build (Debug) without code signing prompts. Output: build/Debug/StarryPlayer.app
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -d StarryPlayer.xcodeproj ] || scripts/bootstrap.sh

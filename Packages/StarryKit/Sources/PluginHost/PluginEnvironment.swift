@@ -3,11 +3,7 @@ import AVFoundation
 import Foundation
 import SystemConfiguration
 
-/// What `starry.app` tells a plugin about the app and the Mac: platforms that sign requests or
-/// list devices want the model and the computer's name, and a plugin offers only the formats
-/// this macOS plays.
 enum PluginEnvironment {
-    /// `26.0.1`.
     static let osVersion: String = {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"

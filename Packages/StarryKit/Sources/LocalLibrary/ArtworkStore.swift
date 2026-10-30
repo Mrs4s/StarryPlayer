@@ -52,7 +52,6 @@ public enum ArtworkStore {
         }
     }
 
-    /// The picture as a JPEG no larger than `largestSide`, when it is larger (or not a JPEG).
     private static func reduced(_ bytes: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return nil }

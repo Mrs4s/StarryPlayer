@@ -14,7 +14,6 @@ import Testing
         #expect(timeline.item(at: 0) == .idle)
         #expect(timeline.item(at: 9.79) == .idle)
         #expect(timeline.item(at: 9.8) == .line(0))
-        // A 2 s pause is not a break: the sung line stays.
         #expect(timeline.item(at: 14) == .line(0))
         #expect(timeline.item(at: 14.8) == .line(1))
         #expect(timeline.item(at: 100) == .line(1))

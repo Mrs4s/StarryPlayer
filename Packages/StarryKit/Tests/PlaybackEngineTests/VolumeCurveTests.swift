@@ -10,7 +10,6 @@ import Testing
         #expect(VolumeCurve.gain(forLevel: 1.7) == 1)
     }
 
-    /// Cubic taper: half travel is −18 dB, not the −6 dB of a linear slider.
     @Test func halfTravelIsMinus18dB() {
         let dB = 20 * log10(Double(VolumeCurve.gain(forLevel: 0.5)))
         #expect(abs(dB + 18.06) < 0.01)

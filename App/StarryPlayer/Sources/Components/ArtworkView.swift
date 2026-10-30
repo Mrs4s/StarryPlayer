@@ -8,16 +8,9 @@ struct ArtworkView: View {
     var circle = false
     var zoom: CGFloat = 1
     var pixelSize: Int = 300
-    /// Asks for a `pixelSize` × `pixelHeight` image instead of a square one (a photo that is
-    /// not square, shown whole).
     var pixelHeight: Int? = nil
-    /// A flat placeholder in the theme's tone with this symbol instead of the seeded gradient,
-    /// while there is no picture or it is loading: a person's picture should not flash a colour
-    /// of its own first (it changed colour when the seed came with the details). A seed with no
-    /// picture to load keeps its gradient.
+    /// Use a neutral placeholder while an avatar loads to avoid a flash of seeded colour.
     var neutralPlaceholder: String? = nil
-    /// Shown while the picture loads, instead of the placeholder (a smaller copy already in
-    /// memory, like the player's cover).
     var fallback: NSImage? = nil
     @Environment(\.theme) private var theme
     @State private var image: NSImage?

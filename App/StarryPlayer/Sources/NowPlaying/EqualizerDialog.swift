@@ -147,8 +147,6 @@ struct EqualizerDialog: View {
         .modifier(DialogRise(index: 2, arrived: arrived, reduceMotion: reduceMotion))
     }
 
-    /// The same height as the ten bands' presets and graph: a row of bands, the graph, and the
-    /// selected band's values.
     @ViewBuilder
     private func parametricBody(_ equalizer: EqualizerSettings) -> some View {
         let player = model.player
@@ -181,7 +179,6 @@ struct EqualizerDialog: View {
         .modifier(DialogRise(index: 3, arrived: arrived, reduceMotion: reduceMotion))
     }
 
-    /// A 0 dB peak (Q 1) in the widest gap between the bands, selected.
     private func addBand() {
         let player = model.player
         let edges = ParametricEqualizer.displayRange
@@ -265,7 +262,6 @@ struct EqualizerDialog: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.8), value: on)
     }
 
-    /// Why the playing song is not processed (no tap on it), if it is not.
     private var unprocessed: VocalAttenuationStatus.Unavailable? {
         guard model.player.current != nil else { return nil }
         let reason = model.player.vocalStatus.unavailable
@@ -351,7 +347,6 @@ struct EqualizerDialog: View {
     }
 }
 
-/// 十段 | 参数, with the picked one in a pill that slides across.
 private struct EqualizerModePicker: View {
     var mode: EqualizerMode
     var tint: Color
@@ -389,7 +384,6 @@ private struct EqualizerModePicker: View {
     }
 }
 
-/// The parametric bands by frequency to pick from, a button to add one, and import / export.
 private struct ParametricBandStrip: View {
     var equalizer: EqualizerSettings
     var selection: Int?
@@ -489,7 +483,6 @@ private struct ParametricBandChip: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// "62.5", "250", "2.2k", "12k".
     static func shortFrequency(_ frequency: Double) -> String {
         if frequency >= 1000 {
             let text = String(format: "%.1f", frequency / 1000)
@@ -499,11 +492,8 @@ private struct ParametricBandChip: View {
     }
 }
 
-/// The selected band's type, frequency, gain and Q, to type or scroll, with buttons to turn
-/// it off and remove it.
 private struct ParametricBandInspector: View {
     var band: ParametricBand?
-    /// Whether there is any band to pick (the hint says how otherwise; the row above says how to add one).
     var hasBands: Bool
     var isEnabled: Bool
     var tint: Color
@@ -588,12 +578,9 @@ private struct ParametricBandInspector: View {
     }
 }
 
-/// A value to click and type (Return or a click elsewhere applies it, Esc leaves it), or scroll
-/// over to step.
 private struct EqualizerValueField: View {
     var title: String
     var text: String
-    /// What editing starts from.
     var draft: String
     var tint: Color
     var width: CGFloat
@@ -683,8 +670,6 @@ private struct EqualizerValueField: View {
     }
 }
 
-/// Equalizer APO text in and out of the parametric equalizer: AutoEQ's `ParametricEQ.txt`,
-/// Room EQ Wizard's filter settings.
 @MainActor
 enum EqualizerTransfer {
     static func importFile(into model: AppModel, done: @escaping @MainActor () -> Void) {
@@ -739,7 +724,6 @@ enum EqualizerTransfer {
         }
     }
 
-    /// Whether anything was imported (it then replaces the parametric bands).
     private static func apply(_ text: String, name: String, to model: AppModel) -> Bool {
         let profile = EqualizerAPOText.parse(text)
         guard !profile.bands.isEmpty else {
@@ -753,7 +737,6 @@ enum EqualizerTransfer {
         return true
     }
 
-    /// AutoEQ names its files "<headphones> ParametricEQ.txt".
     static func name(of url: URL) -> String {
         var name = url.deletingPathExtension().lastPathComponent
         if name.hasSuffix("ParametricEQ") { name.removeLast("ParametricEQ".count) }
@@ -888,9 +871,6 @@ private struct FooterChip: View {
     }
 }
 
-/// The preamp, −12…+12 dB around a centre mark: the fill grows from the centre to the knob.
-/// Drag or click to set it (it holds at 0 dB on the way through), double-click for 0 dB, scroll
-/// for ±0.5 dB.
 private struct PreampSlider: View {
     var value: Double
     var tint: Color
@@ -956,8 +936,6 @@ private struct PreampSlider: View {
     }
 }
 
-/// Scrolling over a band or the preamp: a wheel notch, or about 8 pt of trackpad travel, is one
-/// step; momentum after the fingers lift is ignored, like the volume.
 enum EqualizerScroll {
     /// Whole steps to apply (up is positive), keeping the remainder in `carry`.
     static func steps(_ event: NSEvent, carry: inout CGFloat) -> Double? {

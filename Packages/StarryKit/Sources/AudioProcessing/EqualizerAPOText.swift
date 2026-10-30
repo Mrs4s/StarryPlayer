@@ -9,7 +9,6 @@ public enum EqualizerAPOText {
         public var preamp: Double = 0
         /// In file order, in slots 0, 1, 2…
         public var bands: [ParametricBand] = []
-        /// Filters past `ParametricEqualizer.maxBands`, left out.
         public var droppedFilters = 0
         /// Equalizer APO commands that shape the sound and are not done here (channel
         /// selection, graphic EQ, convolution…), each once in file order.
@@ -18,7 +17,6 @@ public enum EqualizerAPOText {
         public init() {}
     }
 
-    /// Commands that change what Equalizer APO plays; any other line is a comment or a header.
     static let unsupportedCommands: Set<String> = [
         "Channel", "Copy", "Delay", "GraphicEQ", "Convolution", "Include", "Device", "Stage",
         "If", "ElseIf", "Else", "EndIf", "Eval", "VSTPlugin", "LoudnessCorrection",
@@ -97,7 +95,6 @@ public enum EqualizerAPOText {
             try! NSRegularExpression(pattern: pattern)
         }
 
-        /// The last group of the first match.
         func first(_ regex: NSRegularExpression, in text: String) -> String? {
             groups(regex, in: text)?.last
         }
@@ -115,9 +112,7 @@ public enum EqualizerAPOText {
         }
     }
 
-    /// One `Filter:` line's band (slot 0), nil when Equalizer APO would not add it either.
     private static func filter(_ text: String, patterns: Patterns) -> ParametricBand? {
-        // A decimal comma, as Equalizer APO accepts.
         let text = text.replacingOccurrences(of: ",", with: ".")
         guard let head = patterns.groups(patterns.type, in: text), head.count == 2, let type = types[head[1]] else { return nil }
         let isOn = head[0] == "ON"

@@ -11,16 +11,13 @@ struct LikedPage: View {
     @Environment(\.theme) private var theme
     @Environment(\.isPageActive) private var pageActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The liked playlist's id once loaded (nil for a source without one).
     @State private var state: Loadable<String?> = .idle
     @State private var list: TrackListLoader?
     @State private var tab: Tab = .songs
     @State private var filter = ""
     @State private var query = ""
     @State private var appeared = false
-    /// A queue action is waiting for the songs not loaded yet.
     @State private var preparing = false
-    /// Bumped by every like and unlike: the heart beats.
     @State private var pulse = 0
     @State private var locator = TrackListLocator()
     @State private var backdrop: PageBackdrop = {
@@ -139,7 +136,6 @@ struct LikedPage: View {
     private var metaText: String {
         guard let list, count > 0 else { return available || !model.hasLibrary ? " " : "登录后同步你喜欢的歌曲" }
         var parts = ["\(count) 首"]
-        // The length only once every song is known, not a partial sum.
         if list.isComplete { parts.append(DetailFormat.durationText(list.tracks.reduce(0) { $0 + $1.duration })) }
         return parts.joined(separator: " · ")
     }
@@ -266,8 +262,6 @@ struct LikedPage: View {
         }
     }
 
-    /// Keeps the list in step with a like or unlike of this source's songs made anywhere, and
-    /// beats the heart.
     private func follow(_ change: AppModel.LikeChange?) {
         guard let change, change.track.id.source == source, let list, state.value != nil else { return }
         // Animated only where it is seen: a hidden page would render the whole motion.

@@ -2,21 +2,15 @@ import AppKit
 import SwiftUI
 
 extension Motion {
-    /// The menu unfolding from its button (a touch of overshoot), and folding away.
     static let popMenuOpen = Animation.spring(response: 0.3, dampingFraction: 0.8)
     static let popMenuFade = Animation.easeOut(duration: 0.12)
     static let popMenuClose = Animation.easeIn(duration: 0.13)
     static let popMenuCloseDuration: TimeInterval = 0.14
-    /// The highlight gliding from row to row.
     static let popMenuHighlight = Animation.spring(response: 0.22, dampingFraction: 0.86)
-    /// A submenu sliding in over the menu, the card taking its size.
     static let popMenuPage = Animation.spring(response: 0.34, dampingFraction: 0.86)
-    /// The picked row lighting up before the menu goes.
     static let popMenuPickDelay: TimeInterval = 0.07
 }
 
-/// A page of a menu (the menu itself or one of its submenus): its rows, the size they take
-/// and its submenus' pages, measured when the menu opens so the card can move between sizes.
 final class PopMenuPage: Identifiable {
     let title: String?
     let items: [PopMenuItem]
@@ -47,7 +41,6 @@ final class PopMenuPage: Identifiable {
     var selectable: [Int] { items.indices.filter { items[$0].isSelectable } }
 }
 
-/// The natural size of a page's rows, from the same views the card draws.
 @MainActor
 final class PopMenuMeasurer {
     private let theme: Theme
@@ -68,8 +61,6 @@ final class PopMenuMeasurer {
     }
 }
 
-/// What the card shows and where its highlight is. Rows are addressed by their index in the
-/// page shown; `PopMenuSession.backRow` is a submenu's way back at its top.
 @MainActor
 @Observable
 final class PopMenuSession {
@@ -121,7 +112,6 @@ final class PopMenuSession {
         }
     }
 
-    /// The pointer left the card: no row is under it.
     func leave() {
         guard pressed == nil else { return }
         setHighlight(nil)
@@ -166,7 +156,6 @@ final class PopMenuSession {
         if let current = highlighted, let position = rows.firstIndex(of: current) {
             next = rows[(position + step + rows.count) % rows.count]
         } else if let checked = page.items.firstIndex(where: { $0.isChecked && $0.isSelectable }) {
-            // The keys start from the choice made, as a pop-up button's do.
             next = checked
         } else {
             next = step > 0 ? rows[0] : rows[rows.count - 1]
@@ -212,8 +201,6 @@ final class PopMenuSession {
     }
 }
 
-/// The panel's content: the card in the corner by the button, with room around it for its
-/// shadow and spring.
 struct PopMenuCanvas: View {
     let session: PopMenuSession
 
@@ -264,13 +251,10 @@ private struct PopMenuCard: View {
 }
 
 private extension AnyTransition {
-    /// The menu a submenu opens from: it slides off to the leading side, and back from it.
     static var popMenuParent: AnyTransition { page(x: -56) }
 
-    /// A submenu, sliding in from the trailing side and back out to it.
     static var popMenuChild: AnyTransition { page(x: 56) }
 
-    /// The page leaving goes quickly, so the two do not read over each other.
     private static func page(x: CGFloat) -> AnyTransition {
         .asymmetric(
             insertion: .offset(x: x).combined(with: .opacity),
@@ -279,8 +263,6 @@ private extension AnyTransition {
     }
 }
 
-/// The card's surface: what is behind it blurred and washed with the page's colours, a light
-/// edge on top and a soft shadow under it.
 private struct PopMenuSurface: View {
     @Environment(\.theme) private var theme
 
@@ -319,7 +301,6 @@ private struct PopMenuBackdrop: NSViewRepresentable {
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     }
 
-    /// The card's rounded corners, stretched between them.
     private static let mask: NSImage = {
         let radius = PopMenuMetrics.radius
         let side = radius * 2 + 1
@@ -334,7 +315,6 @@ private struct PopMenuBackdrop: NSViewRepresentable {
     }()
 }
 
-/// A page in the card, at its own size; a page taller than there is room for scrolls.
 private struct PopMenuPageView: View {
     let page: PopMenuPage
     let size: CGSize
@@ -400,8 +380,6 @@ private struct PopMenuRowFrames: PreferenceKey {
     }
 }
 
-/// One highlight for the page, moving to the row under the pointer (or picked with the keys),
-/// so it glides from row to row rather than blinking.
 private struct PopMenuHighlight: View {
     let session: PopMenuSession
     let frames: [Int: Anchor<CGRect>]
@@ -530,7 +508,6 @@ private struct PopMenuRow: View {
     }
 }
 
-/// A row coming in a moment after the one nearer the button as the menu unfolds.
 private struct PopMenuRise: ViewModifier {
     let index: Int
     let count: Int

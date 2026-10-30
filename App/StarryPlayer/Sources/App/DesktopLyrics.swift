@@ -50,7 +50,6 @@ final class DesktopLyricsController {
     private var isPlaying = false
     private var hiddenForPause = false
     private var pressing = false
-    /// The panel is being moved here, not by the user.
     private var placing = false
     // Requested size before clamping to the screen.
     private var size = CGSize.zero
@@ -59,7 +58,6 @@ final class DesktopLyricsController {
         self.model = model
     }
 
-    /// Keeps the controls up whatever the pointer does (screenshots).
     var holdsHover = false {
         didSet { setHovering(holdsHover) }
     }
@@ -223,7 +221,6 @@ final class DesktopLyricsController {
         switch palette {
         case .white: return whites
         case .cover:
-            // The bright accent the dark theme takes from the cover; a grey cover has none.
             let accent = NSColor(Theme.make(seed: cover ?? Color(hex: "#FE7971"), dark: true, tintSurfaces: false).accent)
             guard let rgb = accent.usingColorSpace(.sRGB), rgb.saturationComponent > 0.15 else { return whites }
             lit = rgb
@@ -394,7 +391,6 @@ final class DesktopLyricsController {
         if inside {
             setHovering(true)
         } else {
-            // A moment's grace, for a pointer passing over the edge on its way to a button.
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(300))
                 guard let self, !Task.isCancelled, !self.holdsHover else { return }
@@ -422,7 +418,6 @@ final class DesktopLyricsController {
         }
         pressing = true
         let before = panel.frame
-        // The window server moves the panel: smooth, and it keeps going while the app is busy.
         panel.performDrag(with: event)
         // Back once the drag is over; or at once, the moves then come while the button is held.
         guard NSEvent.pressedMouseButtons & 1 == 0 else { return }

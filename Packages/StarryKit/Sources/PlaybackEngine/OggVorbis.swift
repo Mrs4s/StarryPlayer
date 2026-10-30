@@ -40,8 +40,6 @@ struct OggPage: Sendable {
         return out
     }
 
-    /// Header and body sizes of the page starting at `bytes[i]`; nil when there is no page header
-    /// there or it is cut short.
     static func sizes(_ bytes: [UInt8], at i: Int) -> (header: Int, body: Int)? {
         guard bytes.count - i >= 27, bytes[i] == 0x4F, bytes[i + 1] == 0x67, bytes[i + 2] == 0x67, bytes[i + 3] == 0x53, bytes[i + 4] == 0 else { return nil }
         let segments = Int(bytes[i + 26])

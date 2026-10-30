@@ -34,7 +34,6 @@ export function array(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-/** An object, or undefined (null and arrays are not). */
 export function object(value: unknown): any {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
 }
@@ -47,7 +46,6 @@ export function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-/** Items whose key was not seen before. */
 export function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
   const seen = new Set<string>();
   return values.filter((value) => {

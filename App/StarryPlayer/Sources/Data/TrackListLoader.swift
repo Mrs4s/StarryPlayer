@@ -52,7 +52,6 @@ final class TrackListLoader {
 
     var isComplete: Bool { pendingIDs.isEmpty && paging?.hasMore != true }
     var allIDs: [String] { tracks.map(\.id.id) + pendingIDs }
-    /// Every song of the list; while a paged list has not told its length, the songs loaded.
     var totalCount: Int { tracks.count + pendingIDs.count + (paging?.total.map { max($0 - tracks.count, 0) } ?? 0) }
 
     /// Starts the next page when the row at `position` shows close to the end of the loaded
@@ -113,7 +112,6 @@ final class TrackListLoader {
                             switch batch {
                             case .ids(let ids):
                                 let tracks = try await fetch?(ids) ?? []
-                                // Folded off the main thread.
                                 chunk = Chunk(ids: ids, tracks: tracks, index: TrackSearchIndex(tracks))
                             case .page(let page):
                                 let result = try await fetchPage?(page) ?? TrackPage(tracks: [], hasMore: false)
@@ -246,8 +244,6 @@ final class TrackListLoader {
         var pending: Int
     }
 
-    /// Where the song `id` (one of the list's source) first is; nil when it is not in the list,
-    /// or not loaded yet in a list fetched by page. Remembered until the song or the list changes.
     func place(of id: TrackRef) -> Place? {
         let key = PlaceKey(id: id, revision: revision, pending: pendingIDs.count)
         if let placeMemo, placeMemo.key == key { return placeMemo.place }

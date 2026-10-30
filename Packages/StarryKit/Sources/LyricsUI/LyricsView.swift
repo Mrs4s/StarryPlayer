@@ -662,7 +662,6 @@ public final class LyricsView: NSView {
                 gap = g
                 changed = true
             case .append(let pi):
-                // A line already fully on screen is lit in place; otherwise the page scrolls to it.
                 selectedPlacements.append(pi)
                 if !intersectsFully(pi, viewport(at: contentPosition)) { focus = pi }
                 gap = nil

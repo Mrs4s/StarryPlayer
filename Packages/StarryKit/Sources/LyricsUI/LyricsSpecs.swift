@@ -41,7 +41,6 @@ public struct LyricsSpecs: Sendable, Equatable {
             self.stiffness = stiffness
             self.damping = damping
         }
-        /// Damping ratio ζ = c / (2√(km)).
         public var dampingRatio: Double { damping / (2 * (stiffness * mass).squareRoot()) }
 
         /// Spring with unit mass from a damping ratio and a response (period of the undamped

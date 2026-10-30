@@ -1,7 +1,3 @@
-// The NetEase account: QR login (`type` 4), phone + SMS code, a pasted cookie; the token extended
-// at launch (every 20 h); logout. The session lives in client.ts; the app keeps other accounts
-// with `exportCredentials` (the account's cookies).
-
 import type { Profile } from '../../sdk/starry';
 import {
   ACCOUNT_COOKIE_NAMES,

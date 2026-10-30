@@ -169,7 +169,6 @@ public final class PCMPlayer {
         player.scheduleSegment(file, startingFrame: frame, frameCount: AVAudioFrameCount(remaining), at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             Task { @MainActor in self?.segmentEnded(id) }
         }
-        // Read in now, so a play does not wait for the file.
         player.prepare(withFrameCount: AVAudioFrameCount(min(remaining, AVAudioFramePosition(sampleRate / 2))))
     }
 

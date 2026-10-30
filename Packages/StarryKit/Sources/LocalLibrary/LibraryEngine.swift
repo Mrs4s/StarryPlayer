@@ -1,8 +1,6 @@
 import Foundation
 
-/// Keeps the library in step with its folders: scans one at a time,
-/// FSEvents replay at launch and live watching after, a few seconds' quiet before a change is
-/// scanned, and the status the settings page shows.
+/// Serialize scans and debounce FSEvents, replaying changes missed while the app was closed.
 actor LibraryEngine {
     let store: LibraryStore
     let scanner: LibraryScanner
@@ -106,7 +104,6 @@ actor LibraryEngine {
         watchers[id] = FolderWatcher(path: resolved, since: since) { [weak self] batch in
             Task { await self?.received(batch, root: id) }
         }
-        // Not watched after all (the folder went meanwhile): walked instead.
         if watchers[id] == nil { enqueue(id, .whole(rereadTags: false)) }
     }
 
@@ -246,7 +243,6 @@ actor LibraryEngine {
         }
     }
 
-    /// A song's file was not there when it was played: its folder is scanned.
     func fileWentMissing(_ url: URL) async {
         guard let (root, relative) = await rootContaining(url) else { return }
         enqueue(root, .folders([LibraryScanner.parent(of: relative)]))

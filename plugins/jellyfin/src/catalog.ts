@@ -1,6 +1,3 @@
-// The library: every song by page, the library's albums, artists and genres, items by id (asked
-// on the server they live on), albums, artists, playlists, search and Home's shelves.
-
 import { remainingIDs } from '../../common/server';
 import type { AlbumDetail, Album, Artist, ArtistDetail, HomeShelf, LibraryAlbumSort, LibraryGenre, Page, PlaylistDetail, SearchKind, SearchResult, Track } from '../../sdk/starry';
 import { api, locate, loginRequired, noteHome, notFound, requireSession, serverOf, serversFor, session, type Query, type Server } from './client';
@@ -24,10 +21,8 @@ export const songItems = (server: Server, query: Query) => items(server, { Inclu
 const list = (result: Items | undefined) => (Array.isArray(result?.Items) ? result!.Items : []);
 const songsOf = (server: Server, result: Items | undefined) => list(result).filter((item) => item?.Type === 'Audio').map((item) => model.track(server, item));
 
-/** One item as `server`'s user, with every field. */
 const item = (server: Server, id: string) => api(server, `/Items/${encodeURIComponent(id)}`, { query: { userId: server.userId } });
 
-/** All media: by album artist, album and track, as a shelf of records would be. */
 export async function allMedia(page: Page): Promise<{ songs: Track[]; total?: number; nextOffset: number }> {
   const server = requireSession();
   const result = await songItems(server, {

@@ -32,14 +32,12 @@ final class SearchModel {
     var text = ""
     private(set) var isActive = false
     private(set) var focusRequest = 0
-    /// The highlighted entry (`Item.id`); Return picks it instead of searching the text.
     var highlighted: String?
 
     private(set) var history: [String]
     private(set) var trends: [SearchTrend] = []
     private(set) var trendsState: TrendsState = .idle
     private(set) var suggestions: [String] = []
-    /// Suggestions for the text are on their way (none cached, the request not answered yet).
     private(set) var suggestionsPending = false
 
     private(set) var hints: [SearchHint] = []
@@ -182,7 +180,6 @@ final class SearchModel {
                 guard !Task.isCancelled else { return }
                 receive(words, for: query)
             } catch {
-                // Not cached: the same text asks again next time.
                 guard !Task.isCancelled else { return }
                 if self.query == query { suggestionsPending = false }
             }
@@ -261,8 +258,6 @@ final class SearchModel {
         defaults.removeObject(forKey: Self.historyKey)
     }
 
-    /// Loads the hints and the trending list shortly after launch, so the box has a hint and
-    /// the panel its list when first opened, and starts turning the hints.
     func prepare() async {
         try? await Task.sleep(for: .seconds(1.5))
         await loadHints()
@@ -290,7 +285,6 @@ final class SearchModel {
         }
     }
 
-    /// A source without search, or without a trending list, has none to show (not a failure).
     func loadTrendsIfStale() {
         guard trendsState != .loading else { return }
         if let loadedAt = trendsLoadedAt, Date().timeIntervalSince(loadedAt) < 600 { return }

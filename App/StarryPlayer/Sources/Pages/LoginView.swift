@@ -15,7 +15,6 @@ struct LoginView: View {
     @State private var status: QRLoginStatus = .waiting
     @State private var qrImage: NSImage?
     @State private var code: String?
-    /// The server `connect` reached, for a self-hosted source.
     @State private var server: ServerInfo?
     @State private var serverAddress = ""
     @State private var connecting = false
@@ -89,8 +88,6 @@ struct LoginView: View {
     private var adapter: (any AccountAdapter)? { model.accountSource(request.source)?.account }
     private var sourceName: String { model.displayName(of: request.source) }
 
-    /// The ways this dialog can sign in, in the order it offers them: none before the server of
-    /// a self-hosted source is reached, then those it takes.
     private var ways: [Way] {
         guard let adapter, adapter.serverPrompt == nil || server != nil else { return [] }
         let supported = adapter.supportedMethods.filter { server?.methods?.contains($0) ?? true }
@@ -182,7 +179,6 @@ struct LoginView: View {
         }
     }
 
-    /// The server reached, with a way back to the address.
     private func serverRow(_ server: ServerInfo) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "server.rack").font(.system(size: 14)).foregroundStyle(theme.onSurfaceVariant).frame(width: 20)

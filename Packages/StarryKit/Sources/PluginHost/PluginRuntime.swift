@@ -196,7 +196,6 @@ final class Once<Value: Sendable>: Sendable {
     }
 }
 
-/// `JSContextGroupSetExecutionTimeLimit`, a JavaScriptCore function without a public header.
 enum ExecutionLimit {
     private typealias SetLimit = @convention(c) (JSContextGroupRef?, Double, OpaquePointer?, UnsafeMutableRawPointer?) -> Void
 

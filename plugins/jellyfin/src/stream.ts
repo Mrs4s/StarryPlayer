@@ -4,12 +4,10 @@ import { isLossless, qualityTiers as commonTiers } from '../../common/library';
 import type { Container, PlayableAsset, QualityTier, Track } from '../../sdk/starry';
 import { api, authorization, deviceId, locate, type Server } from './client';
 
-/** A song comes in the tiers its file reaches (`models.tiersOf`); the server converts to AAC below `lossless`. */
 export const qualityTiers: QualityTier[] = commonTiers('AAC');
 
 const HLS_AFTER_SECONDS = 20 * 60;
 
-/** The file the server keeps, from `MediaSources`. */
 export interface Media {
   sourceId?: string;
   /** Lower case: `mp3`, `flac`, `m4a`, `ogg`, `asf`… */

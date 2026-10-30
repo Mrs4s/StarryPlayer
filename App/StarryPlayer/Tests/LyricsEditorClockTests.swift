@@ -10,7 +10,6 @@ struct LyricsEditorClockTests {
     func scrubbingOwnsThePositionUntilItCommitsOnce(playing: Bool) {
         let clock = LyricsEditorClock()
         clock.sample(time: 1, playing: playing, ranges: ranges)
-        // Both forward and backward movement must appear before the next playback sample.
         for target in [7.5, 6.5, 7] {
             clock.scrub(to: target, duration: 12, ranges: ranges)
             #expect(clock.time == target)
@@ -19,7 +18,6 @@ struct LyricsEditorClockTests {
             #expect(clock.activeLines == [1, 2])
         }
         var seeks: [TimeInterval] = []
-        // Mouse-up can be beyond the last drag-change event.
         clock.scrub(to: 8.5, duration: 12, ranges: ranges)
         clock.finishScrubbing { seeks.append($0) }
         clock.finishScrubbing { seeks.append($0) }

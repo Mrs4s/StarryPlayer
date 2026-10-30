@@ -4,7 +4,6 @@ import Testing
 @testable import Library
 
 struct SongCacheTests {
-    /// A clock the tests move by hand, so play order is exact.
     private final class Clock: @unchecked Sendable {
         private let lock = NSLock()
         private var date = Date(timeIntervalSince1970: 1_000_000)
@@ -68,9 +67,6 @@ struct SongCacheTests {
         try? FileManager.default.removeItem(at: root)
     }
 
-    /// A spatial mix (such as Dolby Atmos) is not a better stereo file: it only answers a request
-    /// for itself, and between it and a stereo file the one heard last stays. Entries kept
-    /// before tiers read as stereo files of their level.
     @Test func spatialMixStandsApart() async throws {
         let cache = cache()
         let dolby = QualityTier(id: "dolby", name: "杜比全景声", level: .hiRes, isSpatial: true)

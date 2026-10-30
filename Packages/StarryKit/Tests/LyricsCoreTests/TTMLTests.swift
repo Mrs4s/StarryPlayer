@@ -222,7 +222,6 @@ import Testing
     }
 
     @Test func emphasisFactorGrowsWithHeldShortWords() {
-        // factor = min(duration, 2) − 1 for duration > 1 s and fewer than 8 UTF-16 units.
         #expect(LyricWord(start: 0, end: 0.5, text: "夜").emphasisFactor == 0)
         #expect(LyricWord(start: 0, end: 1, text: "star").emphasisFactor == 0)
         #expect(abs(LyricWord(start: 0, end: 1.2, text: "star ").emphasisFactor - 0.2) < 1e-9)

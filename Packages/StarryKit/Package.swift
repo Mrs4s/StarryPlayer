@@ -1,5 +1,4 @@
 // swift-tools-version: 6.0
-// Shared modules for Starry Player.
 import PackageDescription
 
 let package = Package(
@@ -39,14 +38,14 @@ let package = Package(
         .testTarget(name: "MusicSourcesTests", dependencies: ["MusicSources"]),
         .testTarget(name: "LyricsCoreTests", dependencies: ["LyricsCore"]),
         .testTarget(name: "LyricsProvidersTests", dependencies: ["LyricsProviders"]),
-        .testTarget(name: "PluginHostTests", dependencies: ["PluginHost", "LyricsProviders", "LyricsCore", "MusicSources", "StarryCore", "PlaybackEngine"]),
+        .testTarget(name: "PluginHostTests", dependencies: ["PluginHost", "LyricsProviders", "LyricsCore", "MusicSources", "StarryCore"]),
         .testTarget(name: "LyricsSyncTests", dependencies: ["LyricsSync", "AudioProcessing", "LyricsCore"], resources: [.process("Fixtures")]),
         .testTarget(name: "LyricsUITests", dependencies: ["LyricsUI"]),
         .testTarget(name: "AudioProcessingTests", dependencies: ["AudioProcessing"]),
         .testTarget(name: "PlaybackEngineTests", dependencies: ["PlaybackEngine"]),
         .testTarget(name: "BackdropTests", dependencies: ["Backdrop"]),
         .testTarget(name: "LibraryTests", dependencies: ["Library"]),
-        .testTarget(name: "LocalLibraryTests", dependencies: ["LocalLibrary", "MusicSources", "StarryCore"]),
+        .testTarget(name: "LocalLibraryTests", dependencies: ["LocalLibrary", "LyricsCore"]),
     ],
     swiftLanguageModes: [.v6]
 )

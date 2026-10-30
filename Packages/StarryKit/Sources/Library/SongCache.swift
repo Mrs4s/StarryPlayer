@@ -210,8 +210,6 @@ public actor SongCache {
         if changed { save() }
     }
 
-    /// Removes the songs played longest ago until the total fits the limit. `keeping` is never
-    /// removed (the song just added). Returns whether anything went.
     @discardableResult
     private func evict(keeping kept: TrackRef?) -> Bool {
         guard let limit else { return false }

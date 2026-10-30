@@ -2,8 +2,6 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-/// The loaded pages of one comment thread. The page showing the thread owns it, so switching
-/// tabs away and back keeps what was loaded instead of fetching it again.
 @MainActor @Observable
 final class CommentFeed {
     enum Phase: Equatable {
@@ -11,7 +9,6 @@ final class CommentFeed {
         case failed(DisplayText)
     }
 
-    /// The source the thread is in, and what it hangs off there.
     let source: SourceID
     let target: CommentTarget
     private(set) var hot: [Comment] = []
@@ -176,11 +173,8 @@ struct CommentThreadView: View {
     }
 }
 
-/// One comment. The author's avatar and name open their page (the avatar lifts a little on
-/// hover, the name underlines), and so does the name over the comment it answers.
 struct CommentRow: View {
     var comment: Comment
-    /// The thread's source, where the authors' pages are.
     var source: SourceID
     var canLike: Bool
     var onLike: () -> Void

@@ -12,9 +12,7 @@ public struct LibraryStatus: Sendable, Equatable {
 }
 
 public enum LocalLibraryError: LocalizedError, Equatable {
-    /// The song's file is not where it was (and was not found elsewhere).
     case fileMissing(String)
-    /// Its folder's volume is not mounted.
     case folderOffline(String)
     /// The system cannot play the file.
     case unsupported(String)
@@ -43,7 +41,7 @@ public final class LocalSource: MusicSource, SearchableSource, CatalogSource, Al
     private let engine: LibraryEngine
     private let artworkDirectory: URL
 
-    /// `directory` nil: a library in memory (tests).
+    /// A nil directory keeps the library in memory.
     public init(directory: DataDirectory? = DataDirectory(), artworkDirectory: URL = ArtworkStore.defaultDirectory, settings: SourceSettingValues = SourceSettingValues()) {
         let file = directory.map { $0.url.appending(path: LibraryStore.fileName) }
         let store: LibraryStore

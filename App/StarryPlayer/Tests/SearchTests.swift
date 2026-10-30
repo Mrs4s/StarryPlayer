@@ -36,10 +36,8 @@ struct SearchModelTests {
         typing(search, "周杰", suggestions: ["周杰伦", "周杰伦歌单", "周杰伦晴天", "周杰伦稻香", "周杰伦青花瓷", "周杰伦搁浅", "周杰伦七里香", "周杰伦兰亭序", "周杰伦红尘客栈", "周杰伦告白气球"])
         let items = search.panel.items
         #expect(items.first == .query("周杰"))
-        // The recent searches containing the text (not the text itself), newest first…
         #expect(items[1] == .recent("周杰伦"))
         #expect(items[2] == .recent("周杰伦晴天"))
-        // …then the suggestions not already listed, up to the panel's length.
         #expect(items.dropFirst(3).allSatisfy { if case .suggestion = $0 { true } else { false } })
         #expect(!items.contains(.suggestion("周杰伦")))
         #expect(items.count == 1 + SearchModel.suggestionsShown)

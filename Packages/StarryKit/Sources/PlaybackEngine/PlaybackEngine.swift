@@ -1,7 +1,6 @@
 import Foundation
 import StarryCore
 
-/// Engine-facing contract. The engine knows only `PlayableAsset`s; sources never touch playback.
 @MainActor
 public protocol PlaybackEngine: AnyObject {
     var events: AsyncStream<PlaybackEvent> { get }

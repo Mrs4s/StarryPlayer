@@ -2,10 +2,7 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-/// The playing song's comment thread for the Now Playing panel: one listing per order
-/// (recommended / hottest / newest, each loaded when first shown and kept) and the replies
-/// opened under comments. The model outlives the page (`AppModel` keeps the last few songs'), so
-/// closing and reopening Now Playing finds the thread as it was left.
+/// Retained by AppModel so reopening Now Playing preserves comment paging and replies.
 @MainActor @Observable
 final class SongCommentThread {
     enum Phase: Equatable {
@@ -13,7 +10,6 @@ final class SongCommentThread {
         case failed(DisplayText)
     }
 
-    /// One order of the thread, paged in as it scrolls.
     @MainActor @Observable
     final class Listing {
         let sort: CommentSort
@@ -40,7 +36,6 @@ final class SongCommentThread {
         init(total: Int) { self.total = total }
     }
 
-    /// The song's source, and the thread there.
     let source: SourceID
     let target: CommentTarget
     var sort: CommentSort

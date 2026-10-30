@@ -18,9 +18,6 @@ import Testing
         PluginSource(plugin: try Plugin.load(file: file, options: Fixture.options()), settings: SourceSettingValues())
     }
 
-    /// A self-hosted server's source: any host, the server asked for first, an optional password
-    /// or Quick Connect (`快速连接`), several accounts, its own Home shelves and library, no
-    /// platform's extras.
     @Test func standsForAServer() throws {
         let source = try Self.source()
         #expect(source.id == .plugin(id: "moe.mrs4s.jellyfin") && source.displayName == "Jellyfin")
@@ -48,8 +45,6 @@ import Testing
         #expect(source.plugin.lyricsProviderID == LyricsProviderID(plugin: "moe.mrs4s.jellyfin"))
     }
 
-    /// The server, then a user without a password: the account names the server, links go to its
-    /// web pages; Home, All Media, the library and an album come from it.
     @Test func signsInAndBrowses() async throws {
         JellyfinServer.start()
         let source = try Self.source()
@@ -83,9 +78,6 @@ import Testing
         #expect(browse.value(forHTTPHeaderField: "Authorization")?.hasSuffix("Token=\"tok\"") == true)
     }
 
-    /// The file itself when it plays here (byte ranges, the token in the header), with the
-    /// loudness the server measured for the song and its album; a WavPack converted to FLAC,
-    /// which the player downloads before it plays.
     @Test func playsFilesAndTranscodes() async throws {
         JellyfinServer.start()
         let source = try Self.source()
@@ -105,7 +97,6 @@ import Testing
         #expect(query.contains(URLQueryItem(name: "static", value: "false")) && query.contains { $0.name == "playSessionId" })
     }
 
-    /// Enhanced LRC on the server comes word by word, by the song's id.
     @Test func ownLyricsWordByWord() async throws {
         JellyfinServer.start()
         let source = try Self.source()
@@ -119,7 +110,6 @@ import Testing
         #expect(document.hasSyllables)
         #expect(document.lines.map(\.text) == ["Word by word", "逐字歌词"])
         #expect(document.lines.first?.words.first?.start == 1)
-        // A song without lyrics on the server is none, asked once.
         let none = Track(id: TrackRef(source: source.id, id: "s-wv"), title: "WV", duration: 60)
         #expect(try await provider.lyrics(for: none) == nil)
         #expect(!JellyfinServer.requests.contains { $0.url?.path == "/Audio/s-wv/Lyrics" })
@@ -151,12 +141,9 @@ import Testing
     }
 }
 
-/// A Jellyfin 12.1 server at `jellyfin.test`: one album of three songs (MP3 with enhanced LRC,
-/// WavPack, FLAC), one user who has no password.
 enum JellyfinServer {
     static let host = "jellyfin.test"
     private static let seen = OSAllocatedUnfairLock(initialState: [URLRequest]())
-    /// The songs of the playlist made in `editsPlaylists`, as the server keeps them.
     private static let playlist = OSAllocatedUnfairLock(initialState: [String]())
 
     static var requests: [URLRequest] { seen.withLock { $0 } }

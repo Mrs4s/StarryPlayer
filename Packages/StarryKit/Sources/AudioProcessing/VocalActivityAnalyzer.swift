@@ -38,7 +38,6 @@ public struct VocalActivity: Sendable {
 }
 
 public enum VocalActivityError: Error, Equatable {
-    /// The file cannot be decoded.
     case unreadable
     case unsupportedFormat
     case separationUnavailable
@@ -75,7 +74,7 @@ public final class VocalActivityAnalyzer {
     private let output: [UnsafeMutablePointer<Float>]
     private let spectrum: BandSpectrum
 
-    /// `model` nil measures the mix without separating it (tests, and a fallback).
+    /// A nil model measures the mix without separating it.
     public init(file url: URL, model: VocalSeparationModel?, suppressVibrato: Bool = false) throws {
         guard let file = try? AVAudioFile(forReading: url) else { throw VocalActivityError.unreadable }
         let format = file.processingFormat

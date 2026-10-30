@@ -33,7 +33,7 @@ public struct AccountVault: Sendable {
     private let directory: DataDirectory?
     private var accounts: [String: [KeptAccount]]
 
-    /// Reads what was saved; nil `directory` keeps nothing on disk (tests, a run that keeps no data).
+    /// nil keeps accounts in memory only.
     public init(directory: DataDirectory?) {
         self.directory = directory
         accounts = directory?.readCodable([String: [KeptAccount]].self, name: Self.fileName) ?? [:]

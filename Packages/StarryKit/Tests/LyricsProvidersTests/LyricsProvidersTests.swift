@@ -23,7 +23,6 @@ import Testing
     }
 }
 
-/// Lyric platforms (plugins') for the tests that do not care which; the songs' own sources match.
 private extension LyricsProviderID {
     static let a = LyricsProviderID(plugin: "a")
     static let b = LyricsProviderID(plugin: "b")
@@ -71,7 +70,6 @@ private final class FakeProvider: LyricsProvider, @unchecked Sendable {
         return raw.map { ProviderLyrics(raw: $0, provider: id, song: LyricsSongRef(id: "\(id.rawValue)-song", mid: mid)) }
     }
 
-    /// One song when it has lyrics, none otherwise.
     func searchSongs(_ keyword: String) async throws -> [LyricsSearchResult] {
         if failsSearch { throw LyricsHTTP.Failure.status(500) }
         return raw == nil ? [] : [LyricsSearchResult(provider: id, song: LyricsSongRef(id: "\(id.rawValue)-song"), title: keyword, artists: [])]
@@ -189,7 +187,6 @@ private let ttml = """
         #expect(b.calls == 1)
     }
 
-    /// Off, the order alone decides; a platform turned off is not asked, the song's own included.
     @Test func orderAloneWhenOwnPlatformIsNotPreferred() async {
         let a = FakeProvider(.a, .yrc)
         let b = FakeProvider(.b, .qrc)
@@ -206,8 +203,6 @@ private let ttml = """
         #expect(a.calls == 0)
     }
 
-    /// Racing asks every platform at once but chooses as the walk would: the slow own platform's
-    /// line-timed lyrics first, then the next one's word-timed lyrics, not the faster ones after.
     @Test func raceChoosesLikeTheWalk() async {
         let a = FakeProvider(.a, .lrc, delay: .milliseconds(100))
         let b = FakeProvider(.b, .qrc, delay: .milliseconds(50))
@@ -260,7 +255,6 @@ private let ttml = """
         var options = LyricsResolverOptions()
         options.providerOrder = [.a]
         let results = await collect(resolver([a], cache: cache), track(.a, id: "42"), options)
-        // The cached TTML is shown directly instead of flashing the YRC first.
         #expect(results.map(\.origin) == [.ttmlDatabase])
         #expect(results.first?.document.format == .ttml)
         #expect(results.first?.document.lines.first?.translation == "从前从前")
@@ -399,8 +393,6 @@ private struct FakeSearchProvider: MatchingLyricsProvider {
 }
 
 @Suite struct ManualLyricsTests {
-    /// A typed search asks every provider, the enabled ones first; a failing one answers nil
-    /// and nothing typed asks no one.
     @Test func searchAsksEveryProvider() async {
         var options = offline()
         options.providerOrder = [.c]
@@ -432,8 +424,6 @@ private struct FakeSearchProvider: MatchingLyricsProvider {
         #expect(LyricsCandidateSource(origin: .pickedSong(.b)) == nil)
     }
 
-    /// A file is read as its extension says, by its content when that does not parse or the
-    /// extension says nothing, and gives nothing when nothing in it is timed.
     @Test func filesParseByExtensionThenContent() async {
         let resolver = resolver([])
         let pinned = await resolver.lyrics(for: track(), pinnedTo: .file(LyricsFile(name: "晴天.lrc", text: lrc)), options: offline())

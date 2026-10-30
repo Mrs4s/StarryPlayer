@@ -332,9 +332,6 @@ struct NowPlayingView: View {
         .offset(y: contentIn || reduceMotion ? 0 : 24 * k)
     }
 
-    /// The cover, flying between the bar's cover and its place. Its frame is the layout's; the
-    /// flight is a scale and an offset drawn on top of it, and the corner radius follows the
-    /// scale so the cover lands with the bar's corners.
     private func artwork(_ layout: NowPlayingLayout) -> some View {
         let target = layout.artworkFrame
         let source = heroSource.flatMap { $0.width > 1 ? $0 : nil }
@@ -370,7 +367,6 @@ struct NowPlayingView: View {
     private func panel(_ layout: NowPlayingLayout) -> some View {
         let k = layout.scale
         let insertion = AnyTransition.opacity.combined(with: .offset(x: 36 * k * CGFloat(model.nowPlayingPanelDirection)))
-        // The old panel leaves quickly, so the two do not read over each other.
         let transition = AnyTransition.asymmetric(insertion: insertion, removal: .opacity.combined(with: .scale(scale: 0.97)).animation(.easeOut(duration: 0.18)))
         ZStack {
             switch model.nowPlayingPanel {
@@ -378,7 +374,6 @@ struct NowPlayingView: View {
                 lyricsPanel(layout).transition(transition)
             case .comments:
                 if let track = player.current, let thread = model.commentThread(for: track) {
-                    // A new song brings its own thread (scrolled to the top), crossfading in.
                     CommentsPanel(thread: thread, tint: tint, k: k, leading: layout.panelGutter) { select(.lyrics) }
                         .id(track.id)
                         .padding(.top, 10 * k)
@@ -399,8 +394,6 @@ struct NowPlayingView: View {
         .animation(.easeInOut(duration: 0.35), value: player.current?.id)
     }
 
-    /// Fetches the song's first page of comments while the page is open, so the comments tab shows
-    /// its count and opens filled. Waits a moment first: skipping through songs fetches nothing.
     private func prefetchComments() async {
         guard let track = player.current, let source = model.commentSource(track.id.source), let thread = model.commentThread(for: track) else { return }
         try? await Task.sleep(for: .seconds(model.nowPlayingPanel == .comments ? 0 : 0.8))
@@ -410,8 +403,6 @@ struct NowPlayingView: View {
 
     private func lyricsPanel(_ layout: NowPlayingLayout) -> some View {
         let height = layout.size.height - layout.topBar - layout.bottomBar
-        // The current line is centred on the cover. The centre comes from the layout, not from a
-        // measurement (see `NowPlayingLayout`).
         let artworkRect = CGRect(x: 0, y: (layout.artworkFrame.midY - layout.topBar).rounded(), width: 0, height: 0)
         var specs = LyricsSpecs.make(from: model.settings.settings.lyrics, fullscreen: isFullscreen, viewHeight: height, artworkRect: artworkRect)
         // The gutter lives inside the lyrics view (it clips to its bounds), so the hover
@@ -527,8 +518,6 @@ struct NowPlayingView: View {
     }
 }
 
-/// The lyric offset between + and −. Clicked, it turns into a field for seconds (or `ms`):
-/// Return or a click elsewhere applies it, Esc leaves it as it was.
 struct LyricOffsetField: View {
     @Binding var isEditing: Bool
     var tint: Color

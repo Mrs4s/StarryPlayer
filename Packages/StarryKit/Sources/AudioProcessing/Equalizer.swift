@@ -77,7 +77,6 @@ public struct EqualizerSettings: Codable, Sendable, Equatable {
         return presetID == EqualizerPreset.customID ? "自定义" : EqualizerPreset.preset(id: presetID)?.name ?? "自定义"
     }
 
-    /// The preamp of the mode in use.
     public var activePreamp: Double { mode == .parametric ? parametricPreamp : preamp }
 
     public var isFlat: Bool {
@@ -85,7 +84,6 @@ public struct EqualizerSettings: Codable, Sendable, Equatable {
         return mode == .parametric ? !bands.contains(where: \.isAudible) : gains.allSatisfy { $0 == 0 }
     }
 
-    /// Picks a ten-band preset (and the ten bands).
     public mutating func select(_ preset: EqualizerPreset) {
         mode = .graphic
         presetID = preset.id
@@ -105,7 +103,6 @@ public struct EqualizerSettings: Codable, Sendable, Equatable {
         customGains = gains
     }
 
-    /// Sets the preamp of the mode in use.
     public mutating func setPreamp(_ value: Double) {
         let value = Self.clamp(value, to: EqualizerBands.preampRange)
         if mode == .parametric { parametricPreamp = value } else { preamp = value }
@@ -132,15 +129,12 @@ public struct EqualizerSettings: Codable, Sendable, Equatable {
         if mode == .parametric, bands.isEmpty, !gains.allSatisfy({ $0 == 0 }) { useGraphicCurve() }
     }
 
-    /// Replaces the parametric bands and preamp with the ten-band curve's.
     public mutating func useGraphicCurve() {
         bands = graphicBands
         parametricPreamp = preamp
         parametricName = ""
     }
 
-    /// The ten-band curve as parametric bands: its peaking filters at their solved gains (the
-    /// bands at 0 dB left out).
     public var graphicBands: [ParametricBand] {
         EqualizerResponse.filterGains(for: gains).enumerated().compactMap { band, gain in
             gain == 0 ? nil : ParametricBand(slot: band, frequency: EqualizerBands.frequencies[band], gain: gain, q: EqualizerBands.q).clamped

@@ -42,7 +42,6 @@ struct SettingsCatalog {
             let source = model.configurableSources.first { $0.id == id }
             let quality = model.registry.source(for: id).map(Self.hasQualityChoice) == true ? "音质" : nil
             let summary = [quality, source?.settingsSummary].compactMap { $0 }.joined(separator: "，")
-            // A plugin with no settings of its own (Jellyfin: only quality) still has its icon.
             return SettingsPageInfo(title: model.displayName(of: id), icon: model.sourceSymbol(of: id), summary: summary)
         }
     }
@@ -525,9 +524,6 @@ struct SettingsCatalog {
         ]
     }
 
-    /// The plugins page: every plugin read (on or off), the files that did not load, installing,
-    /// then the settings of lyrics-only plugins (a source plugin's are on its own page under music
-    /// platforms).
     private var pluginsPage: [SettingsGroup] {
         let manager = model.plugins
         var installed = manager.plugins.map { plugin in
@@ -633,8 +629,6 @@ struct SettingsCatalog {
         ]
     }
 
-    /// A binding to one setting. Reads go through the store, so the control follows changes
-    /// made elsewhere (the Now Playing popover, a reset).
     func bind<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
         let store = store
         return Binding { store.settings[keyPath: keyPath] } set: { store.settings[keyPath: keyPath] = $0 }
@@ -756,7 +750,6 @@ struct SettingsCatalog {
         URL.cachesDirectory.appending(path: Bundle.main.bundleIdentifier ?? "moe.mrs4s.starry-player", directoryHint: .isDirectory)
     }
 
-    /// What the provider says it gives; a plugin the app does not come with is marked as one.
     private func providerDetail(_ provider: LyricsProviderID) -> String? {
         let detail = model.lyricProviderDetail(provider)
         guard model.isAddedLyricPlugin(provider) else { return detail }
@@ -788,8 +781,6 @@ struct SettingsCatalog {
     }
 }
 
-/// Separation model: pick, reveal, reset or re-scan the side-loaded separation model. The model
-/// the app comes with is not revealed: it lives inside the app.
 private struct VocalModelButtons: View {
     @Environment(AppModel.self) private var model
 

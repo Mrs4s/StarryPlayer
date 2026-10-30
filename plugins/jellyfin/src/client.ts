@@ -3,7 +3,6 @@
 
 import type { HttpResponse } from '../../sdk/starry';
 
-/** A server signed in to: where it is and a token for it. */
 export interface Server {
   serverId: string;
   serverName: string;
@@ -59,7 +58,6 @@ export function requireSession(): Session {
   return signedIn;
 }
 
-/** Signs `next` in here (null: out), and remembers its server. */
 export function setSession(next: Session | null): void {
   current = next;
   if (next) {
@@ -196,12 +194,10 @@ export function answer<T>(response: HttpResponse<string>, path: string): T {
   }
 }
 
-/** A call on `server` as its user. */
 export async function api<T = any>(server: Server, path: string, call: Call = {}): Promise<T> {
   return answer<T>(await send(server.address, path, server.token, call), path);
 }
 
-/** A call on the current account's server. */
 export function call<T = any>(path: string, options: Call = {}): Promise<T> {
   return api<T>(requireSession(), path, options);
 }

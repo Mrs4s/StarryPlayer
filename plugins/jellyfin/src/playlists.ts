@@ -16,7 +16,6 @@ interface PlaylistInfo {
 const path = (id: string) => `/Playlists/${encodeURIComponent(id)}`;
 const entries = (info: PlaylistInfo | undefined) => (Array.isArray(info?.ItemIds) ? info!.ItemIds.filter((id) => typeof id === 'string') : []);
 
-/** The playlist's entries in order, as `server`'s user. */
 export const playlistInfo = (server: Server, id: string) => api<PlaylistInfo>(server, path(id));
 
 export async function createPlaylist(draft: PlaylistDraft): Promise<Playlist> {

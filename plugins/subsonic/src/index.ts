@@ -15,15 +15,12 @@ const plugin: Plugin = {
   description: '连接自建的 Subsonic / OpenSubsonic 服务器（Navidrome、gonic、LMS、Airsonic-Advanced、Ampache 等）：曲库、歌单、收藏、歌词和播放次数',
   homepage: 'https://opensubsonic.netlify.app',
   icon: 'music.note.house',
-  // The server is wherever the listener keeps it.
   permissions: { hosts: ['*'] },
 
   source: {
     qualityTiers,
-    // `search3` finds songs, albums and artists; playlists it does not search.
     searchKinds: ['song', 'artist', 'album'],
     artistSongOrders: ['hot', 'time'],
-    // Stars: albums and artists take them, playlists do not.
     collectableKinds: ['album', 'artist'],
     playlistOptions: { description: true, privacy: true, privateByDefault: true },
 

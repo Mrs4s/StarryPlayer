@@ -1,9 +1,7 @@
 import Foundation
 
 public enum EqualizerMode: String, Codable, Sendable {
-    /// Ten fixed bands whose sliders the curve passes through (`EqualizerResponse.filterGains(for:)`).
     case graphic
-    /// Up to `ParametricEqualizer.maxBands` filters of any type, frequency and width.
     case parametric
 }
 
@@ -12,7 +10,6 @@ public enum EqualizerMode: String, Codable, Sendable {
 public enum ParametricFilter: String, Codable, Sendable, CaseIterable {
     case peak, lowShelf, highShelf, lowPass, highPass, bandPass, notch, allPass
 
-    /// Whether `gain` applies; the others pass, cut or shift phase by their type alone.
     public var hasGain: Bool {
         switch self {
         case .peak, .lowShelf, .highShelf: true
@@ -87,7 +84,6 @@ public struct ParametricBand: Codable, Sendable, Equatable, Identifiable {
         self.q = q
     }
 
-    /// Whether it changes the sound.
     public var isAudible: Bool { isOn && (!filter.hasGain || gain != 0) }
 
     /// Within the parametric ranges (non-finite values become the defaults).
@@ -139,26 +135,22 @@ public enum ParametricEqualizer {
 
     // MARK: Text
 
-    /// "62.5 Hz", "2153 Hz", "12.5 kHz".
     public static func frequencyText(_ frequency: Double) -> String {
         if frequency >= 10000 { return trimmed(frequency / 1000, decimals: 2) + " kHz" }
         return trimmed(frequency, decimals: frequency < 100 ? 1 : 0) + " Hz"
     }
 
-    /// "+2.6 dB", "0 dB".
     public static func gainText(_ gain: Double) -> String {
         let value = (gain * 10).rounded() / 10
         return value == 0 ? "0 dB" : String(format: "%+.1f dB", value)
     }
 
-    /// "0.70", "0.707", "12.00".
     public static func qText(_ q: Double) -> String {
         var text = String(format: "%.3f", q)
         if text.hasSuffix("0") { text.removeLast() }
         return text
     }
 
-    /// The number in `value` with at most `decimals` places and no trailing zeros.
     static func trimmed(_ value: Double, decimals: Int) -> String {
         var text = String(format: "%.\(decimals)f", value)
         guard text.contains(".") else { return text }

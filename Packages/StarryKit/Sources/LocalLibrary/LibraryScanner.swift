@@ -6,7 +6,6 @@ public struct ScanSummary: Sendable, Equatable {
     public var updated = 0
     public var moved = 0
     public var missing = 0
-    /// The root could not be reached.
     public var offline = false
 
     public var changed: Bool { added + updated + moved + missing > 0 }
@@ -26,10 +25,8 @@ public struct ScanProgress: Sendable, Equatable {
     public var total: Int
 }
 
-/// Brings the database in step with a root's folders: walks them,
-/// reads the files that are new or changed, finds moved files their old ids, marks vanished ones
-/// missing (never after a walk that did not finish), then cleans each changed folder's songs
-/// together and rebuilds albums and artists.
+/// Incrementally scan files while preserving IDs across moves. Only mark files missing
+/// after a complete walk.
 actor LibraryScanner {
     enum Scope: Sendable {
         case whole

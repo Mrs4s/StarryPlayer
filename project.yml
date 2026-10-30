@@ -98,13 +98,11 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: moe.mrs4s.starry-player.orpheus
             CFBundleURLSchemes: [orpheus]
-        # Audio files open with the app (Open With), without taking over from the system's player.
         CFBundleDocumentTypes:
           - CFBundleTypeName: 音频
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.audio]
-        # Songs dragged within the app (onto a sidebar playlist, to another place in a playlist).
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: moe.mrs4s.starry-player.tracks
             UTTypeDescription: Starry Player 歌曲

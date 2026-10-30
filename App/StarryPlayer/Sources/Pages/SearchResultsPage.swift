@@ -461,7 +461,6 @@ private struct TopResultCard: View {
         .animation(Motion.lift, value: hovering)
     }
 
-    /// `nil` unless the queue is this result's; then whether it plays.
     private func playButton(playing: Bool?) -> some View {
         let visible = hovering || playing != nil
         return Button {
@@ -672,7 +671,6 @@ enum SearchFormat {
 
 @MainActor
 enum SearchPlayback {
-    /// nil unless the queue is `result`'s (the song is current); then whether it plays.
     static func state(of result: SearchOverview.TopResult, player: PlayerController) -> Bool? {
         switch result {
         case .song(let track): player.current?.id == track.id ? player.isPlaying : nil

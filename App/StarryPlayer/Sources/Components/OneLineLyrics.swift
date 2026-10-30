@@ -2,14 +2,10 @@ import AppKit
 import LyricsUI
 import SwiftUI
 
-/// The line being sung, lit syllable by syllable (`MenuBarLyricsView`): the comments' way back to
-/// the lyrics, the open notch player.
 struct OneLineLyrics: NSViewRepresentable {
     var tint: Color
     var fontSize: CGFloat
     var width: CGFloat
-    /// The song's title and artist between lines; off shows nothing there (the title is already
-    /// beside it).
     var showsSongWhenIdle = true
     @Environment(AppModel.self) private var model
 

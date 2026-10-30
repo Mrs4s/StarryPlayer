@@ -51,7 +51,6 @@ final class PlayerController {
     }
     var nowPlayingMounted = false
     private(set) var lyrics: LyricsDocument?
-    /// Where `lyrics` came from: a provider's name, `AMLL TTML DB`, a file name, ….
     private(set) var lyricsOrigin: LyricsOrigin?
     private(set) var lyricsLoading = false
     /// Seconds the lyrics are shown later than their timing says (`+` later, `−` earlier), for
@@ -84,7 +83,6 @@ final class PlayerController {
     }
     private(set) var vocalAttenuationEnabled = false
     private(set) var vocalLevel: Double = VocalAttenuationCurve.defaultLevel
-    /// What the engine reports for the playing song (active, preparing, unavailable, model).
     private(set) var vocalStatus = VocalAttenuationStatus()
     /// The equalizer, kept across launches like the volume. Not in the settings store: a band dragged
     /// changes it many times a second, and every view reading the settings would re-render.
@@ -142,8 +140,6 @@ final class PlayerController {
         return SIMD4(0.55 * beat * beat, 0.3 * beat, 0.2 * beat, 0.4 * beat)
     }
 
-    // Injected by AppModel.
-    /// The song's address, at this tier or (nil) the one asked for by default (`AppModel.requestedTier`).
     var resolveAsset: ((Track, QualityTier?) async throws -> PlayableAsset)?
     var loadLyrics: ((Track) -> AsyncStream<ResolvedLyrics>)?
     var prefetchLyrics: ((Track) async -> Void)?
@@ -212,8 +208,6 @@ final class PlayerController {
         load(PendingLoad(queue: tracks, index: position, track: tracks[position], context: context, autoplay: true, skip: start == nil ? 1 : nil))
     }
 
-    /// Plays `tracks` as the new queue with shuffle on, from a random song (moving on at random
-    /// past songs that cannot play).
     func shufflePlay(_ tracks: [Track], context: PlaybackContext? = nil) {
         guard !tracks.isEmpty else { return }
         shuffle = true
@@ -253,7 +247,6 @@ final class PlayerController {
 
     func addToQueue(_ track: Track) { addToQueue([track]) }
 
-    /// Appends the songs of `tracks` that are not queued yet, in one change of the queue.
     func addToQueue(_ tracks: [Track]) {
         var queued = Set(queue.map(\.id))
         let added = tracks.filter { queued.insert($0.id).inserted }
@@ -340,7 +333,6 @@ final class PlayerController {
         systemMediaControls?.update()
     }
 
-    /// What `restore` needs to reopen the queue later; nil when nothing is queued.
     func snapshot() -> PlaybackSnapshot? {
         guard let index, queue.indices.contains(index) else { return nil }
         return PlaybackSnapshot(queue: queue, index: index, position: currentTime, context: context, repeatMode: repeatMode, shuffle: shuffle)
@@ -483,7 +475,6 @@ final class PlayerController {
         setVocalAttenuation(!vocalAttenuationEnabled)
     }
 
-    /// Vocal level 5…100: 100 is the original mix, 5 leaves the voice at 5 % (−26 dB).
     func setVocalLevel(_ level: Double) {
         let level = VocalAttenuationCurve.clamp(level)
         guard level != vocalLevel else { return }
@@ -541,7 +532,6 @@ final class PlayerController {
         }
     }
 
-    /// The slot the band went into; nil when all are taken.
     @discardableResult
     func addEqualizerBand(_ band: ParametricBand) -> Int? {
         var slot: Int?
@@ -587,7 +577,6 @@ final class PlayerController {
         /// Where to look when `track` cannot play: the next (+1) or previous (−1) song. Nil for
         /// a song the user picked, whose failure just leaves the current song playing.
         var skip: Int?
-        /// Songs skipped so far in this run because they could not play.
         var failures = 0
         var inPlace = false
         /// This tier instead of the one asked for by default (a song switched to another quality
@@ -608,8 +597,6 @@ final class PlayerController {
         request.queue != nil ? request.context : request.context ?? context
     }
 
-    /// The switch `step` songs away from `from` in its queue (forward picks at random on
-    /// shuffle; repeat-all wraps around; an endless queue does neither), or nil past either end.
     private func stepping(_ from: PendingLoad, by step: Int) -> PendingLoad? {
         let tracks = from.queue ?? queue
         guard !tracks.isEmpty else { return nil }
@@ -629,9 +616,6 @@ final class PlayerController {
         return request
     }
 
-    /// Resolves `request.track`'s address, then makes it the current song (`commit`). Until
-    /// then the engine and everything the UI shows stay on the current song; if it cannot play,
-    /// they stay there for good, or the switch moves on per `request.skip`.
     private func load(_ request: PendingLoad) {
         generation += 1
         let gen = generation
@@ -765,10 +749,6 @@ final class PlayerController {
 
     static let endlessHistory = 10
 
-    /// Whether the queue refills itself instead of ending (personal FM): it plays in order with
-    /// its own loop (`endlessRepeatsOne`), asks `refillQueue` for more when it reaches its last
-    /// two songs, waits for them when it gets to the end first, and keeps `endlessHistory` played
-    /// songs.
     var isEndless: Bool { Self.isEndless(context) }
 
     private static func isEndless(_ context: PlaybackContext?) -> Bool { context?.originType == .radio }
@@ -826,7 +806,6 @@ final class PlayerController {
 
     private func refillLanded(_ tracks: [Track], for context: PlaybackContext) {
         if var waiting = refillCursor, let waitingQueue = waiting.queue {
-            // Waiting at the end of a queue that never started (its first songs all failed).
             var queued = Set(waitingQueue.map(\.id))
             waiting.queue = waitingQueue + tracks.filter { queued.insert($0.id).inserted }
             refillCursor = waiting
@@ -883,7 +862,6 @@ final class PlayerController {
     private struct PlaySession {
         var track: Track
         var context: PlaybackContext?
-        /// When audio first advanced; nil while the song sits loaded but unplayed.
         var startedAt: Date?
         var played: TimeInterval = 0
         var lastSample: TimeInterval?
@@ -978,7 +956,6 @@ final class PlayerController {
         case .rate(let r): isPlaying = r > 0
         case .vocalAttenuation(let status): vocalStatus = status
         case .downloadFinished(let track, let file):
-            // Songs from a source (not a file or the cache already, not a trial excerpt).
             guard track == current?.id, let asset = currentAsset, asset.provider == .source, !asset.isTrial else { break }
             finishedDownload = file
             keepDownloadIfHeard()
@@ -1114,15 +1091,11 @@ final class PlayerController {
         }
     }
 
-    /// The song the end of the current one plays, picked ahead (shuffle draws it here, so the
-    /// song armed is the song that plays), with its address once resolved.
     private struct Upcoming {
         var after: TrackRef
         var request: PendingLoad
         var asset: PlayableAsset?
         var armed = false
-        /// Songs passed over on the way to it because they cannot play (a VIP song), as a switch
-        /// at the end would have; and what the last of them said.
         var skipped: [TrackRef] = []
         var failure: String?
         var failed = false
@@ -1132,9 +1105,6 @@ final class PlayerController {
         max(30, (transitions.crossfade ? transitions.crossfadeSeconds : 0) + 20)
     }
 
-    /// What the end of the current song switches to: the next song in order (drawn on shuffle),
-    /// wrapping round on repeat-all; nil on repeat-one, past the end, and while another switch
-    /// is in flight.
     private func nextRequest() -> PendingLoad? {
         guard pending == nil, refillCursor == nil, activeRepeat != .one, let from = cursor, var request = stepping(from, by: 1) else { return nil }
         request.autoplay = true
@@ -1166,9 +1136,6 @@ final class PlayerController {
         upcoming = nil
     }
 
-    /// Picks the song that follows the current one and, `preloadLead` before the end, resolves
-    /// its address and arms it in the engine (armed stage): with a transition the engine
-    /// then starts it itself, otherwise the load at the end finds it ready.
     private func preloadNextIfNeeded() {
         guard preloadsNext || transitions.isEnabled, usingEngine, pending == nil, refillCursor == nil, duration > 0,
               currentTime > duration - preloadLead, preloadTask == nil, let current, let resolveAsset else { return }
@@ -1201,7 +1168,6 @@ final class PlayerController {
                 } catch {
                     guard !Task.isCancelled, var upcoming, upcoming.after == current.id, upcoming.request.track.id == next.id else { return }
                     NSLog("[player] next %@ cannot play: %@", next.title, String(describing: error))
-                    // On to the song after it, as the switch at the end would go.
                     upcoming.skipped.append(next.id)
                     upcoming.failure = "《\(next.title)》\(ErrorText.describe(error))"
                     if upcoming.skipped.count < 3, var following = stepping(upcoming.request, by: 1), following.track.id != current.id {
@@ -1273,7 +1239,6 @@ final class PlayerController {
             let image = await ImageStore.shared.load(url, maxPixelSize: 300)
             guard gen == trackGeneration else { return }
             guard let image, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                // No cover after all: the placeholder art shows instead, so take its colour.
                 withAnimation(Motion.accent) { accentColor = PlaceholderArt.accent(for: artwork.seed) }
                 return
             }

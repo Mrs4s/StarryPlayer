@@ -2,9 +2,6 @@ import AppKit
 import StarryCore
 import SwiftUI
 
-/// Flat song table: a 36 pt column header over a hairline, then
-/// 60 pt rows with no card surface — only a soft rounded fill on hover and for the current track.
-/// Title and album split the free width 3 : 2 (`SongColumns`), so the header lines up with rows.
 struct SongList: View {
     var tracks: [Track]
     var showAlbum = true
@@ -54,7 +51,6 @@ struct SongRow: View {
     var index: Int
     var showAlbum = true
     var showPopularity = false
-    /// Off on the album page, where every row would repeat the same cover; the row is then 56 pt.
     var showArtwork = true
     var trailing: AnyView? = nil
     var removeFromPlaylist: (() -> Void)? = nil
@@ -237,8 +233,6 @@ private extension View {
     func columnWeight(_ weight: CGFloat) -> some View { layoutValue(key: ColumnWeight.self, value: weight) }
 }
 
-/// Like / unlike in the song's own source. A song whose source keeps no liked songs gets an
-/// empty square of the same size, so list columns stay in line.
 struct HeartButton: View {
     var track: Track
     var size: CGFloat = 28

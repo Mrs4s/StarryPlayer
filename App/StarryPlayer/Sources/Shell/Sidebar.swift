@@ -51,7 +51,6 @@ struct Sidebar: View {
 
     private var collapsed: Bool { model.sidebarCollapsed && model.sidebarMode == .docked }
 
-    /// The row that carries the selection pill; nil on pages the sidebar does not list.
     private var selectedKey: String? {
         switch model.route {
         case .home: "home"
@@ -83,9 +82,6 @@ struct Sidebar: View {
                         }
                     }
                     .zIndex(mineEntries.contains { $0.key == selectedKey } ? 1 : 0)
-                    // The account's own part goes as one when the sidebar browses as another
-                    // account: it fades while the new one rises into the same place (a ZStack, so
-                    // the two do not stack up while they pass).
                     ZStack(alignment: .top) {
                         accountSection
                             .id(accountKey)
@@ -142,9 +138,6 @@ struct Sidebar: View {
         .zIndex(selectedKey == entry.key ? 1 : 0)
     }
 
-    /// Stays in place while the account's playlists load, so the rows, not the whole group,
-    /// arrive — each with its own staggered transition. The title shows once there are rows, or
-    /// at once when it has a + (new playlist).
     private func playlistGroup(id: String, title: String, playlists: [Playlist], onAdd: (() -> Void)? = nil) -> some View {
         SidebarGroup(id: id, title: title, sidebarCollapsed: collapsed, showsHeader: !playlists.isEmpty || onAdd != nil, onAdd: onAdd) {
             ForEach(Array(playlists.enumerated()), id: \.element.id) { index, playlist in
@@ -179,10 +172,6 @@ struct Sidebar: View {
         }
     }
 
-    /// The traffic lights' strip, level with the header bar; it drags the window. The floating
-    /// panel starts `floatingSidebarInset` down, so its strip is that much shorter and the rows
-    /// start at the same height; it also holds the button that hides the panel (or, out over
-    /// the pages, pins it), level with the traffic lights, which move in beside it.
     @ViewBuilder
     private var titleBarStrip: some View {
         let mode = model.sidebarMode
@@ -243,9 +232,6 @@ struct Sidebar: View {
     }
 }
 
-/// A sidebar row: 34 pt, a 22 pt glyph (symbol or cover) and a 13 pt label. The label has a
-/// fixed width and the row clips it, so collapsing narrows the row over a label that stays
-/// put instead of re-truncating it every frame; the glyph never moves.
 private struct SidebarItem: View {
     enum Glyph {
         case symbol(String)
@@ -256,7 +242,6 @@ private struct SidebarItem: View {
     var glyph: Glyph
     var active: Bool
     var collapsed: Bool
-    /// nil when this row is not what is playing; otherwise whether it plays or is paused.
     var playing: Bool?
     var selection: Namespace.ID
     var receiving = false
@@ -450,10 +435,6 @@ private struct SidebarPressStyle: ButtonStyle {
     }
 }
 
-/// A titled run of rows that folds from its title (remembered per group): the rows close up
-/// under it as the groups below rise, and open out of it again (`Fold`). The chevron shows on
-/// hover, and stays while folded. Collapsed to icons, the title becomes a short rule of the
-/// same height, so the rows do not shift, and folding is off.
 private struct SidebarGroup<Content: View>: View {
     var title: String
     var sidebarCollapsed: Bool
@@ -499,12 +480,8 @@ private struct SidebarGroup<Content: View>: View {
         }
     }
 
-    /// Unfolding inserts the rows, which open as they arrive (`AnyTransition.fold`). Folding
-    /// closes them in place and removes them once it has run (the last fold, when they come
-    /// quickly). With Reduce Motion they only fade.
     private func toggleFold() {
         let closes = !folded && !reduceMotion
-        // One transaction, so the rows that stay close on the fold's animation.
         withAnimation(Motion.fold) {
             if closes { closing += 1 }
             folded.toggle()
@@ -556,10 +533,6 @@ private struct SidebarGroup<Content: View>: View {
     }
 }
 
-/// A group's rows `openness` of the way open: laid out at their full height, they report only
-/// that much of it, so the box closes over them from the bottom up and the groups below follow
-/// it frame by frame. Clipped only while it moves: at rest the selection pill slides out of the
-/// group to another one.
 private struct Fold: ViewModifier, Animatable {
     var openness: CGFloat
 
@@ -591,7 +564,6 @@ private struct FoldLayout: Layout {
     }
 }
 
-/// The box while it clips; otherwise far past it, which is no clip at all.
 private struct FoldClip: Shape {
     var clips: Bool
 
@@ -636,15 +608,10 @@ private extension AnyTransition {
         )
     }
 
-    /// A group's rows opening out from under its title as they arrive: on the toggle's
-    /// animation (`Motion.fold`), or the sidebar's as it folds to icons and shows them.
     static var fold: AnyTransition {
         .modifier(active: Fold(openness: 0), identity: Fold(openness: 1))
     }
 
-    /// A sidebar row arriving drops in from just above, a beat after the one before it; a row
-    /// leaving just fades. The animations ride on the transition, so rows that arrive without
-    /// an animated transaction (playlists loaded after login) still come in this way.
     static func sidebarRow(_ index: Int) -> AnyTransition {
         .asymmetric(
             insertion: AnyTransition.opacity.combined(with: .offset(y: -6)).animation(Motion.fold.delay(Double(min(index, 10)) * 0.025)),

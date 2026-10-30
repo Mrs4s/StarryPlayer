@@ -2,9 +2,6 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-/// The add to playlist submenu in a song's menus: new playlist… and the account's own playlists
-/// in the song's source (not the liked list, which the heart fills). Signed out, it asks to sign in. Nothing shows when
-/// the source keeps no playlists of its own.
 struct AddToPlaylistMenu: View {
     let tracks: [Track]
     var systemImage: String? = nil
@@ -38,7 +35,6 @@ struct AddToPlaylistMenu: View {
 }
 
 extension PopMenuItem {
-    /// `AddToPlaylistMenu` as a submenu of a `PopMenu`; nothing where it would show nothing.
     @MainActor
     static func addToPlaylist(_ tracks: [Track], model: AppModel, systemImage: String? = nil, excluding: String? = nil) -> PopMenuItem {
         guard let source = tracks.first?.id.source, let editing = model.playlistEditing(of: source), editing.canAdd else { return .empty }

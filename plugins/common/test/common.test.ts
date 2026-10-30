@@ -1,6 +1,3 @@
-// The shared parts under Node, run by each server plugin's `npm test` (plugins/jellyfin,
-// plugins/subsonic).
-
 import './starry-mock';
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';

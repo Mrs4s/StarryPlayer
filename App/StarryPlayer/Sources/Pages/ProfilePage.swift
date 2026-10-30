@@ -29,15 +29,12 @@ struct ProfilePage: View {
     @State private var lists: Loadable<UserPlaylists> = .idle
     @State private var week: Loadable<[RankedTrack]> = .idle
     @State private var allTime: Loadable<[RankedTrack]> = .idle
-    /// The source said the ranking is not for others to see.
     @State private var rankingHidden = false
     @State private var follows = PagedFeed<UserProfile>(pageSize: 30)
     @State private var followers = PagedFeed<UserProfile>(pageSize: 30)
-    /// The source said the follow lists are not for others to see.
     @State private var followsHidden = false
     @State private var tab: Tab = .allRanking
     @State private var rankingTab: Tab = .allRanking
-    /// The user picked a tab, so the page no longer picks one for them.
     @State private var tabTouched = false
     @State private var followed: Bool?
     @State private var columns = 5
@@ -134,7 +131,6 @@ struct ProfilePage: View {
         .padding(.bottom, 30)
     }
 
-    /// The details have not come yet.
     private var isLoading: Bool {
         switch state {
         case .idle, .loading: true
@@ -293,7 +289,6 @@ struct ProfilePage: View {
         }
     }
 
-    /// Last week / all time are tabs of their own, so switching them scrolls and slides like a tab.
     private func periodBinding(_ tab: Binding<Tab>) -> Binding<ListeningPeriod> {
         Binding {
             tab.wrappedValue == .weekRanking ? .week : .allTime
@@ -303,7 +298,6 @@ struct ProfilePage: View {
         }
     }
 
-    /// The selected tab as rows of the page's lazy stack (several views, not one container).
     @ViewBuilder private var tabRows: some View {
         switch tab {
         case .weekRanking: rankingRows(.week)
@@ -632,8 +626,6 @@ private struct GenderMark: View {
     }
 }
 
-/// Follows · followers · events · songs listened: numbers over their labels, rolling up from zero
-/// once the details arrive. A count the source does not show is left out.
 private struct ProfileStats: View {
     struct Item {
         var title: String
@@ -712,8 +704,6 @@ private struct StatCell<Content: View>: View {
     }
 }
 
-/// A count drawn at an animated value, in the width of its final value, so rolling up moves
-/// no layout.
 private struct CountingNumber: View, Animatable {
     var value: Double
     var final: Int
@@ -760,10 +750,6 @@ private struct RankingPlayButton: View {
     }
 }
 
-/// The ranking as song rows, each over a bar of its share of the top song's plays, so the list
-/// reads as a chart. The rows rise in a stagger when the list first shows and the bars grow
-/// behind them from the left. Its body is the rows themselves, so they become rows of the
-/// page's lazy stack.
 private struct RankingRows: View {
     var ranked: [RankedTrack]
     var period: ListeningPeriod
@@ -785,7 +771,6 @@ private struct RankingRows: View {
             }
             .background {
                 ScoreBar(fraction: shown ? Double(item.score) / 100 : 0)
-                    // Fades along the row, so a long bar thins out towards the columns on the right.
                     .fill(LinearGradient(colors: [tint.opacity(theme.isDark ? 0.15 : 0.11), tint.opacity(theme.isDark ? 0.04 : 0.03)], startPoint: .leading, endPoint: .trailing))
                     .animation(reduceMotion ? nil : .spring(response: 0.9, dampingFraction: 0.92).delay(0.12 + Double(min(index, Motion.staggerLimit)) * 0.04), value: shown)
             }
@@ -808,9 +793,6 @@ private struct PlayCount: View {
     }
 }
 
-/// A rounded bar from the row's leading edge, `fraction` of its width, a little inside the row's
-/// height so bars of neighbouring rows stay apart. Animates by fraction, so growing it moves no
-/// layout.
 private struct ScoreBar: Shape {
     var fraction: Double
 
@@ -831,9 +813,6 @@ private struct ScoreBar: Shape {
     }
 }
 
-/// A user's playlists as rows of cover cards (`columns` to a row); the created ones say how many
-/// songs and plays, the collected ones who made them. They rise in a stagger when the grid first
-/// shows. Its body is the rows, so they become rows of the page's lazy stack.
 private struct ProfilePlaylistRows: View {
     var playlists: [Playlist]
     var columns: Int

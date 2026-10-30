@@ -26,9 +26,6 @@ struct HistoryPage: View {
     }
 }
 
-/// All media: every song the browsing source's account keeps (its uploads, a server's whole
-/// library), 500 at a time as the list scrolls (`TrackListLoader(pages:)`), every one of them
-/// for a playback.
 struct AllMediaPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
@@ -89,8 +86,6 @@ struct LoginPrompt: View {
     }
 }
 
-/// Shown on a page of the browsing source's content that the source does not have (daily
-/// recommendations on a server without them), after switching to it with the page open.
 struct SourceLacks: View {
     var feature: DisplayText
     var systemName: String

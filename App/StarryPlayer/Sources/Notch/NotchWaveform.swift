@@ -2,9 +2,6 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-/// The bars' heights from the spectrum, the way the iPhone's Dynamic Island shows a song: the
-/// bass in the middle bars, higher bands further out, each bar jumping with what changes in its
-/// bands and settling back slower.
 struct WaveformMeter {
     static let barCount = 6
 
@@ -34,7 +31,6 @@ struct WaveformMeter {
         }
     }
 
-    /// `bandCount` log-spaced bands in `barCount` equal runs, lowest first.
     static func groups(bandCount: Int, barCount: Int) -> [Range<Int>] {
         guard bandCount >= barCount else { return [] }
         return (0..<barCount).map { i in (bandCount * i / barCount)..<(bandCount * (i + 1) / barCount) }
@@ -70,7 +66,6 @@ struct WaveformMeter {
         return moved
     }
 
-    /// Nothing left to move: not playing, every bar down.
     var isSettled: Bool { levels.allSatisfy { $0 < 0.002 } }
 }
 
@@ -114,7 +109,6 @@ final class NotchWaveformView: NSView {
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    /// Shown, still, with reduced motion while a song plays.
     private static let still: [CGFloat] = [0.3, 0.55, 0.85, 0.7, 0.45, 0.25]
 
     override init(frame: NSRect) {
@@ -145,7 +139,6 @@ final class NotchWaveformView: NSView {
         update()
     }
 
-    /// Nothing to draw for while the panel is out of sight (a full-screen app over its Space).
     @objc private func occlusionChanged() { update() }
 
     private var visible: Bool { window?.occlusionState.contains(.visible) ?? false }
@@ -185,7 +178,6 @@ final class NotchWaveformView: NSView {
         lastTick = now
         var bands: [Float] = []
         if playing, let spectrum {
-            // What will be heard when this frame shows.
             let heard = spectrum(max(link.targetTimestamp - now, 0), spectrumTime)
             bands = heard.bands
             spectrumTime = heard.time
@@ -194,7 +186,6 @@ final class NotchWaveformView: NSView {
         if !playing, meter.isSettled { stop() }
     }
 
-    /// Bars centred on the middle line, growing up and down from a dot.
     private func render() {
         let count = CGFloat(bars.count)
         let unit = bounds.width / (count + (count - 1) * 0.8)

@@ -167,7 +167,6 @@ struct PlaylistEditorView: View {
         editing.keepsPrivacy && (playlist == nil || playlist?.isPrivate != nil)
     }
 
-    /// A public playlist on a platform that cannot hide it again stays public.
     private var privacyLocked: Bool {
         editing.publicIsFinal && playlist?.isPrivate == false
     }

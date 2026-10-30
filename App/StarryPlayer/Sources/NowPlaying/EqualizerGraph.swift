@@ -9,7 +9,6 @@ struct EqualizerGraph: View {
     var gains: [Double]
     var isEnabled: Bool
     var tint: Color
-    /// The spectrum moves (music plays); otherwise it settles to nothing.
     var spectrumLive: Bool
     var spectrum: @MainActor () -> [Float]
     var onChange: (Int, Double) -> Void
@@ -63,7 +62,6 @@ private struct EqualizerGraphRepresentable: NSViewRepresentable {
     }
 }
 
-/// A value that springs to its target (the knobs and curve of both equalizer graphs).
 struct BandMotion {
     var value = 0.0
     var velocity = 0.0
@@ -255,7 +253,6 @@ final class EqualizerGraphView: NSView {
 
     private var column: CGFloat { plot.width / CGFloat(bands) }
 
-    /// Half the height ±12 dB spans (the knobs stay inside the plot).
     private var halfSpan: CGFloat { max(plot.height / 2 - Self.knobSize / 2 - 2, 1) }
 
     private func x(band: Int) -> CGFloat { plot.minX + (CGFloat(band) + 0.5) * column }
@@ -544,7 +541,6 @@ final class EqualizerGraphView: NSView {
         CATransaction.commit()
     }
 
-    /// The knobs rise from 0 dB one after another as the dialog opens, drawing the curve out.
     private func enter() {
         let now = CACurrentMediaTime()
         for band in 0..<bands {

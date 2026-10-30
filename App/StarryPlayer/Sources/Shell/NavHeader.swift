@@ -1,11 +1,7 @@
 import Library
 import SwiftUI
 
-/// 64 pt header: sidebar button, back, refresh, search box; the account chip (with the account switcher,
-/// `AccountChip`) and settings on the right. The floating sidebar carries its own button, so the
-/// header drops it.
 struct NavHeader: View {
-    /// The account switcher's (`MainLayout` hangs its panel from the chip).
     var switcherSpace: Namespace.ID
     var switcherEvents: AccountSwitcherEvents
     @Environment(AppModel.self) private var model
@@ -64,7 +60,6 @@ struct NavHeader: View {
     }
 }
 
-/// Makes the header a window drag region on macOS 15+.
 struct WindowDrag: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 15, *) {

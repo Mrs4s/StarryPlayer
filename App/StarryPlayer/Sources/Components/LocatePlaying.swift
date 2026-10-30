@@ -102,8 +102,6 @@ final class TrackListLocator {
         }
     }
 
-    /// Estimate the scroll origin that centres `position` from the nearest laid-out row.
-    /// Returns nil when no row has been laid out.
     private func reckon(_ position: Int, among matches: [Int]?, in scrollView: NSScrollView, topInset: CGFloat) -> (origin: CGFloat, rowsAway: Int)? {
         let rows = matches ?? []
         func offset(_ position: Int) -> Int? { matches == nil ? position : Self.offset(of: position, in: rows) }
@@ -163,8 +161,6 @@ final class TrackListLocator {
         try? await Task.sleep(for: .milliseconds(20))
     }
 
-    /// Waits a little for rows to be laid out (just after the search was cleared, the rows that
-    /// replace the matches have not told where they are yet); false if none are.
     private func rowsLaidOut() async -> Bool {
         for _ in 0..<15 where rowTops.isEmpty {
             await Self.nextFrame()
@@ -269,7 +265,6 @@ struct LocatePlayingButton: View {
 }
 
 struct LocatedGlow: ViewModifier {
-    /// When the row was located; nil if it was not.
     var time: CFTimeInterval?
     @Environment(\.theme) private var theme
     @State private var lit = false

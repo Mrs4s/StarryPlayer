@@ -21,7 +21,6 @@ struct PlaylistPage: View {
     @State private var subscribed: Bool?
     @State private var subscribedCount: Int?
     @State private var appeared = false
-    /// A queue action is waiting for the songs not loaded yet.
     @State private var preparing = false
     @State private var backdrop = PageBackdrop()
     @State private var comments: CommentFeed
@@ -165,7 +164,6 @@ struct PlaylistPage: View {
         var parts: [String] = []
         let count = list?.totalCount ?? shown.trackCount
         if count > 0 { parts.append("\(count) 首") }
-        // The length only once every track is known, not a partial sum.
         if let list, list.isComplete, !list.tracks.isEmpty {
             parts.append(DetailFormat.durationText(list.tracks.reduce(0) { $0 + $1.duration }))
         }

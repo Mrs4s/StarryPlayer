@@ -8,8 +8,6 @@ struct SourceSettingsTests {
     private let text = SourceSetting("proxy", "代理", control: .text(placeholder: "未设置"))
     private let choice = SourceSetting("server", "节点", control: .choice([.init("a", "A"), .init("b", "B")], default: "a"))
 
-    /// Missing values read as the setting's default; setting a default drops it, so only
-    /// changes are stored.
     @Test func onlyChangesAreKept() {
         var values = SourceSettingValues()
         #expect(values.bool(toggle))
@@ -27,7 +25,6 @@ struct SourceSettingsTests {
         #expect(values.isEmpty)
     }
 
-    /// Saved as a plain JSON object, so the file reads as what was set.
     @Test func savedAsAPlainObject() throws {
         let values = SourceSettingValues(["realIP": .bool(false), "proxy": .string("http://a")])
         let json = try #require(String(data: JSONEncoder().encode(values), encoding: .utf8))

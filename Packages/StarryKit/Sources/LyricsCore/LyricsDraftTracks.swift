@@ -12,7 +12,6 @@ extension LyricsDraft {
         }
     }
 
-    /// The timeline's lanes, top to bottom.
     public enum Lane: Sendable, Hashable {
         /// The lead singer's, and both singers' together.
         case lead

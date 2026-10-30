@@ -3,9 +3,6 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-/// The header's room for the search box. `NavHeader` reserves it; `MainLayout` lays the box over
-/// it, above the pages (the open panel overhangs them) and outside the header's window-drag
-/// gesture (dragging in the panel must not move the window).
 struct SearchSlotKey: PreferenceKey {
     static var defaultValue: Anchor<CGRect>? { nil }
 
@@ -37,8 +34,6 @@ struct SearchBox: View {
     static let restWidth: CGFloat = 240
     static let fieldHeight: CGFloat = 36
     static let openWidth: CGFloat = 480
-    /// The open card's margin around the field. Its corners are the field's radius plus this, so
-    /// the two curves stay concentric.
     static let margin: CGFloat = 6
 
     var slot: CGRect
@@ -140,9 +135,6 @@ struct SearchBox: View {
             .overlay(shape.strokeBorder(theme.onSurface.opacity(theme.isDark ? 0.09 : 0.07), lineWidth: 1))
             .shadow(color: .black.opacity(theme.isDark ? 0.42 : 0.14), radius: 26, y: 14)
             .opacity(open ? 1 : 0)
-            // The surface is there at once; the spring only shapes it. Faded in on the spring, it
-            // would stay faint for the first frames and the box would seem slow to answer the
-            // click.
             .animation(.easeOut(duration: 0.12), value: open)
     }
 
@@ -158,8 +150,6 @@ struct SearchBox: View {
                 .frame(width: 16)
             ZStack(alignment: .leading) {
                 if search.text.isEmpty {
-                    // Gone at once when typing starts (fading, it would overlap the first
-                    // characters), back with a fade when the text is cleared.
                     SearchHintText(open: open)
                         .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
@@ -236,9 +226,6 @@ struct SearchBox: View {
     }
 }
 
-/// The empty box's hint (a source's suggested query, e.g. `明知故犯 - Max李玄`), pushed up by the
-/// next one when it turns (a `Ticker`, so a turn does not render the shell every frame). Return
-/// searches it.
 private struct SearchHintText: View {
     var open: Bool
     @Environment(AppModel.self) private var model
@@ -253,7 +240,6 @@ private struct SearchHintText: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // On the line rather than in the text, so it dims on the box's own animation.
         .opacity(open ? 0.7 : 1)
         .allowsHitTesting(false)
     }
@@ -743,7 +729,6 @@ final class SearchBoxEvents {
     }
 
     private func handle(_ event: NSEvent) -> Bool {
-        // Not in sheets, popovers or menus of their own.
         guard let window = event.window ?? NSApp.keyWindow, window.attachedSheet == nil, !(window is NSPanel), let content = window.contentView else { return false }
         if event.type == .keyDown {
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function, .capsLock])

@@ -1,7 +1,6 @@
 import Foundation
 import zlib
 
-/// Plain HTTP for the AMLL TTML DB: ephemeral session, 8 s timeout.
 struct LyricsHTTP: Sendable {
     enum Failure: Error, Sendable, Equatable {
         case status(Int)

@@ -96,7 +96,6 @@ public struct SearchPage: Sendable {
 public protocol SearchableSource: MusicSource {
     var searchKinds: [SearchKind] { get }
     func search(_ query: String, kind: SearchKind, page: Page) async throws -> SearchPage
-    /// Queries completing what has been typed so far.
     func searchSuggestions(_ prefix: String) async throws -> [String]
     func searchOverview(_ query: String) async throws -> SearchOverview
     func trendingSearches() async throws -> [SearchTrend]
@@ -278,7 +277,6 @@ public struct PlaylistEditing: Hashable, Sendable {
     public var canReorder = false
     public var keepsDescription = false
     public var keepsPrivacy = false
-    /// A new playlist starts private (a server's playlists are its owner's until shared).
     public var privateByDefault = false
     /// A public playlist cannot be made private again.
     public var publicIsFinal = false
@@ -343,7 +341,6 @@ public protocol AllMediaSource: MusicSource {
     func allMedia(page: Page) async throws -> TrackPage
 }
 
-/// What a comment thread hangs off.
 public enum CommentTarget: Hashable, Sendable {
     case song(String)
     case album(String)
@@ -353,7 +350,6 @@ public enum CommentTarget: Hashable, Sendable {
 public struct Comment: Identifiable, Hashable, Sendable {
     public struct Quote: Hashable, Sendable {
         public var commentID: String?
-        /// The quoted comment's author, for their page; nil when the source does not say.
         public var userID: String?
         public var userName: String
         public var content: String
@@ -367,7 +363,6 @@ public struct Comment: Identifiable, Hashable, Sendable {
     }
 
     public var id: String
-    /// The author, for their page; nil when the source does not say.
     public var userID: String?
     public var userName: String
     public var avatar: Artwork?
@@ -411,15 +406,12 @@ public struct CommentPage: Sendable {
     }
 }
 
-/// The orders a thread can be read in (recommended / hottest / newest).
 public enum CommentSort: String, Sendable, CaseIterable, Hashable {
     case recommended, hot, latest
 }
 
-/// One page of a sorted thread, or of the replies under a comment.
 public struct CommentSlice: Sendable {
     public var comments: [Comment]
-    /// Comments in the thread, or replies under the comment.
     public var total: Int
     /// Where the next page starts, for the next call; nil when this was the last.
     public var next: String?

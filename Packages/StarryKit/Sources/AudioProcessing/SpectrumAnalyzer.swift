@@ -42,13 +42,9 @@ public final class SpectrumAnalyzer: AudioProcessor {
     private let lock = NSLock()
     private var latest: Snapshot
     private var smoothed: [Float]
-    /// The last analysis's bands, unsmoothed.
     private var raw: [Float]
 
-    /// Analyses kept for `snapshot(at:)` and `bands(at:after:)`, oldest overwritten first:
-    /// `historyCapacity` rows of `bandCount` (raw and smoothed) and of the four energies, with the
-    /// sample each window is centred on: `historySeconds` of hops, well over how far the tap
-    /// runs ahead, at any sample rate (sized in `prepare`). Under `lock`.
+    /// Timestamped analysis ring buffer, protected by `lock`.
     private static let historySeconds = 1.5
     private var historyCapacity: Int
     private var history: [Float]
@@ -64,8 +60,7 @@ public final class SpectrumAnalyzer: AudioProcessor {
     private var historyHead = 0
     private var historyCount = 0
     private var historyRate: Double = 44100
-    /// When `snapshot(at:)` or `bands(at:after:)` was last called (uptime, ns; 0 never); the hops are analysed only
-    /// while it has been in the last second, so the analyser costs nothing more when no one looks.
+    /// Last request in uptime nanoseconds; stop storing hops after one idle second.
     private var lastRequest: UInt64 = 0
     private static let requestWindow: UInt64 = 1_000_000_000
     /// Where the next block should start; one starting elsewhere is a seek.
@@ -174,7 +169,6 @@ public final class SpectrumAnalyzer: AudioProcessor {
         if analysed { publish() }
     }
 
-    /// The bands of the `fftSize` samples up to `ringHead` into `raw`.
     private func analyse() {
         guard let fftSetup else { return }
         let tail = fftSize - ringHead
@@ -232,7 +226,6 @@ public final class SpectrumAnalyzer: AudioProcessor {
         lock.unlock()
     }
 
-    /// The latest analysis, smoothed, as `snapshot()`.
     private func publish() {
         var bands = [Float](repeating: 0, count: bandCount)
         for b in 0..<bandCount {

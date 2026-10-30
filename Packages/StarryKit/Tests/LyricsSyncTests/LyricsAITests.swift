@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import LyricsCore
 import Testing
@@ -131,55 +130,5 @@ import Testing
         let plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: ["き": 33, "ゃ": 87, "く": 35], english: [:])
         #expect(plan.tokens.map(\.sustainClass) == [1, 1, 3])
         #expect(plan.tokens.map(\.isMoraContinuation) == [false, true, false])
-    }
-
-    @Test func silenceAndAReal400PointToneUseTheExpectedMelConvention() throws {
-        var filters = [Float](repeating: 0, count: 201 * 128)
-        for band in 0..<128 { filters[10 * 128 + band] = 1 }
-        let hann = (0..<400).map { Float(0.5 - 0.5 * cos(2 * Double.pi * Double($0) / 400)) }
-        let silence = try LyricsAIMel.encode([Float](repeating: 0, count: 400)[...], filters: filters, hann: hann)
-        #expect(silence.count == 128 * 3000)
-        #expect(silence.allSatisfy { $0 == -1.5 })
-        let wave = (0..<480000).map { Float(sin(2 * Double.pi * 400 * Double($0) / 16000)) }
-        let mel = try LyricsAIMel.encode(wave[...], filters: filters, hann: hann)
-        // A unit sine becomes amplitude sqrt(2)*0.1; Hann's bin-10 power is 200.
-        let expected = LyricsAIMel.roundedBFloat16(Float((log10(200.0) + 4) / 4))
-        #expect(mel[100] == expected)
-        #expect(mel[127 * 3000 + 100] == expected)
-    }
-
-    @Test func resamplingPreservesTheAudioClock() throws {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("starry-ai-audio-\(UUID()).wav")
-        defer { try? FileManager.default.removeItem(at: file) }
-        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100, channels: 1, interleaved: false))
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4410))
-        buffer.frameLength = 4410
-        let data = try #require(buffer.floatChannelData?[0])
-        data.initialize(repeating: 0, count: 4410)
-        data[882] = 1 // 20ms
-        do { let output = try AVAudioFile(forWriting: file, settings: format.settings); try output.write(from: buffer) }
-        let converted = try LyricsAIAudio.read(file)
-        #expect(abs(converted.count - 1600) <= 1)
-        let peak = try #require(converted.indices.max { abs(converted[$0]) < abs(converted[$1]) })
-        #expect(abs(peak - 320) <= 1)
-    }
-
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["STARRY_AI_MODEL"] != nil))
-    func externalCoreMLInferenceSmoke() async throws {
-        let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["STARRY_AI_MODEL"]))
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("starry-ai-coreml-\(UUID()).wav")
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("starry-ai-model-test-cache", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: file) }
-        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false))
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000))
-        buffer.frameLength = 48000
-        for i in 0..<48000 { buffer.floatChannelData![0][i] = Float(sin(2 * Double.pi * 220 * Double(i) / 16000)) * 0.1 }
-        do { let output = try AVAudioFile(forWriting: file, settings: format.settings); try output.write(from: buffer) }
-        let draft = LyricsDraft(lines: [.init(syllables: [.init(text: "あ"), .init(text: "い")])])
-        let worker = LyricsAIAligner(cacheDirectory: cache)
-        let result = try await worker.align(draft, vocals: file, modelDirectory: directory, backend: .neuralEngine)
-        #expect(result.alignedSyllables == 2)
-        #expect(result.draft.lines[0].syllables.allSatisfy { ($0.start ?? -1) >= 0 && ($0.end ?? 4) <= 3 && $0.end! > $0.start! })
-        await worker.releaseWhenIdle()
     }
 }

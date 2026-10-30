@@ -2,7 +2,6 @@ import Foundation
 
 public enum PlaybackOrigin: String, Sendable, Codable {
     case playlist, album, artist, radio, search, dailyRecommendation, liked, local, queue, history
-    /// All media: every song the account keeps on the platform (its uploads, a server's library).
     case allMedia
     case user
 
@@ -95,10 +94,7 @@ public enum PlaybackEvent: Sendable {
 }
 
 public struct VocalAttenuationStatus: Sendable, Equatable {
-    /// Why the vocals cannot be controlled right now (the source, Low Power Mode, heat, or
-    /// processing too slow).
     public enum Unavailable: Sendable, Equatable {
-        /// This song cannot be processed: no tap (HLS), more than two channels, or no network.
         case unsupportedSource
         case spatialMix
         case lowPowerMode
@@ -109,7 +105,6 @@ public struct VocalAttenuationStatus: Sendable, Equatable {
 
     public var enabled = false
     public var isActive = false
-    /// The separation unit is being built.
     public var isPreparing = false
     public var unavailable: Unavailable?
     public var modelName: String?

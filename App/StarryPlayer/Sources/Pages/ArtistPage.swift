@@ -139,7 +139,6 @@ struct ArtistPage: View {
         .padding(.bottom, 28)
     }
 
-    /// The details have not come yet.
     private var isLoading: Bool {
         switch state {
         case .idle, .loading: true
@@ -232,7 +231,6 @@ struct ArtistPage: View {
         }
     }
 
-    /// Hot / newest are tabs of their own, so switching them scrolls and slides like a tab.
     private func orderBinding(_ tab: Binding<Tab>) -> Binding<ArtistSongOrder> {
         Binding {
             tab.wrappedValue == .newSongs ? .time : .hot
@@ -241,7 +239,6 @@ struct ArtistPage: View {
         }
     }
 
-    /// The selected tab as rows of the page's lazy stack (several views, not one container).
     @ViewBuilder private var tabRows: some View {
         switch tab {
         case .hotSongs: songRows(hotSongs, order: songOrders.contains(.hot) ? .hot : songOrders.first ?? .hot)
@@ -468,9 +465,6 @@ private struct ArtistPlayButton: View {
     }
 }
 
-/// Songs with covers, numbered by rank (an artist's songs, search results). Rows rise in with a
-/// stagger when the list first shows. Its body is the rows themselves, so they become rows of the
-/// page's lazy stack.
 struct RevealedTrackRows: View {
     var tracks: [Track]
     var context: PlaybackContext
@@ -488,10 +482,6 @@ struct RevealedTrackRows: View {
     }
 }
 
-/// Discography: the albums by release year, newest first. Each year's albums fill rows of
-/// `columns` cards, with the year and its count in a gutter beside the first row. Its body is
-/// the rows themselves, so they become rows of the page's lazy stack; they rise in with a
-/// stagger when the grid first shows.
 struct DiscographyRows: View {
     struct Row: Identifiable {
         var id: String
@@ -603,7 +593,6 @@ struct DiscographyRows: View {
         return parts.joined(separator: " · ")
     }
 
-    /// The edition when it is not the studio one (`现场版`, `翻唱版`…), else the release type.
     nonisolated static func kind(_ album: Album) -> String? {
         if let edition = album.edition, !edition.isEmpty, edition != "录音室版" { return edition }
         switch album.releaseType {
@@ -695,7 +684,6 @@ private struct ArtistAboutRows: View {
         HStack(alignment: .top, spacing: 28) {
             Group {
                 if let photo = detail.photo {
-                    // 5 : 4, the usual shape of these photos, so none of it is cropped away.
                     ArtworkView(artwork: photo, radius: 14, pixelSize: 440, pixelHeight: 352, neutralPlaceholder: "person.fill")
                         .frame(width: Self.sideWidth, height: Self.sideWidth * 0.8)
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(theme.onSurface.opacity(0.07), lineWidth: 1))

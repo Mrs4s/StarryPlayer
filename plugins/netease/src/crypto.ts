@@ -1,5 +1,3 @@
-// Cipher primitives behind the eapi envelope.
-
 export const EAPI_KEY = 'e82ckenh8dichen8';
 /** AES key of the nginx `cache_key` (`cacheKey`). */
 export const CACHE_KEY_SECRET = ')(13daqP@ssw0rd~';

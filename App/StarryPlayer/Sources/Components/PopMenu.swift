@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// One row of a `PopMenu`: a command, a submenu (opened in place of the menu, with a way back),
-/// an option with a checkmark, a section title, a line of information, or a divider.
 struct PopMenuItem {
     enum Kind {
         case action(() -> Void)
@@ -10,7 +8,6 @@ struct PopMenuItem {
         case info(String)
         case header
         case divider
-        /// Nothing: what a helper gives where its row does not apply.
         case empty
     }
 
@@ -32,7 +29,6 @@ struct PopMenuItem {
         return PopMenuItem(title: title, systemImage: systemImage, kind: .submenu(items), isDisabled: items.isEmpty, detail: detail)
     }
 
-    /// One of a set of choices, checked when it is the one picked.
     static func option(_ title: String, selected: Bool, action: @escaping () -> Void) -> PopMenuItem {
         PopMenuItem(title: title, kind: .action(action), isChecked: selected)
     }
@@ -41,7 +37,6 @@ struct PopMenuItem {
         PopMenuItem(title: title, kind: .header)
     }
 
-    /// A label and its value on one line, not clickable.
     static func info(_ title: String, _ value: String) -> PopMenuItem {
         PopMenuItem(title: title, kind: .info(value))
     }
@@ -61,8 +56,6 @@ struct PopMenuItem {
         if case .divider = kind { true } else { false }
     }
 
-    /// Without the empty rows, and with dividers only between rows (none leading, trailing or
-    /// doubled), as menus built from conditions would otherwise have them.
     static func tidy(_ items: [PopMenuItem]) -> [PopMenuItem] {
         var result: [PopMenuItem] = []
         for item in items {
@@ -86,12 +79,6 @@ enum PopMenuBuilder {
     static func buildArray(_ parts: [[PopMenuItem]]) -> [PopMenuItem] { parts.flatMap { $0 } }
 }
 
-/// A button that opens the app's own menu in place of the system's (`Menu`): a card in the
-/// page's colours that unfolds from the button, with a highlight that glides between rows,
-/// submenus that slide in over the menu, and the arrow keys, Return and Esc.
-///
-/// The rows are built when it opens, as a system menu's are. Style the button as any other
-/// (`buttonStyle`, `disabled`, `help`); the label can follow the menu being open.
 struct PopMenu<Label: View>: View {
     private let items: () -> [PopMenuItem]
     private let label: (Bool) -> Label
@@ -134,7 +121,6 @@ struct PopMenu<Label: View>: View {
     }
 }
 
-/// The "…" of a more menu, standing up while its menu is open.
 struct PopMenuEllipsis: View {
     var isOpen: Bool
     var size: CGFloat = 15
@@ -148,7 +134,6 @@ struct PopMenuEllipsis: View {
     }
 }
 
-/// Where the button is in AppKit, to place the menu by it, and the button going away.
 private struct PopMenuAnchor: NSViewRepresentable {
     let controller: PopMenuController
 
@@ -176,8 +161,6 @@ final class PopMenuAnchorView: NSView {
     }
 }
 
-/// Opens and closes one button's menu: places its panel, keeps it the only menu open, and
-/// closes it on a click elsewhere, Esc, the window changing or the app going to the background.
 @MainActor
 @Observable
 final class PopMenuController {
@@ -201,8 +184,6 @@ final class PopMenuController {
         }
     }
 
-    /// Opens by a rect in an AppKit view rather than by a button: a context menu at the
-    /// pointer (an empty rect there) or the menu of a control the view draws itself.
     func popUp(items: [PopMenuItem], theme: Theme, localization: LocalizationStore, from rect: NSRect, in view: NSView) {
         close()
         open(items: items, theme: theme, localization: localization, from: rect, in: view, placement: .below, matchesWidth: false)
@@ -291,7 +272,6 @@ final class PopMenuController {
         observers = []
     }
 
-    /// True when the event is the menu's: a click in it or a key it takes.
     private func handle(_ event: NSEvent) -> Bool {
         guard let panel, let session else { return false }
         let onCard = event.window === panel && panel.cardContains(event.locationInWindow)
@@ -303,8 +283,6 @@ final class PopMenuController {
             return false
         default:
             if onCard { return false }
-            // A click elsewhere only closes the menu, as a system menu's does (clicking its
-            // button again closes it rather than opening it once more).
             close()
             return true
         }
@@ -330,11 +308,8 @@ final class PopMenuController {
     }
 }
 
-/// A borderless panel over its window, holding the card, that never takes focus: the window
-/// stays key (and its title bar active), and its key events reach the menu through
-/// `PopMenuController`'s monitor. A window of its own, so the rows under the card (tracked by
-/// their window's pointer areas) do not light up as the pointer moves over the menu, and the
-/// card can reach past the window's edge.
+/// Keep the parent window key and route keyboard events through the menu's event monitor.
+/// A separate panel allows the menu to extend past the window and isolates row hover tracking.
 final class PopMenuPanel: NSPanel {
     private let session: PopMenuSession
     private let host: PopMenuHostingView<AnyView>
@@ -381,13 +356,10 @@ enum PopMenuMetrics {
     static let rowHeight: CGFloat = 30
     /// Room around the card in its panel for the shadow and the spring's overshoot.
     static let margin: CGFloat = 40
-    /// Between the button and the card.
     static let gap: CGFloat = 6
-    /// Kept clear at the screen's edges.
     static let edgeInset: CGFloat = 8
 }
 
-/// Where a menu opens by its button.
 enum PopMenuPlacement {
     /// Under it, or above when it fits only there.
     case below
@@ -398,10 +370,7 @@ enum PopMenuPlacement {
     case beside
 }
 
-/// Where a menu goes, lined up with the button's leading edge (its trailing one for a button on
-/// the right of its window), on the side `PopMenuPlacement` asks for when it fits there. It keeps
-/// to the window when it fits in it on either side, and to the screen past that. Top-left
-/// coordinates.
+/// Menu geometry in top-left screen coordinates, kept inside the window when possible.
 struct PopMenuLayout {
     /// Room for the largest page; the card sits in the corner by the button.
     var frame: CGRect
@@ -466,13 +435,10 @@ struct PopMenuLayout {
         foldOffset = CGSize(width: 0, height: opensUpward ? 6 : -6)
     }
 
-    /// The space on one side of the button, in its window and on the screen.
     private struct Room {
         var window: CGFloat
         var screen: CGFloat
 
-        /// The side asked for when the card fits there in the window, the other when only it
-        /// does; past the window, the same on the screen; else the roomier.
         static func prefers(_ first: Room, over second: Room, for need: CGFloat) -> Bool {
             if first.window >= need { return true }
             if second.window >= need { return false }

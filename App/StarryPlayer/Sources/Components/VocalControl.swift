@@ -3,10 +3,6 @@ import AudioProcessing
 import StarryCore
 import SwiftUI
 
-/// Sing mode on the lyrics page. The round button turns vocal attenuation on and off (filled while
-/// on, pulsing while the separation unit is built). While it is on, a vertical vocal slider opens
-/// beside it: briefly after turning on, and whenever the pointer is over the button or the
-/// slider. Scrolling over either nudges the level.
 struct VocalControl: View {
     @Binding var isExpanded: Bool
     var size: CGFloat = 32
@@ -164,7 +160,6 @@ struct VocalLevelSlider: View {
 }
 
 extension VocalAttenuationStatus.Unavailable {
-    /// What the user is told when sing mode cannot be used; `spatialMix` names the playing spatial mix.
     func message(spatialMix: String) -> String {
         switch self {
         case .unsupportedSource: "当前歌曲不支持人声控制。"

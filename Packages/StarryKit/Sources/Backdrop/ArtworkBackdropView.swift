@@ -18,7 +18,6 @@ public final class ArtworkBackdropView: MTKView {
         public var saturationScale: Float = 1
         public var brightness: Float = 1
         public var blackScrim: Float = BackdropLook.blackScrimDark
-        /// White scrim applied before the colour grade (default 0.1).
         public var whiteScrim: Float = BackdropLook.whiteScrim
         public var audioReactivity: Float = 1
         /// Amplitude of the mesh warp while exciting, 0…1 (1 = the grids as authored, which already
@@ -52,7 +51,6 @@ public final class ArtworkBackdropView: MTKView {
         didSet { if palette != oldValue, currentIsPlaceholder { setPlaceholder() } }
     }
 
-    /// Frames rendered so far (debugging).
     public private(set) var frameCount = 0
     public private(set) var blurRadius: Float = 0
     /// Bits per channel of the drawable: 10 when the window's screen has more than 8 bits per
@@ -275,7 +273,6 @@ public final class ArtworkBackdropView: MTKView {
         ctx.draw(image, in: CGRect(x: (CGFloat(side) - drawSize.width) / 2, y: (CGFloat(side) - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
         descriptor.usage = [.shaderRead]
-        // Unified memory needs no extra CPU copy from managed textures.
         descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
         guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
         texture.label = "backdrop.artwork"
@@ -425,8 +422,6 @@ public final class ArtworkBackdropView: MTKView {
         }
     }
 
-    /// Per-frame state update: clock, spectrum, transitions.
-    /// Internal so tests can step the state before `captureFrame`.
     func advance(dt: CFTimeInterval, landscape: Bool) {
         let dt = Float(dt)
         time += dt * (reduceMotion ? 0.1 : 1) * parameters.speed
@@ -488,8 +483,7 @@ public final class ArtworkBackdropView: MTKView {
         guard let intermediates else { return }
         rebuildMeshIfNeeded(landscape: width > height)
 
-        // 1. Artwork crossfade. A pending cover first snapshots the current blend so a transition
-        //    interrupted mid-way starts from what is on screen.
+        // An interrupted crossfade resumes from the blend currently on screen.
         if pendingHold, let incomingArtwork {
             if blendRendered, let holdTexture, let blit = buffer.makeBlitCommandEncoder() {
                 blit.copy(from: blendTexture, to: holdTexture)

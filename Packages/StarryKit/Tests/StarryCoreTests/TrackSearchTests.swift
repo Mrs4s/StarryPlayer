@@ -49,7 +49,6 @@ import Testing
 
     @Test func aMatchStaysInsideOneField() {
         let index = TrackSearchIndex(tracks)
-        // Title `晴天` followed by artist `周杰伦`: not one string.
         #expect(index.matches("天周") == [])
         #expect(index.matches("电台 / jix") == [3])
     }

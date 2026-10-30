@@ -84,12 +84,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     public enum Appearance: String, Codable, Sendable, CaseIterable { case system, light, dark }
     public enum ThemeColorMode: String, Codable, Sendable, CaseIterable { case `default`, cover, custom }
-    /// The player bar's look: the frosted bar, or the system's Liquid Glass (macOS 26+; older
-    /// systems keep the classic bar).
     public enum PlayerBarStyle: String, Codable, Sendable, CaseIterable {
         case classic, glass
 
-        /// The default: Liquid Glass where the system has it (macOS 26+), else the classic bar.
         public static var systemDefault: PlayerBarStyle {
             if #available(macOS 26, *) { return .glass }
             return .classic
@@ -210,15 +207,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
         }
     }
 
-    /// The player in the notch: the song beside it while it plays, the controls when the pointer
-    /// rests on it. A screen without a notch gets an island in the middle of its menu bar.
     public struct Notch: Codable, Sendable, Equatable {
         public var enabled = false
-        /// The line being sung, beside the notch (in the island, without one).
         public var showsLyrics = true
         /// Opens when the pointer rests on it; off, on a click.
         public var expandsOnHover = true
-        /// None on a screen without a notch (a Mac without one, an external display).
         public var notchedScreensOnly = false
         public init() {}
 
@@ -246,7 +239,6 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var saturationScale: Double = 1
         public var brightness: Double = 1
         public var scrim: Double = 0.5
-        /// White scrim before the colour grade (default 0.1).
         public var whiteScrim: Double = 0.1
         public var audioReactivity: Double = 1
         /// Mesh warp amplitude while lively, 0…1 (1 = the grids as authored, the most they take
@@ -391,7 +383,6 @@ public final class SettingsStore {
         didSet { persist() }
     }
 
-    /// Where the settings are saved; nil keeps them in memory.
     private let defaults: UserDefaults?
     private let key = "starry.settings"
 
@@ -404,7 +395,6 @@ public final class SettingsStore {
         }
     }
 
-    /// Settings that start as `settings` and are never saved.
     public init(inMemory settings: AppSettings) {
         defaults = nil
         self.settings = settings

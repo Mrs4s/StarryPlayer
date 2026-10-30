@@ -1,6 +1,4 @@
-// BaseItemDto → the plugin API's models. Ids are the server's item
-// ids as they come; times are ticks (10⁷ a second); pictures need no token, so their URLs are
-// plain (and the same for every account on the server).
+// Jellyfin times use ticks (10⁷ per second); artwork URLs need no account token.
 
 import { isLossless, tiersFor } from '../../common/library';
 import { date, text } from '../../common/server';
@@ -113,5 +111,4 @@ export function playlist(server: Server, item: Item): Playlist {
   };
 }
 
-/** Music playlists: a playlist of videos is left out (old ones may not say). */
 export const isMusicPlaylist = (item: Item) => item?.Type === 'Playlist' && item.MediaType !== 'Video';

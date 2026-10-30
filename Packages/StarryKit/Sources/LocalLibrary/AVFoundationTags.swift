@@ -1,9 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// Tags AVFoundation reads well (MP4 atoms, Vorbis comments in Ogg, RIFF / CAF INFO, ID3 in AIFF),
-/// mapped to canonical keys — its `commonMetadata` is empty for Vorbis comments — and the audio's
-/// format, length and whether the system plays it.
+/// Read full AVFoundation metadata; commonMetadata omits Vorbis comments.
 enum AVFoundationTags {
     struct Result {
         var tags = RawTags()

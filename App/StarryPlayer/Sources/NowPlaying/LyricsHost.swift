@@ -4,18 +4,14 @@ import LyricsCore
 import LyricsUI
 import SwiftUI
 
-/// Hosts the AppKit `LyricsView` and drives it from the playback clock.
 struct LyricsHost: NSViewRepresentable {
     var document: LyricsDocument
     var specs: LyricsSpecs
-    /// Playback rate, 0 while paused: the one clock value that comes through SwiftUI. A change
-    /// wakes the display link, which pauses itself after two seconds at rate 0. The position
-    /// itself comes from `clock`, asked every frame, so the 4 Hz `currentTime` updates never
-    /// re-run this view (each would diff the whole page and could push the lyrics' frame late).
+    /// Playback rate; 0 pauses the display link after two seconds.
+    /// Read position from `clock` each frame to keep periodic playback updates out of SwiftUI.
     var rate: Double
     var color: Color
     var timeOffset: TimeInterval
-    /// Player time under the progress slider while the user drags it, nil otherwise.
     var scrubTime: TimeInterval?
     var alignment: NSTextAlignment = .left
     var clock: () -> (time: TimeInterval, rate: Double)

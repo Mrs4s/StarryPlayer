@@ -24,15 +24,12 @@ const NAMES: Record<string, string> = {
   astiga: 'Astiga',
 };
 
-/** What the server is, as people know it (`Navidrome`); `Subsonic` for one that does not say. */
 export const kindOf = (server: Pick<Server, 'type'>) => (server.type ? NAMES[server.type.toLowerCase()] ?? server.type : 'Subsonic');
 
-/** `Navidrome · nas.local:4533`, for account lists: the protocol has no server names. */
 export function serverName(server: Pick<Server, 'type' | 'address'>): string {
   return `${kindOf(server)} · ${server.address.replace(/^https?:\/\//i, '')}`;
 }
 
-/** The server `connect` reached, which the login that follows signs in to. */
 type Pending = Omit<Server, 'user' | 'auth'>;
 
 let pending: Pending | undefined;
@@ -40,7 +37,6 @@ let pending: Pending | undefined;
 /** The protocol version to send a server that speaks `version`: its own, at most this plugin's. */
 export const negotiated = (version: unknown) => (typeof version === 'string' && /^\d+\.\d+/.test(version) && compareVersions(version, PROTOCOL) < 0 ? version : PROTOCOL);
 
-/** The OpenSubsonic extensions, by name; none when the server has none or will not tell. */
 async function extensionsOf(server: Pick<Server, 'address' | 'version'> & Partial<Server>): Promise<Record<string, number[]>> {
   try {
     const result = answer(await send(server, 'getOpenSubsonicExtensions', {}, { timeout: 8 }), 'getOpenSubsonicExtensions');
@@ -90,7 +86,6 @@ export async function connect(typed: string): Promise<ServerInfo> {
     // Navidrome and LMS tell without credentials; gonic and Ampache only once signed in.
     const extensions = envelope.openSubsonic === true ? await extensionsOf({ address, version }) : {};
     pending = { key: keyFor(address), address, type, serverVersion, version, extensions };
-    // The login window shows the address under the name: the kind of server is name enough.
     return { address, name: kindOf(pending), version: serverVersion ?? `API ${envelope.version}`, methods: ['password'] };
   }
   throw starry.error('connect', refused ?? `连不上 ${addresses[0]}${unreachable ? `：${unreachable}` : ''}`);

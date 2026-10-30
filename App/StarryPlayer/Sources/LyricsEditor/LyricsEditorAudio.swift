@@ -99,7 +99,6 @@ final class LyricsEditorAudio {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
-    /// The download being waited for, to decode once it is in.
     @ObservationIgnored private var awaitingDownload: Int?
     @ObservationIgnored private var outputDeviceUID: String?
     @ObservationIgnored private var vocalsFile: URL?
@@ -122,7 +121,6 @@ final class LyricsEditorAudio {
         }
         engine.keepsDownloads = true
         engine.volume = VolumeCurve.gain(forLevel: volume)
-        // Decoded songs left by an earlier run.
         try? FileManager.default.removeItem(at: PCMPlayer.directory)
         let events = engine.events
         eventTask = Task { [weak self] in
@@ -556,7 +554,6 @@ final class LyricsEditorAudio {
         load(track)
     }
 
-    /// Remote files the engine downloads whole when it keeps downloads; the rest it streams.
     private static func downloadsWhole(_ asset: PlayableAsset) -> Bool {
         asset.decryption != nil || asset.container == .flac || asset.container == .ogg || asset.isTranscode
             || (asset.container != .hls && !asset.isTrial && asset.range == nil)

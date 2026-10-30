@@ -9,7 +9,6 @@ public struct VocalSeparationModel: Sendable, Equatable {
     public enum Source: Sendable, Equatable {
         /// `kAUSoundIsolationSoundType_HighQualityVoice`, available on every Mac since macOS 15.
         case systemVoice
-        /// Private AU properties: 30000 = model plist path, 40000 = model base directory.
         case directory(URL, plist: URL)
     }
 
@@ -82,7 +81,6 @@ public enum VocalSeparationModelLocator {
             let inputs = (dict["NumberOfInputChannels"] as? NSNumber)?.intValue ?? 1
             let outputs = (dict["NumberOfOutputChannels"] as? NSNumber)?.intValue ?? inputs
             guard inputs == outputs, (1...2).contains(inputs) else { continue }
-            // Music models isolate the accompaniment; a voice model can say so here.
             let output: VocalSeparationModel.Output = (dict["StarryWetOutput"] as? String) == "voice" ? .voice : .accompaniment
             let taskID = (dict["TaskID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let residual = ((dict["StarryResidualDecibels"] as? NSNumber)?.doubleValue).map { decibels in

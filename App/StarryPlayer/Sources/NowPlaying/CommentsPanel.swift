@@ -8,7 +8,6 @@ struct CommentsPanel: View {
     var thread: SongCommentThread
     var tint: Color
     var k: CGFloat
-    /// Leading inset, so the heading lines up with the lyrics' text.
     var leading: CGFloat
     var onShowLyrics: () -> Void
     @Environment(AppModel.self) private var model
@@ -113,8 +112,6 @@ extension CommentSort {
     }
 }
 
-/// One order of the thread, paging in as it scrolls; the rows settle in with a stagger the
-/// first time a page of them shows.
 private struct CommentListView: View {
     var thread: SongCommentThread
     var listing: SongCommentThread.Listing
@@ -486,7 +483,6 @@ enum CommentTimeLinks {
         return result
     }
 
-    /// The seconds of each link in `text` (tests).
     static func times(in text: String, duration: TimeInterval) -> [Int] {
         attributed(text, duration: duration).runs.compactMap { run in
             run.link.flatMap { Int($0.absoluteString.dropFirst("starry-seek:".count)) }
@@ -494,8 +490,6 @@ enum CommentTimeLinks {
     }
 }
 
-/// Thumb and count; liking is optimistic and rolls back if the source refuses. Not shown for a
-/// source that takes no likes.
 private struct CommentLikeButton: View {
     var comment: Comment
     var thread: SongCommentThread
@@ -593,8 +587,6 @@ private struct CommentPanelSkeleton: View {
     }
 }
 
-/// The line being sung, lit syllable by syllable, over the comments; clicking it shows the
-/// lyrics. The menu bar's one-line view, so nothing in the app runs per frame for it.
 private struct NowSingingStrip: View {
     var tint: Color
     var k: CGFloat

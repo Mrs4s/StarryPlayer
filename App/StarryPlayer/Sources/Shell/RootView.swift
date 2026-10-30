@@ -18,8 +18,6 @@ struct RootView: View {
                 // again, and AppKit then rebuilds the key view loop through the whole shell
                 // (every page's focusable views) on each open or close.
                 MainShellHost(model: model, covered: model.player.showNowPlaying)
-                // Mounted from opening until its own closing animation ends; it animates itself
-                // (the cover flies from the player bar), so it comes and goes without a transition.
                 if model.player.nowPlayingMounted {
                     NowPlayingView()
                         .transition(.identity)
@@ -109,7 +107,6 @@ final class CoverableHostView: NSView {
 
     private let host: NSHostingView<AnyView>
     private var covered = false
-    /// Bumped by every change, so the end of a superseded fade does not hide the content.
     private var generation = 0
 
     init<Content: View>(rootView: Content) {
@@ -203,8 +200,6 @@ final class CoverableHostView: NSView {
     }
 }
 
-/// The mouse's back side button (3) drives `AppModel.back()`, except inside sheets (login) and the
-/// settings window. There is no forward, so button 4 passes through.
 private struct MouseNavigationButtons: ViewModifier {
     var model: AppModel
     @State private var monitor: Any?
@@ -226,9 +221,6 @@ private struct MouseNavigationButtons: ViewModifier {
     }
 }
 
-/// Header + routed content, with the sidebar over their leading edge (`SidebarContainer`) and
-/// the player bar floating over the bottom of the content column; the pages scroll beneath the
-/// bar, so the sidebar runs the full height of the window.
 struct MainLayout: View {
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
@@ -252,9 +244,6 @@ struct MainLayout: View {
         // An overlay keeps frequent playback updates from invalidating the pages' layout.
         .overlay(alignment: .bottomLeading) {
             if hasBar {
-                // The page fades into the window colour around the bar, so what scrolls beneath
-                // it (and shows in the gap below it) stays quiet. The glass bar keeps more of the
-                // page behind it: seeing it through the glass is the point.
                 LinearGradient(stops: [
                     .init(color: theme.surface.opacity(0), location: 0),
                     .init(color: theme.surface.opacity(glassBar ? 0.35 : 0.8), location: 0.55),
@@ -443,7 +432,6 @@ final class PageHostingView: NSHostingView<PageRoot> {
     }
 }
 
-/// A history page at the root of its hosting view, given what it would inherit from the shell.
 struct PageRoot: View {
     let entry: HistoryEntry
     let model: AppModel

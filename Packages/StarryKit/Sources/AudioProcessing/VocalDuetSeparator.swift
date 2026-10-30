@@ -29,7 +29,6 @@ public actor VocalDuetSeparator {
 
     public init() {}
 
-    /// Completed hints/files can remain cached without keeping Core ML buffers alive.
     public func releaseResources() { loaded = nil }
 
     public nonisolated static func bundledModel(in bundle: Bundle) -> URL? {
@@ -144,7 +143,7 @@ public actor VocalDuetSeparator {
             try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
             do { try FileManager.default.moveItem(at: temporary, to: compiled) }
             catch {
-                // Another editor/test process may have populated the same cache.
+        // Another process may have populated the same cache.
                 guard FileManager.default.fileExists(atPath: compiled.path) else { throw error }
             }
         }

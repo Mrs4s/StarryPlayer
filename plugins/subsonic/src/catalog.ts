@@ -1,7 +1,4 @@
-// The library: every song by page, the library's albums, artists and
-// genres, items by id (on the server their id names), albums, artists, playlists, search and
-// Home's shelves. The protocol has no "songs of an artist": they are gathered from the artist's
-// albums, and found by name for an artist only on others' songs.
+// Subsonic has no artist-song endpoint: gather album tracks and search by artist name.
 
 import { mapLimited, text } from '../../common/server';
 import type { Album, AlbumDetail, Artist, ArtistDetail, Artwork, HomeShelf, LibraryAlbumSort, LibraryGenre, Page, PlaylistDetail, SearchKind, SearchResult, Track } from '../../sdk/starry';
@@ -16,7 +13,6 @@ const songsOf = (server: Server, songs: unknown) => list(songs).map((song) => mo
 const albumsOf = (server: Server, albums: unknown) => list(albums).map((album) => model.album(server, album));
 const artistsOf = (server: Server, artists: unknown) => list(artists).map((artist) => model.artist(server, artist));
 
-/** Kept for a while, by key; a failure is not kept. */
 const kept = new Map<string, { at: number; value: Promise<any> }>();
 function remembered<T>(key: string, make: () => Promise<T>): Promise<T> {
   const entry = kept.get(key);
@@ -60,7 +56,6 @@ const ALBUM_LISTS: Record<LibraryAlbumSort, Record<string, string | number>> = {
   recentlyAdded: { type: 'newest' },
 };
 
-/** Every album, by name, a page of 500 at a time (at most 20 000), kept a while. */
 const everyAlbum = (server: Server) =>
   remembered(`albums:${server.key}`, async () => {
     const all: any[] = [];
@@ -89,7 +84,6 @@ export async function libraryAlbums(sort: LibraryAlbumSort, genre: string | null
   return { albums: albumsOf(server, slice), hasMore: page.offset + slice.length < sorted.length };
 }
 
-/** The server's artist index (`getArtists`), all of it, kept a while. */
 const artistIndex = (server: Server) =>
   remembered(`artists:${server.key}`, async () => list((await call(server, 'getArtists'))?.artists?.index).flatMap((index) => list(index?.artist)));
 
@@ -159,7 +153,6 @@ const artistItem = (server: Server, raw: string) =>
     return item;
   });
 
-/** `getArtistInfo2`: biography, pictures, similar artists; nothing when the server has none. */
 const artistInfo = (server: Server, raw: string) =>
   remembered(`info:${server.key}/${raw}`, async () => (await call(server, 'getArtistInfo2', { id: raw, count: 12 }).catch(() => undefined))?.artistInfo2 ?? {});
 
@@ -243,7 +236,6 @@ export async function artistAlbums(id: string, page: Page): Promise<Album[]> {
   return albums.slice(page.offset, page.offset + page.limit);
 }
 
-/** The server's similar artists (Last.fm's, or its own), those it has. */
 export async function similarArtists(id: string): Promise<Artist[]> {
   const { server, id: raw } = locate(id);
   return artistsOf(server, (await artistInfo(server, raw))?.similarArtist).filter((artist) => artist.id);

@@ -62,7 +62,6 @@ public final class AVDeckEngine: PlaybackEngine {
             case waiting
             case prerolling
             case scheduled(CMTime)
-            /// Could not be scheduled in time: it starts when the current song ends.
             case atEnd
         }
 
@@ -182,8 +181,6 @@ public final class AVDeckEngine: PlaybackEngine {
     deinit { continuation.finish() }
 
     public var currentTime: TimeInterval { active.currentTime }
-    var rawItemTime: TimeInterval { active.rawTime }
-    var activeAttenuatorStatus: SoundIsolationAttenuator.Status? { active.processing?.attenuator.status }
     public var duration: TimeInterval { active.duration }
     public var rate: Float { active.player.rate }
 
@@ -455,8 +452,6 @@ public final class AVDeckEngine: PlaybackEngine {
         state = .armed(next: next.track)
     }
 
-    /// The next song is playing (or about to, within milliseconds): it becomes the current one.
-    /// The previous song plays on (fading) on the idle deck until it ends.
     private func pivot(serial: Int) {
         guard let next = armed, next.serial == serial, case .scheduled(let at) = next.phase, let previous = currentTrack else { return }
         pivotTask = nil
@@ -756,7 +751,6 @@ final class Deck {
     var onBuffer: ((BufferState) -> Void)?
     var onFailure: ((String) -> Void)?
     var onDownloaded: ((URL) -> Void)?
-    /// The tap state changed (attached or not).
     var onProcessingChange: (() -> Void)?
     var onItemReplaced: (() -> Void)?
     var onExactEnd: (() -> Void)?
@@ -791,7 +785,6 @@ final class Deck {
         return nil
     }
 
-    /// Item time minus the tap's latency, held instead of running backwards.
     private var clock = HeardClock()
 
     var wantsPlayback = false
@@ -804,7 +797,6 @@ final class Deck {
     // Vorbis instead uses granule-timed PCM transcoding.
 
     private let downloadConfiguration: URLSessionConfiguration
-    /// Every remote file streams through a `ProgressiveDownload`, not only FLAC.
     var keepsDownloads = false
     private var playable: PlayableAsset?
     private var loadID = 0
@@ -813,20 +805,17 @@ final class Deck {
     private var playsPreciseCopy = false
     /// The item's time comes from a seek by estimate: what is heard may be seconds away from it.
     private var positionUncertain = false
-    /// Ogg Vorbis decoded by us into the PCM the item plays; nil when AVFoundation decodes.
     private var transcode: VorbisTranscode?
     private var reportedDownload = false
     private(set) var downloadedFile: URL?
     /// The song's duration read with precise timing from its finished download (for a file
     /// AVFoundation times by estimate otherwise, MP3 among them).
     private var exactDuration: CMTime?
-    /// Stream remote files through a download so their exact end is known (gapless / crossfade).
     var downloadsForTransitions = false
 
     var gain: Float = 1
     var asset: PlayableAsset? { playable }
 
-    /// Seeks in the current item land where AVFoundation estimates.
     private var seeksByEstimate: Bool { (playable.map(Self.estimatesTiming) ?? false) && !playsPreciseCopy && transcode == nil }
     var hasPreciseCopy: Bool { preciseCopy != nil }
     var playsSpatialMix: Bool { playable?.tier.isSpatial == true }
@@ -998,10 +987,6 @@ final class Deck {
         startAtRange(of: asset)
     }
 
-    /// Remote FLAC and Ogg always stream through a download (precise seeks need the whole file),
-    /// and so do a scrambled file (the download unscrambles it) and a transcode (it has no
-    /// length and no ranges: the item waits for all of it); other remote files do with
-    /// `keepsDownloads`, except HLS, trial excerpts and windows of a file.
     private func downloads(_ asset: PlayableAsset) -> Bool {
         guard !asset.url.isFileURL else { return false }
         if Self.estimatesTiming(asset) || asset.decryption != nil { return true }
@@ -1114,7 +1099,6 @@ final class Deck {
         positionUncertain = false
     }
 
-    /// Containers AVFoundation times by estimate unless the whole file is read first.
     static func estimatesTiming(_ container: AudioContainer) -> Bool {
         container == .flac || container == .ogg
     }

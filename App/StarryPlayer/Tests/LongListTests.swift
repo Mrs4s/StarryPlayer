@@ -148,7 +148,6 @@ struct TrackListLoaderTests {
         #expect(list.place(of: TrackRef(source: .local, id: "missing")) == nil)
 
         await list.load(through: "1700")
-        // Its chunk and the ones before it, not the rest.
         #expect(list.place(of: song) == .loaded(1_700))
         #expect(ids(list.tracks) == (0..<2_000).map(String.init))
         #expect(source.requests.map(\.count) == [500, 500, 500])

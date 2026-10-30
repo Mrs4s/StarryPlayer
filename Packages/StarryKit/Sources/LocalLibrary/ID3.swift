@@ -191,7 +191,6 @@ enum ID3v2 {
         return (type, rest.startIndex - body.startIndex)
     }
 
-    /// The front cover wins over other pictures; otherwise the first one stays.
     private static func keep(_ picture: EmbeddedPicture, in tag: inout Tag) {
         if tag.picture == nil || (tag.picture?.isFrontCover == false && picture.isFrontCover) { tag.picture = picture }
     }

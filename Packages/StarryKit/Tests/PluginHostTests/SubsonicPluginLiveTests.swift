@@ -7,14 +7,13 @@ import StarryCore
 import Testing
 
 /// `SUBSONIC_LIVE=<server> SUBSONIC_USER=… SUBSONIC_PASSWORD=… swift test --filter SubsonicPluginLive`:
-/// the Subsonic plugin against a real server (local ones in Docker from
-/// plugins/subsonic/test/test-servers.sh, or `https://demo.navidrome.org` with demo / demo). It
+/// the Subsonic plugin against a server with an existing library, or
+/// `https://demo.navidrome.org` with demo / demo. It
 /// only reads, except `editsPlaylists` (`SUBSONIC_WRITE=1`), which makes a playlist and deletes it.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["SUBSONIC_LIVE"] != nil), .serialized)
 struct SubsonicPluginLiveTests {
     static let environment = ProcessInfo.processInfo.environment
 
-    /// A fresh plugin signed in to the server.
     static func signedIn() async throws -> PluginSource {
         let source = PluginSource(plugin: try Plugin.load(file: SubsonicPluginTests.file, options: Plugin.Options(appVersion: "live")), settings: SourceSettingValues())
         let server = try await source.account.connect(to: environment["SUBSONIC_LIVE"] ?? "")
@@ -96,7 +95,6 @@ struct SubsonicPluginLiveTests {
                 do {
                     asset = try await source.resolvePlayableAsset(track, tier: tier)
                 } catch PluginError.script(_, "notPlayable", let message) {
-                    // The server would send what this Mac cannot play (Airsonic's Opus): told, not played.
                     row.append("\(tier.id): \(message)")
                     continue
                 }
@@ -128,7 +126,6 @@ struct SubsonicPluginLiveTests {
         }
     }
 
-    /// Creating a playlist, adding to it, reordering, removing, renaming and deleting on the real server.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSONIC_WRITE"] != nil)) func editsPlaylists() async throws {
         let source = try await Self.signedIn()
         let tracks = Array(try await Self.everySong(source).prefix(4))

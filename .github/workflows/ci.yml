@@ -50,11 +50,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The Vorbis / Opus tests need ffmpeg with libvorbis, which only ffmpeg-full (keg-only) has.
       - name: Install tools
-        run: |
-          brew install xcodegen ffmpeg-full
-          echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
+        run: brew install xcodegen
 
       - name: StarryKit tests
         run: scripts/test.sh

@@ -1,7 +1,3 @@
-// What a library of the listener's own offers on top of its songs, whatever the server: the
-// quality tiers a song's file reaches, when a play counts, and an endless radio made from mixes
-// of the library (personal FM).
-
 import type { PlaybackReport, QualityTier, Track } from '../sdk/starry';
 
 export const isLossless = (codec: unknown) => typeof codec === 'string' && /^(flac|alac|pcm|wav|aiff?|wavpack|wv|ape|tta|dsd|dsf|dff|mlp|truehd|wmalossless)/i.test(codec);
@@ -66,7 +62,6 @@ export async function nextRadioSongs(source: RadioSource, firstFetch: boolean): 
   return batch;
 }
 
-/** Dislike: never on this account's radio again. */
 export function trashRadioSong(account: string, trackID: string): void {
   const all = starry.storage.get<Record<string, string[]>>('fmTrash') ?? {};
   const kept = (all[account] ?? []).filter((id) => id !== trackID);

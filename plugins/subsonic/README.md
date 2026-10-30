@@ -22,10 +22,9 @@ npm test             # Node 里的单元测试（连同 ../common 的），服�
 
 宿主里的测试：`swift test --filter SubsonicPluginTests`，在 JSC 里跑打包后的插件，打桩一台 Navidrome。
 
-联网测试连真服务器：
+联网测试连接已有曲库的服务器：
 
 ```bash
-test/test-servers.sh ~/subsonic-test          # Docker 起 Navidrome、gonic、Airsonic-Advanced、LMS，并生成测试曲库（需要 docker、ffmpeg、python3）
 SUBSONIC_LIVE=127.0.0.1:14533 SUBSONIC_USER=family SUBSONIC_PASSWORD=pw swift test --filter SubsonicPluginLive
 SUBSONIC_WRITE=1 …                            # 再加上编辑歌单（建一个测试歌单，最后删掉）
 SUBSONIC_LIVE=https://demo.navidrome.org swift test --filter "SubsonicPluginLiveTests/(browses|lyrics)"   # 公开演示服务器 demo / demo，只读

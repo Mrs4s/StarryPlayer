@@ -16,7 +16,6 @@ struct AppVersion: Comparable, Sendable, CustomStringConvertible {
         self.parts = parts.compactMap { $0 }
     }
 
-    /// This build's version.
     static let current = AppVersion(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
 
     var description: String { parts.map(String.init).joined(separator: ".") }
@@ -39,14 +38,11 @@ struct AppVersion: Comparable, Sendable, CustomStringConvertible {
 /// only the version, and its page and disk images are where the release workflow puts them.
 struct AppRelease: Equatable, Sendable {
     var version: AppVersion
-    /// The release notes in Markdown; nil when a mirror gave only the version.
     var notes: String?
     var page: URL
     /// Disk images by architecture ("arm64", "x86_64").
     var images: [String: URL]
 
-    /// Only the version known: the page and images named as `scripts/package.sh` and
-    /// `.github/workflows/release.yml` publish them.
     init(version: AppVersion) {
         let tag = "v\(version)"
         let releases = "https://github.com/\(ReleaseFeed.repository)/releases"
@@ -73,12 +69,9 @@ struct AppRelease: Equatable, Sendable {
         return sysctlbyname("hw.optional.arm64", &arm64, &size, nil, 0) == 0 && arm64 == 1 ? "arm64" : "x86_64"
     }()
 
-    /// The disk image for this Mac, or the release page when there is none.
     var download: URL { images[Self.machineArchitecture] ?? page }
 }
 
-/// Where releases are looked up: GitHub's API, and when that cannot be reached (blocked in
-/// mainland China, rate limited) the latest tag through jsDelivr's mirrors.
 struct ReleaseFeed: Sendable {
     /// A URL's body; throws for a failed request or a status other than 2xx.
     typealias Load = @Sendable (URLRequest) async throws -> Data
@@ -191,8 +184,6 @@ struct ReleaseFeed: Sendable {
     }
 }
 
-/// Looks for a newer release: when asked (the app menu, Settings), and on its own once a day
-/// while the setting is on.
 @MainActor
 @Observable
 final class UpdateCenter {
@@ -224,7 +215,6 @@ final class UpdateCenter {
         lastChecked = defaults.object(forKey: Self.lastCheckedKey) as? Date
     }
 
-    /// Looks now, or waits for the look already under way.
     @discardableResult
     func check() async -> Status {
         if let running {
@@ -255,7 +245,6 @@ final class UpdateCenter {
         }
     }
 
-    /// An automatic check is due: none has succeeded in the last day (or the clock went back).
     func isDue(at now: Date = Date()) -> Bool {
         guard let lastChecked else { return true }
         let elapsed = now.timeIntervalSince(lastChecked)
@@ -271,9 +260,6 @@ final class UpdateCenter {
         defaults.string(forKey: Self.skippedKey).flatMap(AppVersion.init) == release.version
     }
 
-    /// Checks shortly after launch and then every hour whenever one is due and `isEnabled` (read
-    /// each time, so the setting applies at once) says so; a newer release, unless skipped, goes
-    /// to `found`.
     func startAutomaticChecks(isEnabled: @escaping @MainActor () -> Bool, found: @escaping @MainActor (AppRelease) -> Void) {
         schedule?.cancel()
         schedule = Task { [weak self] in
@@ -289,7 +275,6 @@ final class UpdateCenter {
 }
 
 extension AppModel {
-    /// A check asked for from the app menu: the release when there is one, else a toast.
     func checkForUpdates() {
         Task {
             switch await updates.check() {

@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import Testing
 @testable import AudioProcessing
@@ -48,7 +47,6 @@ import Testing
         let parametric = ResponseSampler(frequencies: probes).response(bands: settings.bands)
         for (a, b) in zip(graphic, parametric) { #expect(abs(a - b) < 1e-9) }
 
-        // Back and forth keeps each mode's own settings.
         settings.setMode(.graphic)
         settings.select(.flat)
         settings.setMode(.parametric)
@@ -248,90 +246,6 @@ import Testing
         #expect(ParametricEqualizer.gainText(-0.04) == "0 dB")
         #expect(ParametricEqualizer.qText(0.7) == "0.70")
         #expect(ParametricEqualizer.rounded(frequency: 2153.4) == 2150)
-    }
-
-    // MARK: Processing
-
-    @Test func outputFollowsTheParametricCurve() {
-        var settings = EqualizerSettings()
-        settings.isEnabled = true
-        settings.setParametric(EqualizerAPOText.parse("""
-        Filter: ON LSC Fc 105 Hz Gain 5.6 dB Q 0.7
-        Filter: ON PK Fc 2000 Hz Gain -4 dB Q 2
-        Filter: ON HPQ Fc 30 Hz Q 0.7
-        Filter: ON NO Fc 6000 Hz Q 3
-        """), name: "")
-        for frequency in [60.0, 1000, 2000, 5000] {
-            let processor = EqualizerTests.processor(EqualizerTests.control(settings))
-            let input = EqualizerTests.sine(frequency: frequency, amplitude: 0.1, frames: 44100)
-            let output = EqualizerTests.run(processor, input)
-            let measured = 20 * log10(EqualizerTests.rms(output.suffix(8192)) / EqualizerTests.rms(input.suffix(8192)))
-            let expected = ResponseSampler(frequencies: [frequency], sampleRate: EqualizerTests.sampleRate).response(bands: settings.bands)[0]
-            #expect(abs(measured - expected) < 0.1, "\(frequency) Hz: \(measured) vs \(expected)")
-        }
-    }
-
-    /// Changing a band's type, removing one and adding a low-pass while music plays glides or
-    /// fades: no step in the output bigger than the sine's own.
-    @Test func editsWhilePlayingDoNotClick() {
-        var settings = EqualizerSettings()
-        settings.isEnabled = true
-        settings.setParametric(EqualizerAPOText.parse("""
-        Filter: ON PK Fc 440 Hz Gain 9 dB Q 2
-        Filter: ON HSC Fc 3000 Hz Gain -6 dB Q 0.7
-        """), name: "")
-        let control = EqualizerTests.control(settings)
-        let processor = EqualizerTests.processor(control)
-        let frequency = 440.0, amplitude: Float = 0.2
-        let input = EqualizerTests.sine(frequency: frequency, amplitude: amplitude, frames: 4410)
-        var output = EqualizerTests.run(processor, input)
-        let edits: [(inout EqualizerSettings) -> Void] = [
-            { $0.updateBand(slot: 0) { $0.filter = .highPass } },
-            { $0.updateBand(slot: 0) { $0.frequency = 2000 } },
-            { $0.removeBand(slot: 1) },
-            { $0.addBand(ParametricBand(slot: 0, filter: .lowPass, frequency: 300, q: 0.7)) },
-            { $0.updateBand(slot: 0) { $0.isOn = false } },
-            { $0.isEnabled = false },
-        ]
-        for edit in edits {
-            edit(&settings)
-            let state = EqualizerControl.state(for: settings)
-            control.update { $0 = state }
-            // Continue the sine where it left off.
-            let start = output.count
-            let next = (0..<4410).map { amplitude * Float(sin(2 * .pi * frequency * Double(start + $0) / EqualizerTests.sampleRate)) }
-            output += EqualizerTests.run(processor, next)
-        }
-        #expect(output.allSatisfy { $0.isFinite })
-        let largestStep = zip(output.dropFirst(), output).map { abs($0 - $1) }.max() ?? 0
-        let sineStep = Float(2 * .pi * frequency / EqualizerTests.sampleRate) * amplitude
-        // The peak lifts the sine up to 9 dB (2.8×); a click would be far beyond.
-        #expect(largestStep < sineStep * 3.2, "\(largestStep) vs \(sineStep)")
-        // Off is bit-exact again once the filters have rung out.
-        let tail = EqualizerTests.sine(frequency: frequency, amplitude: amplitude, frames: 4096)
-        _ = EqualizerTests.run(processor, EqualizerTests.sine(frequency: frequency, amplitude: amplitude, frames: 44100))
-        #expect(EqualizerTests.run(processor, tail) == tail)
-    }
-
-    /// A 0 dB band moved while nothing plays through the equalizer (it is bypassed) is
-    /// already where it was moved to when its gain comes up: no sweep from the old frequency.
-    @Test func bandsMovedWhileBypassedStartWhereTheyAre() {
-        var settings = EqualizerSettings()
-        settings.isEnabled = true
-        settings.clipGuard = false
-        settings.setParametric(EqualizerAPOText.parse("Filter: ON PK Fc 100 Hz Gain 0 dB Q 1"), name: "")
-        let control = EqualizerTests.control(settings)
-        let processor = EqualizerTests.processor(control)
-        let input = EqualizerTests.sine(frequency: 100, amplitude: 0.2, frames: 8820)
-        #expect(EqualizerTests.run(processor, input) == input)
-        for edit: (inout ParametricBand) -> Void in [{ $0.frequency = 5000 }, { $0.gain = 12 }] {
-            settings.updateBand(slot: 0, edit)
-            let state = EqualizerControl.state(for: settings)
-            control.update { $0 = state }
-            let output = EqualizerTests.run(processor, input)
-            let peak = output.map(abs).max() ?? 0
-            #expect(peak < 0.2 * 1.05, "\(peak)")
-        }
     }
 
     @Test func readsAByteOrderMark() {

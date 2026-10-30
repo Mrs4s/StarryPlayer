@@ -34,7 +34,7 @@ final class LyricSourcePins {
     private let directory: DataDirectory?
     private var entries: [String: Entry]
 
-    /// nil keeps the pins in memory only (tests, a launch without `keepsData`).
+    /// nil keeps the pins in memory only.
     init(directory: DataDirectory?) {
         self.directory = directory
         entries = directory?.readCodable([String: Entry].self, name: Self.fileName) ?? [:]
@@ -44,7 +44,6 @@ final class LyricSourcePins {
         entries[Self.key(track)]?.pin
     }
 
-    /// nil unpins.
     func set(_ pin: LyricsPin?, for track: TrackRef) {
         entries[Self.key(track)] = pin.map(Entry.init)
         if entries.count > Self.limit {

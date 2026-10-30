@@ -1,6 +1,3 @@
-// The account's own: playlists, favourites (liking, collecting and following all map to the
-// server's favourites), personal FM from instant mixes, and plays counted on the server.
-
 import { countsAsPlay, nextRadioSongs, stopRadio, trashRadioSong } from '../../common/library';
 import type { Playlist, PlaybackReport, Track } from '../../sdk/starry';
 import { api, locate, requireSession, type Server } from './client';
@@ -54,7 +51,6 @@ export async function likedTrackIDs(): Promise<string[]> {
   return ordered.ids;
 }
 
-/** On the server the item lives on, as its user there. */
 async function setFavourite(id: string, favourite: boolean): Promise<Server> {
   const { server } = await locate(id, (server) =>
     api(server, `/UserFavoriteItems/${encodeURIComponent(id)}`, { method: favourite ? 'POST' : 'DELETE', query: { userId: server.userId } }),
@@ -100,7 +96,6 @@ export async function personalFM(_mode: string, firstFetch: boolean): Promise<Tr
   }, firstFetch);
 }
 
-/** Dislike: never on this account's radio again. */
 export async function trashFM(trackID: string): Promise<void> {
   trashRadioSong(accountKey(requireSession()), trackID);
 }

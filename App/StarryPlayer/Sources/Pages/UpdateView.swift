@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The window telling of a newer release: what changed, and the disk image for this Mac.
 struct UpdateView: View {
     var release: AppRelease
     @Environment(AppModel.self) private var model
@@ -67,10 +66,8 @@ struct UpdateView: View {
         return "\(release.version) 已发布，你现在用的是 \(current)"
     }
 
-    /// As tall as the notes, up to `notesMaxHeight`; longer notes scroll.
     private var notes: some View {
         let blocks = release.notes.map(ReleaseNotes.blocks) ?? []
-        // No notes at all: a mirror gave only the version.
         let placeholder = release.notes == nil ? "暂时连不上 GitHub，没能取到这次的更新说明，可以稍后到发布页查看。" : "这个版本没有写更新说明。"
         return CappedHeight(maxHeight: Self.notesMaxHeight) {
             ReleaseNotesText(blocks: blocks, placeholder: placeholder).hidden()
@@ -85,8 +82,6 @@ struct UpdateView: View {
     }
 }
 
-/// As tall as its first subview at the width offered, up to `maxHeight`; every subview is laid
-/// out in that space.
 private struct CappedHeight: Layout {
     var maxHeight: CGFloat
 
@@ -146,8 +141,6 @@ private struct TrailingIconLabel: LabelStyle {
     }
 }
 
-/// Release notes as GitHub writes them, line by line: headings, bullets and paragraphs, with
-/// inline Markdown and bare links made clickable (generated notes link pull requests that way).
 enum ReleaseNotes {
     enum Block: Equatable {
         case heading(String)

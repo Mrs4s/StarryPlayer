@@ -1,10 +1,7 @@
 import AppKit
 
-/// The library window, from places outside it (the menu bar lyrics' menu, the notch player).
 @MainActor
 enum MainWindow {
-    /// Brings the app forward with its window: back from the Dock if minimised, opened again if
-    /// it was closed.
     static func show() {
         NSApp.activate()
         let window = NSApp.windows.first { window in

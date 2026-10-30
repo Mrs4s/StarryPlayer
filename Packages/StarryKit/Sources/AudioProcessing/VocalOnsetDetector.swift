@@ -12,11 +12,8 @@ public struct VocalOnset: Sendable, Equatable {
     }
 }
 
-/// Offline onset suggestions for isolated vocals. The frequency maximum filter follows
-/// the vibrato-suppression idea in Böck & Widmer (DAFx 2013); peak picking uses a local
-/// median/MAD baseline and energy gating. An independent high-band envelope catches
-/// unvoiced consonants; a following vowel can reinforce their earlier start.
-/// Broad spectral-envelope changes also reinforce boundaries between connected vowels.
+/// Onset hints using vibrato suppression (Böck & Widmer, DAFx 2013), median/MAD
+/// peak picking, and independent consonant and spectral-envelope cues.
 public enum VocalOnsetDetector {
     public struct Analysis: Sendable {
         public var onsets: [VocalOnset]

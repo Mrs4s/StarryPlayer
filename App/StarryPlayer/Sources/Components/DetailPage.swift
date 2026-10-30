@@ -8,8 +8,6 @@ struct DetailPageScroll<Tab: RawRepresentable & Hashable, Hero: View, Bar: View,
     var backdrop: PageBackdrop
     var hero: (Binding<Tab>) -> Hero
     var bar: (Binding<Tab>) -> Bar
-    /// The selected tab as rows of the page's lazy stack (several views, not one container),
-    /// given the same binding as the bar (a "show all" link on one tab switching to another).
     var rows: (Binding<Tab>) -> Rows
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -81,7 +79,6 @@ struct DetailPageScroll<Tab: RawRepresentable & Hashable, Hero: View, Bar: View,
                 .coordinateSpace(.pageContent)
                 .onGeometryChange(for: CGFloat.self) { -$0.frame(in: .scrollView).minY } action: { offset in
                     scroll.offset = offset
-                    // The wash fades over the header's height, so it is gone when the tabs pin.
                     let fade = (Double(min(max(offset / max(fadeDistance, 1), 0), 1)) * 60).rounded() / 60
                     if backdrop.fade != fade { backdrop.fade = fade }
                 }
@@ -139,10 +136,6 @@ struct DetailPageScroll<Tab: RawRepresentable & Hashable, Hero: View, Bar: View,
         Task { @MainActor in tabDirection = 0 }
     }
 
-    /// Rows come in fading and sliding from the tab's side; the outgoing tab leaves at once, so
-    /// the two never stack up in the layout. Outside a tab switch a row taken out in an
-    /// animated change (a song unliked on the liked songs page) fades quickly, mostly gone before the
-    /// rows below slide over it.
     private var tabTransition: AnyTransition {
         .asymmetric(
             insertion: AnyTransition.opacity.combined(with: .offset(x: reduceMotion ? 0 : 28 * tabDirection)).animation(Motion.tab),
@@ -151,8 +144,6 @@ struct DetailPageScroll<Tab: RawRepresentable & Hashable, Hero: View, Bar: View,
     }
 }
 
-/// Pinned under the header bar. Transparent while it scrolls with the page; once pinned it
-/// takes the surface colour and a full-width hairline, so rows slide under it cleanly.
 struct DetailTabBar<Tab: Hashable, Accessory: View>: View {
     @Binding var tab: Tab
     var items: [PageTabs<Tab>.Item]
@@ -193,7 +184,6 @@ struct DetailTabBar<Tab: Hashable, Accessory: View>: View {
 }
 
 extension DetailTabBar where Accessory == DetailTabSearch {
-    /// With a search field while `search` is non-nil.
     init(tab: Binding<Tab>, items: [PageTabs<Tab>.Item], search: Binding<String>?, searchPlaceholder: String = "搜索") {
         self.init(tab: tab, items: items) { DetailTabSearch(text: search, placeholder: searchPlaceholder) }
     }
@@ -277,8 +267,6 @@ struct CoverPlayButton: View {
     }
 }
 
-/// A detail page's description in two lines. Hovering brightens it and nudges its chevron; a click opens
-/// all of it with the tags in a popover, so the header keeps its height.
 struct DescriptionPeek: View {
     var title: String
     var text: String

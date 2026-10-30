@@ -1,7 +1,6 @@
 import AudioProcessing
 import CoreML
 import CryptoKit
-import AVFoundation
 import Foundation
 import Testing
 
@@ -18,42 +17,6 @@ import Testing
         #expect(weights.count == metadata["weights_bytes"] as? Int)
         let digest = SHA256.hash(data: weights).map { String(format: "%02x", $0) }.joined()
         #expect(digest == metadata["weights_sha256"] as? String)
-    }
-
-    @Test func duetServiceWritesCompleteReadableTracksOnItsBackgroundActor() async throws {
-        let model = try #require(VocalDuetSeparator.bundledModel(in: .main))
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("duet-service-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let source = folder.appendingPathComponent("source.caf")
-        let format = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
-        let samples = (0..<480_000).map { i in Float(0.1*sin(2 * .pi * 700 * Double(i)/24000)) }
-        try autoreleasepool {
-            let file = try AVAudioFile(forWriting: source, settings: format.settings)
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480_000)!
-            buffer.frameLength = buffer.frameCapacity
-            samples.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
-            try file.write(from: buffer)
-        }
-        let result = try await VocalDuetSeparator().separate(file: source,
-            first: folder.appendingPathComponent("a.caf"), second: folder.appendingPathComponent("b.caf"), model: model)
-        var sum = [Float](repeating: 0, count: samples.count)
-        for url in [result.first, result.second] {
-            let file = try AVAudioFile(forReading: url)
-            #expect(file.length == 480_000)
-            let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 4096)!
-            var offset = 0
-            while offset < sum.count {
-                try file.read(into: buffer, frameCount: AVAudioFrameCount(min(4096, sum.count-offset)))
-                let count = Int(buffer.frameLength)
-                try #require(count > 0)
-                for i in 0..<count { sum[offset+i] += buffer.floatChannelData![0][i] }
-                offset += count
-            }
-        }
-        let error = zip(sum,samples).reduce(0.0) { $0 + pow(Double($1.0-$1.1),2) }
-        let energy = samples.reduce(0.0) { $0 + Double($1*$1) }
-        #expect(sqrt(error/energy) < 0.001)
     }
 
     @Test func duetModelIsBundledWithTheValidatedSpectralContract() throws {

@@ -11,7 +11,6 @@ public struct UserProfile: Identifiable, Hashable, Sendable, Codable {
     public var nickname: String
     public var avatar: Artwork?
     public var signature: String?
-    /// The source's account level; nil when it has none.
     public var level: Int?
     /// The highest `level` the source has, for showing how far along it is; nil
     /// when the source does not say.
@@ -134,8 +133,6 @@ public protocol UserFollowSource: UserSource {
 }
 
 public enum UserSourceError: Error, Sendable, Equatable {
-    /// The user does not show their listening ranking to others.
     case rankingHidden
-    /// The user does not show who they follow or who follows them.
     case followsHidden
 }

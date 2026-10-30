@@ -70,13 +70,11 @@ struct NavigationHistoryTests {
         var history = NavigationHistory()
         (1...12).forEach { history.open(search($0)) }
         #expect(history.live.map(\.route) == (4...12).map(search))
-        // Going back does not mount the page coming into the window behind.
         history.goBack()
         #expect(history.live.map(\.route) == (4...11).map(search))
         (1...8).forEach { _ in history.goBack() }
         #expect(history.current.route == search(3))
         #expect(history.live.map(\.route) == [search(3)])
-        // So does opening one.
         history.open(search(1))
         #expect(history.entries.map(\.route) == [.home, search(2), search(3), search(1)])
         #expect(history.live.map(\.route) == [search(3), search(1)])

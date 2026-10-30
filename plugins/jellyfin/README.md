@@ -15,7 +15,6 @@ npm test             # Node 里的单元测试（连同 ../common 的），服�
 和 Subsonic 插件共用 [`../common`](../common) 里的代码（地址补全、歌词转换、私人 FM、音质档位）。构建产物不用提交，App 构建时会重新打包（`../common` 改了，两个插件都会重建）。宿主里的测试：`swift test --filter JellyfinPluginTests`（在 JSC 里跑打包后的插件，打桩一台 12.1 服务器）；联网测试连一台真服务器：
 
 ```bash
-test/test-server.sh ~/jellyfin-test          # Docker 起一台 12.1 并建好测试曲库（需要 docker、ffmpeg）
 JELLYFIN_LIVE=127.0.0.1:18096 JELLYFIN_USER=family JELLYFIN_PASSWORD=pw swift test --filter JellyfinPluginLive
 JELLYFIN_LIVE=https://demo.jellyfin.org/stable swift test --filter "JellyfinPluginLive/(browses|lyrics)"   # 公开演示服务器，只读
 ```

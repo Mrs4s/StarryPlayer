@@ -19,7 +19,7 @@ final class LyricOffsetStore {
     private let directory: DataDirectory?
     private var entries: [String: Entry]
 
-    /// nil keeps the offsets in memory only (tests, a launch without `keepsData`).
+    /// nil keeps the offsets in memory only.
     init(directory: DataDirectory?) {
         self.directory = directory
         entries = directory?.readCodable([String: Entry].self, name: Self.fileName) ?? [:]
@@ -138,8 +138,6 @@ enum LyricCalibrationAudio {
         }
     }
 
-    /// The offset was not changed: why, without claiming the lyrics are wrong when the audio
-    /// only did not show it clearly.
     static func message(for failure: LyricsCalibration.Failure) -> String {
         switch failure {
         case .tooLittle: "没能校准：这首歌可用来对齐的演唱或歌词太少"

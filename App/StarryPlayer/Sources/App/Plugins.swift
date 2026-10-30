@@ -20,7 +20,6 @@ extension AppModel {
 
     struct PendingPlugin: Identifiable {
         var package: PluginPackage
-        /// Where it was downloaded from; nil for a file.
         var address: URL?
         var id: String { package.manifest.id }
     }
@@ -46,7 +45,6 @@ extension AppModel {
         registry.source(for: id)?.displayName ?? LyricsProviderID(source: id)?.displayName ?? id.key
     }
 
-    /// The loaded plugin `pending` would take the place of, if any.
     func pluginReplaced(by pending: PendingPlugin) -> Plugin? {
         plugins.plugin(id: pending.package.manifest.id)
     }
@@ -69,7 +67,6 @@ extension AppModel {
         reloadPlugins()
     }
 
-    /// Deletes a file in the plugin folder that did not load.
     func removePluginFile(_ failure: PluginManager.Failure) throws {
         guard failure.origin == .installed else { return }
         try FileManager.default.removeItem(at: failure.file)

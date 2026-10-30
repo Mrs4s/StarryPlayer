@@ -4,7 +4,6 @@ import StarryCore
 public struct PlaybackSnapshot: Codable, Sendable, Equatable {
     public var queue: [Track]
     public var index: Int
-    /// Seconds into the current song.
     public var position: TimeInterval
     public var context: PlaybackContext?
     public var repeatMode: RepeatMode

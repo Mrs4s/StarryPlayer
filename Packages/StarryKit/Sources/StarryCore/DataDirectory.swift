@@ -1,8 +1,6 @@
 import Foundation
 
-/// JSON files in the app's data directory for account cookies and server credentials:
-/// `~/Library/Application Support/moe.mrs4s.starry-player/<name>.json`. The directory is 0700
-/// and files are 0600, so only the current user can read them.
+/// Stores account credentials as JSON with 0700 directories and 0600 files.
 public struct DataDirectory: Sendable {
     public var url: URL
 

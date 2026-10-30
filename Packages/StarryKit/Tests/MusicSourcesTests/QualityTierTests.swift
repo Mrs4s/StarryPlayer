@@ -25,14 +25,12 @@ import StarryCore
         #expect(Self.platform.tier(for: .hiRes).id == "hi-res")
         #expect(Self.platform.tier(for: .hq).id == "hq")
         #expect(Self.platform.tier(for: .sq).id == "lq")
-        // A spatial mix is never what the global preference means.
         #expect(!AudioQuality.allCases.contains { Self.platform.tier(for: $0).isSpatial })
     }
 
     @Test func aTierPickedForTheSourceWins() {
         #expect(Self.platform.requestedTier(preferred: .hq, override: "dolby") == Self.dolby)
         #expect(Self.platform.requestedTier(preferred: .hq, override: nil).id == "hq")
-        // A pick the source no longer has (Dolby on a Mac that cannot play it) is ignored.
         #expect(Self.platform.requestedTier(preferred: .lossless, override: "atmos").id == "lossless")
     }
 

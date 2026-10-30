@@ -15,7 +15,6 @@ const plugin: Plugin = {
   description: '连接自己的 Jellyfin 服务器：曲库、歌单、收藏、歌词和播放次数',
   homepage: 'https://jellyfin.org',
   icon: 'server.rack',
-  // The server is wherever the listener keeps it.
   permissions: { hosts: ['*'] },
 
   source: {

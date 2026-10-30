@@ -42,10 +42,6 @@ LocalizedStringResource("restorePlayback.title", defaultValue: "启动时恢复�
 
 StarryKit 的单元测试用 `scripts/test.sh` 运行。应用层媒体控制联动测试位于 `App/StarryPlayer/Tests`，可在 Xcode 中用 `StarryPlayer` scheme 执行 Test（⌘U），或运行 `xcodebuild -project StarryPlayer.xcodeproj -scheme StarryPlayer -destination 'platform=macOS' test`。
 
-本地曲库测试需要 PATH 中的 Python 3 和 ffmpeg（可用 `brew install python ffmpeg` 安装）。首次读取样本时会调用 `scripts/local-files/make-corpus.py`，在系统临时目录生成一组 1 秒合成音频，同一测试进程共用；仓库不保存这些音频，也不将它们声明为打包资源。单独运行：`swift test --package-path Packages/StarryKit --filter LocalLibraryTests`。
-
-播放引擎的 Vorbis / Opus 测试同样在临时目录生成合成音频，需要 PATH 中的 ffmpeg（含 libvorbis 和 libopus 编码器），不附带音频资源。单独运行：`swift test --package-path Packages/StarryKit --filter 'OggVorbisTests|VorbisTranscodeEngineTests'`。
-
 ### 联网测试
 
 ```bash
@@ -53,7 +49,7 @@ cd Packages/StarryKit && LYRICS_LIVE=1 swift test --filter LyricsLive     # AMLL
 cd Packages/StarryKit && PLUGINS_LIVE=1 swift test --filter ExamplePluginLive    # 示例插件（LRCLIB、Audius）
 ```
 
-Jellyfin、Subsonic 的联网测试和本地测试服务器见各自的 README。
+Jellyfin、Subsonic 的联网测试需连接已有曲库的服务器，见各自的 README。
 
 ## 插件
 

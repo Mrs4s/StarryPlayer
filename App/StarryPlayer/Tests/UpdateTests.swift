@@ -82,8 +82,6 @@ struct ReleaseFeedTests {
         #expect(await log.hosts == ["api.github.com"])
     }
 
-    /// GitHub blocked or rate limited: the version comes from whichever mirror answers, and the
-    /// downloads point where the release workflow publishes them.
     @Test func fallsBackToMirrorsWhenGitHubFails() async throws {
         let feed = ReleaseFeed { request in
             guard request.url?.host() == "fastly.jsdelivr.net" else { throw URLError(.timedOut) }
@@ -126,7 +124,6 @@ struct UpdateCenterTests {
         #expect(release.version == version("1.1.0"))
         #expect(updates.lastChecked != nil)
         #expect(!updates.isDue())
-        // Remembered across launches.
         #expect(center(current: "1.0.0", answer: .success(githubRelease)).lastChecked == updates.lastChecked)
     }
 

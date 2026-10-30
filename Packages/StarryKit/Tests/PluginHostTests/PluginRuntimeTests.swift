@@ -57,12 +57,9 @@ import Testing
         let manager = PluginManager(paths: [directory], options: Fixture.options())
         #expect(manager.plugins.map(\.manifest.id) == ["a.b"])
         #expect(manager.failures.map(\.file.lastPathComponent) == ["3-broken.js"])
-        // A second copy of an id is not an error: the first one found replaced it.
         #expect(manager.replaced["a.b"]?.map(\.lastPathComponent) == ["2-again.js"])
     }
 
-    /// Installed copies come before built-in ones; a plugin turned off is listed but gives
-    /// nothing, and does not hold its platform against one that is on.
     @Test func managerOriginsAndSwitches() throws {
         let installed = Fixture.temporaryDirectory()
         let builtIn = Fixture.temporaryDirectory()
@@ -108,8 +105,6 @@ import Testing
         #expect(manager.plugin(id: "x.music").map(manager.origin(of:)) == .development)
     }
 
-    /// A platform has one source and one lyrics provider: a lyrics-only plugin stands for it next
-    /// to the source plugin, a second lyrics provider for it does not load.
     @Test func managerSharesAPlatformBetweenRoles() throws {
         let directory = Fixture.temporaryDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

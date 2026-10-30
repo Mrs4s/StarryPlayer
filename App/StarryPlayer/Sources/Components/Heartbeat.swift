@@ -5,7 +5,6 @@ import SwiftUI
 struct LikedCover: View {
     var size: CGFloat
     var playing: Bool
-    /// Changes with every like and unlike.
     var pulse: Int
     @Environment(AppModel.self) private var model
     @Environment(\.isPageActive) private var pageActive
@@ -52,8 +51,7 @@ final class HeartbeatView: NSView {
     }
     var level: (@MainActor () -> Float)?
 
-    /// Swells with the music; holds `heart`, which takes the pulse beats, so the two scale
-    /// together without fighting over one transform.
+    /// A separate layer lets bass scaling and pulse beats compose without sharing a transform.
     private let swell = CALayer()
     private let heart = CALayer()
     private var link: CADisplayLink?

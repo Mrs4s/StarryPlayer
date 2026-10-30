@@ -1,6 +1,3 @@
-// The plugin host's JavaScript half: the `starry` object, the web globals JavaScriptCore lacks,
-// and the hooks the host calls a plugin through. Runs once in each plugin's context before the
-// plugin's own file; its value is the hooks object.
 (function (global, native) {
   'use strict';
   delete global.__starryNative;

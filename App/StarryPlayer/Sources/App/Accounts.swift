@@ -9,13 +9,9 @@ import StarryCore
 @MainActor
 @Observable
 final class AccountCenter {
-    /// By source. A source missing here has no account, or has not reported yet.
     private(set) var states: [SourceID: AccountState] = [:]
     private(set) var users: [SourceID: String] = [:]
-    /// The vault's accounts, mirrored so views follow it.
     private(set) var kept: [SourceID: [KeptAccount]] = [:]
-    /// Sources adding or switching an account right now; their buttons wait, and another
-    /// switch is not started.
     private(set) var switching: Set<SourceID> = []
 
     /// A source's state changed: (source, the user signed in before — kept through

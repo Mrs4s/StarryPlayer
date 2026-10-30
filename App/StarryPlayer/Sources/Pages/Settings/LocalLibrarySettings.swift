@@ -142,7 +142,6 @@ struct LocalFolderRow: View {
     }
 }
 
-/// Removing the songs that cannot be found, after a confirmation.
 struct PurgeMissingButton: View {
     var count: Int
     @Environment(AppModel.self) private var model

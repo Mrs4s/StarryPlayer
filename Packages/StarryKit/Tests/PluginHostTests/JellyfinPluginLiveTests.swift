@@ -13,7 +13,6 @@ import Testing
 struct JellyfinPluginLiveTests {
     static let environment = ProcessInfo.processInfo.environment
 
-    /// A fresh plugin signed in to the server.
     static func signedIn() async throws -> PluginSource {
         let source = PluginSource(plugin: try Plugin.load(file: JellyfinPluginTests.file, options: Plugin.Options(appVersion: "live")), settings: SourceSettingValues())
         let server = try await source.account.connect(to: environment["JELLYFIN_LIVE"] ?? "")
@@ -83,8 +82,6 @@ struct JellyfinPluginLiveTests {
         }
     }
 
-    /// Every song at every tier: what it comes as, and that the address answers (a byte range
-    /// of the file, the start of a conversion); the loudness the server measured, if it did.
     @Test func streams() async throws {
         let source = try await Self.signedIn()
         let tracks = try await Self.everySong(source)

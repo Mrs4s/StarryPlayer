@@ -138,7 +138,6 @@ function des(block: Uint8Array, keys: Uint8Array[]): Uint8Array {
 }
 
 let decryption: Uint8Array[][] | undefined;
-let encryption: Uint8Array[][] | undefined;
 
 function run(data: Uint8Array, stages: Uint8Array[][]): Uint8Array {
   if (data.length % 8 !== 0) throw new Error('QRC: bad length');
@@ -155,12 +154,6 @@ function run(data: Uint8Array, stages: Uint8Array[][]): Uint8Array {
 export function qrcDecrypt(data: Uint8Array): Uint8Array {
   decryption ??= [subkeys(KEY.subarray(16, 24), true), subkeys(KEY.subarray(8, 16), false), subkeys(KEY.subarray(0, 8), true)];
   return run(data, decryption);
-}
-
-/** The inverse, E(k1) → D(k2) → E(k3), for tests to make the gateway's payloads. */
-export function qrcEncrypt(data: Uint8Array): Uint8Array {
-  encryption ??= [subkeys(KEY.subarray(0, 8), false), subkeys(KEY.subarray(8, 16), true), subkeys(KEY.subarray(16, 24), false)];
-  return run(data, encryption);
 }
 
 export function qrcText(hexText: string | undefined): string | null {

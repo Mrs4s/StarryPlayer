@@ -48,7 +48,6 @@ public enum LyricsTranslation {
     public struct Changes: Sendable, Equatable {
         public var translations = 0
         public var romanizations = 0
-        /// Syllables whose ruby changes.
         public var rubies = 0
         public var lines: Set<UUID> = []
 

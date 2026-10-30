@@ -1,6 +1,3 @@
-// What a plugin for a server of the listener's own needs whatever the server speaks: where to look
-// for the address typed, versions compared, dates read, and lists of songs kept in order.
-
 export function addressCandidates(typed: string, webPaths: RegExp[] = []): string[] {
   let address = typed.trim().replace(/[?#].*$/, '');
   for (const path of webPaths) address = address.replace(path, '');
@@ -32,7 +29,6 @@ export function isAtLeast(version: unknown, minimum: number[]): boolean {
 
 export const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 
-/** A positive number, or undefined. */
 export const positive = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined);
 
 /**

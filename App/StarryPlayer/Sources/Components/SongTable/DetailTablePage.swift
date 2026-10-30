@@ -37,7 +37,6 @@ extension EnvironmentValues {
     @Entry var detailBarPinned: Bool? = nil
 }
 
-/// Hosts the hero and tab bar in SwiftUI, with AppKit song rows for long lists.
 struct DetailTablePage<Tab: RawRepresentable & Hashable>: NSViewRepresentable where Tab.RawValue == Int {
     @Binding var tab: Tab
     var backdrop: PageBackdrop

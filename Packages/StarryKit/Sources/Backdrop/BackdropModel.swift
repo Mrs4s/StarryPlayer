@@ -1,7 +1,6 @@
 import Foundation
 import simd
 
-/// Spectrum intensity: subdued = 0.2, exciting = 1.0.
 public enum BackdropIntensity: Sendable, Equatable {
     case subdued
     case exciting
@@ -34,7 +33,6 @@ public enum BackdropLook {
     public static let whiteScrim: Float = 0.1
     public static let warpPeriodDivisor: Float = 3.5
     public static let transitionDuration: Float = 0.8
-    /// Blur radius moves 1 pt per frame at the 60 Hz reference clock.
     public static let blurRadiusPointsPerSecond: Float = 60
 
     /// Rotating artwork copies: base matrix (square space normalised to the longer side), parent
@@ -66,7 +64,6 @@ public enum BackdropLook {
         aspect >= 1 ? float4x4(diagonal: SIMD4(1, aspect, 1, 1)) : float4x4(diagonal: SIMD4(1 / aspect, 1, 1, 1))
     }
 
-    /// Spectrum zoom `1 + mix(p.x, p.y, 0.1)² × 0.33`.
     public static func spectrumScale(power p: SIMD4<Float>) -> Float {
         let m = p.x + (p.y - p.x) * 0.1
         return 1 + m * m * 0.33

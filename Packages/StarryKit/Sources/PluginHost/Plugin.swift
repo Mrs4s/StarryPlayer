@@ -38,7 +38,6 @@ public final class Plugin: Sendable {
     private let executionLimit: TimeInterval
     private let logsCalls: Bool
 
-    /// Reads and runs `file`. Throws `PluginError.load` when it is not a plugin this host runs.
     public static func load(file: URL, options: Options) throws -> Plugin {
         let script: String
         do {

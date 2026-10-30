@@ -6,7 +6,6 @@ import Testing
 
 @MainActor
 @Suite struct MenuBarLyricsTitleTests {
-    /// A clock the test sets; `running` makes it follow real time from `time`.
     private final class Clock {
         var time: TimeInterval = 0
         var rate: Double = 0

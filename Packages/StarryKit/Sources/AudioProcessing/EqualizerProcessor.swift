@@ -10,7 +10,6 @@ public final class EqualizerProcessor: AudioProcessor, @unchecked Sendable {
     public let latencyFrames = 0
 
     static let glide: Double = 0.03
-    /// How long a filter takes to fade in or out.
     static let fade: Double = 0.04
     static let step = 32
     static let ceiling: Double = 1
@@ -20,7 +19,6 @@ public final class EqualizerProcessor: AudioProcessor, @unchecked Sendable {
     static let idleAfter: Double = 0.5
     static let slots = ParametricEqualizer.maxBands
 
-    /// A slot's filter as played.
     struct Setting {
         var filter: ParametricFilter?
         var logFrequency = 0.0
@@ -44,12 +42,10 @@ public final class EqualizerProcessor: AudioProcessor, @unchecked Sendable {
     private var coefficients = [Biquad](repeating: .identity, count: slots)
     private var current = [Setting](repeating: Setting(), count: slots)
     private var target = [Setting](repeating: Setting(), count: slots)
-    /// Frames each slot has passed the sound unchanged.
     private var idleFrames = [Int](repeating: 0, count: slots)
     private var active = [Bool](repeating: false, count: slots)
     private var activeList = [Int](repeating: 0, count: slots)
     private var activeCount = 0
-    /// Some target changes the sound.
     private var targetAudible = false
     private var preampGain = 1.0
     private var preampTarget = 1.0
@@ -160,7 +156,6 @@ public final class EqualizerProcessor: AudioProcessor, @unchecked Sendable {
             var changed = false
             if setting.filter != goal.filter {
                 if setting.isIdentity {
-                    // Nothing to fade out: the new filter fades in from nothing.
                     setting = goal
                     setting.amount = 0
                     clearState(slot: slot)
@@ -199,7 +194,6 @@ public final class EqualizerProcessor: AudioProcessor, @unchecked Sendable {
         if listChanged { rebuildActiveList() }
     }
 
-    /// One glide step of `value` towards `goal`; whether it moved.
     private func approach(_ value: inout Double, _ goal: Double, snap: Double) -> Bool {
         guard value != goal else { return false }
         var next = value + (goal - value) * glideCoefficient

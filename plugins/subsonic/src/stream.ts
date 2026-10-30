@@ -6,7 +6,6 @@ import { qualityTiers as commonTiers } from '../../common/library';
 import { answer, call, CLIENT, locate, restURL, type Server } from './client';
 import { formatOf, type Format } from './models';
 
-/** A song comes in the tiers its file reaches (`models.tiersOf`); the server converts to MP3 below `lossless`. */
 export const qualityTiers: QualityTier[] = commonTiers('MP3');
 
 export function nativeContainer(format: Format, formats: readonly string[]): Container | undefined {
@@ -34,7 +33,6 @@ export function tierOf(requested: string, lossless: boolean, sampleRate?: number
   return requested === '128' ? '128' : '320';
 }
 
-/** What `resolve` hands out without the server deciding: the file as it is, or an MP3 at a bit rate. */
 export interface Plan {
   tier: string;
   direct?: Container;

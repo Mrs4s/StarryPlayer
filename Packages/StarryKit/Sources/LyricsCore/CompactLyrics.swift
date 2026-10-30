@@ -48,7 +48,6 @@ public struct CompactLyricsTimeline: Sendable, Equatable {
         return changes[index].item
     }
 
-    /// The first time after `t` at which the shown item changes; nil when it never does.
     public func nextChange(after t: TimeInterval) -> TimeInterval? {
         let next = (lastChange(atOrBefore: t) ?? -1) + 1
         return next < changes.count ? changes[next].time : nil

@@ -61,7 +61,6 @@ public struct ArtistNames: Sendable, Hashable {
         return pieces.contains(where: \.isEmpty) ? [text] : pieces
     }
 
-    /// A bare `/` or `／` splits when every piece has letters and the whole is not an exception.
     private func cutSlash(_ text: String) -> [String] {
         guard text.contains("/") || text.contains("／"), !isException(text) else { return [text] }
         let pieces = text.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "/" || $0 == "／" }).map { $0.trimmingCharacters(in: .whitespaces) }

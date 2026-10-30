@@ -1,6 +1,3 @@
-// The account's own: playlists, favourites (liking and collecting are both stars, which the
-// server times), personal FM from similar songs, and plays counted on the server.
-
 import { countsAsPlay, nextRadioSongs, stopRadio, trashRadioSong } from '../../common/library';
 import { date } from '../../common/server';
 import type { Playlist, PlaybackReport, Track } from '../../sdk/starry';
@@ -35,7 +32,6 @@ export async function setLiked(trackID: string, liked: boolean): Promise<void> {
   await call(server, liked ? 'star' : 'unstar', { id });
 }
 
-/** Albums and artists take stars too; playlists do not. */
 export async function setCollected(kind: 'playlist' | 'album' | 'artist', id: string, collected: boolean): Promise<void> {
   if (kind === 'playlist') throw starry.error('notSupported', 'Subsonic 服务器不能收藏歌单');
   const { server, id: raw } = locate(id);
@@ -72,7 +68,6 @@ export async function personalFM(_mode: string, firstFetch: boolean): Promise<Tr
   }, firstFetch);
 }
 
-/** Dislike: never on this account's radio again. */
 export async function trashFM(trackID: string): Promise<void> {
   trashRadioSong(accountKey(requireSession()), trackID);
 }

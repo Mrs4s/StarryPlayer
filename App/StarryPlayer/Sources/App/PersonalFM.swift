@@ -2,9 +2,6 @@ import Foundation
 import MusicSources
 import StarryCore
 
-// Personal FM: a first few songs start an endless queue (`PlayerController.isEndless`), which
-// asks for three more each time it reaches its last two and so never runs out; next tells the
-// source the song was skipped, dislike drops it for good and plays the next one.
 extension AppModel {
     static let personalFMName = "私人 FM"
 
@@ -21,7 +18,6 @@ extension AppModel {
         }
     }
 
-    /// Dislike: the next song plays and the source never recommends this one again.
     func trashPersonalFMTrack() {
         guard player.isEndless, let track = player.current,
               let source = self.source(track.id.source, as: (any RadioSource).self) else { return }

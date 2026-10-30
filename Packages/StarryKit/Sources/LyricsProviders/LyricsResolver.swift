@@ -73,8 +73,6 @@ public final class LyricsResolver: Sendable {
         providers[id]?.detail
     }
 
-    /// `providers` (the plugins'), the AMLL TTML DB
-    /// and the local TTML folder; `lookup` finds a track's own source for `trackSource`.
     public static func standard(cache: LyricsCache = LyricsCache(), providers: [any LyricsProvider] = [], lookup: @escaping @Sendable (SourceID) async -> (any MusicSource)?) -> LyricsResolver {
         LyricsResolver(
             providers: providers,
@@ -95,7 +93,7 @@ public final class LyricsResolver: Sendable {
         }
     }
 
-    /// The best result `resolve` would end with (prefetching, tests).
+    /// Resolve the final result without streaming intermediate candidates.
     public func bestLyrics(for track: Track, options: LyricsResolverOptions) async -> ResolvedLyrics? {
         var last: ResolvedLyrics?
         for await result in resolve(track, options: options) { last = result }
@@ -300,7 +298,6 @@ public enum LyricsCandidateSource: Sendable, Hashable, Identifiable {
     }
 }
 
-/// One source's answer for a track: its lyrics, or nil when it has none.
 public struct LyricsCandidate: Sendable {
     public var source: LyricsCandidateSource
     public var lyrics: ResolvedLyrics?
@@ -371,7 +368,6 @@ public extension LyricsResolver {
         }
     }
 
-    /// Lyrics from `source` alone (a song pinned to it), or nil when it has none.
     func lyrics(for track: Track, from source: LyricsCandidateSource, options: LyricsResolverOptions) async -> ResolvedLyrics? {
         switch source {
         case .localRepository:
@@ -440,7 +436,6 @@ public extension LyricsResolver {
         return document(from: raw, track: track, options: options).map { ResolvedLyrics(document: $0, origin: .file(file.name)) }
     }
 
-    /// Lyrics for a song pinned in the picker, or nil when the pin gives none.
     func lyrics(for track: Track, pinnedTo pin: LyricsPin, options: LyricsResolverOptions) async -> ResolvedLyrics? {
         switch pin {
         case .source(let source):

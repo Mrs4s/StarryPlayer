@@ -89,23 +89,6 @@ final class VorbisTranscode: NSObject, @unchecked Sendable {
 
     var sourceFormat: AudioStreamInfo? { state.withLock { format } }
 
-    var decodedFrames: [Range<Int64>] {
-        state.withLock {
-            guard case .ready(let pcm) = phase else { return [] }
-            return pcm.writtenFrames
-        }
-    }
-
-    var isReady: Bool { state.withLock { if case .ready = phase { true } else { false } } }
-
-    /// Interleaved samples of decoded `frames` (tests); nil unless all of them are decoded.
-    func samples(_ frames: Range<Int64>) -> [Float]? {
-        guard case .ready(let pcm) = state.withLock({ phase }), frames.lowerBound >= 0, frames.upperBound <= pcm.frames,
-              pcm.availableEnd(from: pcm.byteOffset(frame: frames.lowerBound)) >= pcm.byteOffset(frame: frames.upperBound) else { return nil }
-        let data = pcm.read(pcm.byteOffset(frame: frames.lowerBound), Int(frames.count) * pcm.channels * 4)
-        return data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
-    }
-
     func need(frame: Int64) {
         state.withLock {
             guard case .ready(let pcm) = phase, !pcm.isWritten(frame: frame) else { return }
@@ -377,8 +360,7 @@ extension VorbisTranscode: AVAssetResourceLoaderDelegate {
     }
 }
 
-/// The headers, length and pages of the first Vorbis stream in an Ogg file, read through a
-/// `ByteSource`, and the page to start from for any position. Used on one thread.
+/// Reads Vorbis headers and granule-based seek positions from a ByteSource. Use on one thread.
 final class OggVorbisReader {
     let source: ByteSource
     var isCancelled: () -> Bool = { false }
@@ -501,7 +483,6 @@ final class OggVorbisReader {
         return Array(window[0..<min(window.count, Int(end - offset))])
     }
 
-    /// The valid page at `offset`, nil when there is none (or the read was cancelled / failed).
     func page(at offset: Int64) -> OggPage? {
         guard let head = bytes(offset, 27 + 255), let (header, body) = OggPage.sizes(head, at: 0), let all = bytes(offset, header + body),
               let page = OggPage.parse(all, at: 0, offset: offset) else { return nil }

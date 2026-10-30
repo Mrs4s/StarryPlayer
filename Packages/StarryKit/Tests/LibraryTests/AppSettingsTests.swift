@@ -91,8 +91,6 @@ struct AppSettingsTests {
         #expect(try decode(#"{"desktopLyrics": 3}"#).desktopLyrics == AppSettings.DesktopLyrics())
     }
 
-    /// Song transitions: both switches off by default, and the `mode` older builds saved (never
-    /// user-settable) is dropped. Crossfade takes over from gapless, except between songs of one album.
     @Test func transitionSwitches() throws {
         let old = try decode(#"{"transition": {"mode": {"none": {}}, "crossfadeSeconds": 5}}"#)
         #expect(old.transition == AppSettings.Transition())
@@ -115,8 +113,6 @@ struct AppSettingsTests {
         #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
     }
 
-    /// A value this build cannot read (a newer build's style or mode, a damaged entry) falls
-    /// back to that option's default, not the whole settings.
     @Test func unreadableValuesFallBackOneByOne() throws {
         let saved = try decode(#"{"playerBarStyle": "neon", "sidebarMode": "drawer", "outputDevice": {"uid": 3}, "menuBarLyrics": 3, "sidebarCollapsed": true}"#)
         #expect(saved.playerBarStyle == .systemDefault)

@@ -10,7 +10,6 @@ final class FolderWatcher: @unchecked Sendable {
         /// Folders to walk whole: events were dropped, or the history cannot say.
         var subtrees: Set<String> = []
         var rootChanged = false
-        /// The replay of the time the app was not running is over.
         var historyDone = false
         var lastEventID: UInt64 = 0
     }

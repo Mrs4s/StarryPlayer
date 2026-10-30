@@ -73,8 +73,6 @@ struct PageBackdropLayer: View {
 }
 
 extension Theme {
-    /// A muted, mid-dark (dark mode) or pastel (light mode) version of a cover colour, so text
-    /// on top keeps its contrast whatever the cover.
     func wash(_ color: Color) -> Color {
         guard let hsb = color.hsb else { return color }
         return isDark

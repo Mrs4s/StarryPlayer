@@ -39,7 +39,6 @@ public final class SoundIsolationAttenuator: AudioProcessor, @unchecked Sendable
         public var sampleRate: Double = 0
         /// Network in use (after fallbacks); nil until a unit exists.
         public var model: VocalSeparationModel?
-        /// A unit is being built.
         public var isPreparing = false
         public var failedPerformance = false
         /// More than two channels, or no network accepts the source.
@@ -411,7 +410,6 @@ private let feedRenderCallback: AURenderCallback = { refCon, _, _, _, frameCount
     return noErr
 }
 
-/// Per-sample output gain: linear fades, and a muted stretch (the unit priming) before a fade-in.
 struct GainEnvelope {
     private(set) var gain: Float = 1
     private var target: Float = 1

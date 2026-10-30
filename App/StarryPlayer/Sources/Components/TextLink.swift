@@ -43,8 +43,6 @@ struct ArtistLinks: View {
     }
 }
 
-/// Lays items out on one line like a single run of text: the item crossing the trailing edge is
-/// proposed what is left (so its text truncates) and the ones after it are parked out of sight.
 struct TruncatingRow: Layout {
     var minTruncatedWidth: CGFloat = 28
 
@@ -83,7 +81,6 @@ extension AlbumRef {
 }
 
 extension View {
-    /// The pointing hand over something that opens a page (macOS 15+).
     @ViewBuilder func linkPointer() -> some View {
         if #available(macOS 15, *) { pointerStyle(.link) } else { self }
     }

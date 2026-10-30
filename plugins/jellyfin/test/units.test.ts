@@ -1,6 +1,3 @@
-// The plugin under Node (`npm test`): its pure parts, and the flows against servers faked in
-// starry-mock.ts. Item shapes and lyric answers follow those of a Jellyfin 12.1 server.
-
 import { pages, sent, servers, type Route, type Sent } from '../../common/test/starry-mock';
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
@@ -22,7 +19,6 @@ beforeEach(() => {
   starry.storage.clear();
 });
 
-/** A server answering `routes` by path (`GET /Items/x`); `/System/Info/Public` and Quick Connect's switch are filled in. */
 function fake(origin: string, routes: Record<string, (request: Sent) => { status?: number; body?: unknown } | undefined>, info: Record<string, unknown> = {}): void {
   const route: Route = (request) => {
     const key = `${request.method} ${request.url.pathname}`;
@@ -109,7 +105,6 @@ test('a password, empty or not, signs in; the profile names the server and the p
   assert.ok(!login.headers.Authorization.includes('Token'));
   assert.equal(session()?.token, 'tok-family');
   assert.deepEqual(Object.keys(starry.storage.get<object>('servers')!), ['srv-a']);
-  // Out here only: the server stays known (its songs in the queue still play); a real sign-out forgets it.
   account.signOutLocally();
   assert.equal(pages.current, null);
   assert.deepEqual(Object.keys(starry.storage.get<object>('servers')!), ['srv-a']);
@@ -312,7 +307,6 @@ test('a stream carries the gains the server measured for the song and its album'
   assert.deepEqual((await resolve(track, tier)).gain, { trackGain: -7.4, albumGain: -6.5 });
   albumGain = undefined;
   assert.deepEqual((await resolve(track, tier)).gain, { trackGain: -7.4, albumGain: undefined });
-  // Not measured: no gain, and the album is not asked.
   delete song.NormalizationGain;
   sent.length = 0;
   assert.equal((await resolve(track, tier)).gain, undefined);
@@ -332,9 +326,7 @@ test('songs by id come in the order asked, from whichever server has them', asyn
   setSession(a);
   const songs = await catalog.songs(['b1', 'a2', 'gone', 'a1']);
   assert.deepEqual(songs.map((song) => song.id), ['b1', 'a2', 'a1']);
-  // Each from its own server.
   assert.match((songs[0].artwork as { url: string }).url, /^http:\/\/b\.local/);
-  // B was asked only for what A did not have.
   assert.deepEqual(sent.filter((request) => request.url.host === 'b.local:8096').map((request) => request.url.searchParams.get('Ids')), ['b1,gone']);
 });
 
@@ -526,7 +518,6 @@ test('资料库: albums in the order picked or of a genre, artists with songs, g
   assert.equal(sent.at(-1)!.url.pathname, '/Artists');
   assert.deepEqual(artists.artists.map((artist) => [artist.name, artist.songCount, artist.albumCount]), [['周杰伦', 4, 2]]);
   assert.equal(artists.total, 10);
-  // A server without /Artists: its artist items.
   artistsGone = true;
   assert.equal((await catalog.libraryArtists({ offset: 0, limit: 80 })).total, 14);
 

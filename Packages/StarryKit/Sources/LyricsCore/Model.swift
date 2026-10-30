@@ -37,8 +37,6 @@ public struct LyricsDocument: Sendable, Hashable {
         }
     }
     public var hasDuet: Bool { lines.contains { $0.singer == .secondary } }
-    /// More than one vocalist: lines are laid out narrower so alternating voices read as left /
-    /// right.
     public var hasMultipleVocalists: Bool {
         if lines.contains(where: { $0.singer != .primary }) { return true }
         let ids = Set(lines.flatMap { line in
@@ -142,7 +140,6 @@ public struct LyricLine: Sendable, Hashable, Identifiable {
 
     public var syllables: [LyricSyllable] { words.flatMap(\.syllables) }
 
-    /// True when the line has usable sub-line timing (more than one timed unit).
     public var hasSyllableTiming: Bool { words.count > 1 || (words.first?.syllables.count ?? 0) > 1 }
 
     public var hasRuby: Bool { syllables.contains { !$0.ruby.isEmpty } || (background?.syllables.contains { !$0.ruby.isEmpty } ?? false) }
