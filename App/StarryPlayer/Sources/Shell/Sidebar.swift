@@ -435,19 +435,20 @@ private struct SidebarPressStyle: ButtonStyle {
     }
 }
 
-private struct SidebarGroup<Content: View>: View {
+struct SidebarGroup<Content: View>: View {
     var title: String
     var sidebarCollapsed: Bool
     var showsHeader: Bool
     var onAdd: (() -> Void)?
     @ViewBuilder var content: () -> Content
-    @AppStorage private var folded: Bool
+    @AppStorage private var savedFolded: Bool
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isPageActive) private var pageActive
+    // AppStorage notifications need not arrive in the click's transaction. Keep the visible
+    // state local and bind its animation in the view, for clicks and external updates alike.
+    @State private var folded: Bool
     @State private var hovering = false
-    /// Folds still running. The rows stay laid out till then, closing as the fold runs: rows on
-    /// their way out (a removal transition) are not laid out again, so they could not close.
-    @State private var closing = 0
 
     init(id: String, title: String, sidebarCollapsed: Bool, showsHeader: Bool = true, onAdd: (() -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
@@ -455,7 +456,9 @@ private struct SidebarGroup<Content: View>: View {
         self.showsHeader = showsHeader
         self.onAdd = onAdd
         self.content = content
-        _folded = AppStorage(wrappedValue: false, "starry.sidebar.folded.\(id)")
+        let saved = AppStorage(wrappedValue: false, "starry.sidebar.folded.\(id)")
+        _savedFolded = saved
+        _folded = State(initialValue: saved.wrappedValue)
     }
 
     private var open: Bool { !folded || sidebarCollapsed }
@@ -465,29 +468,28 @@ private struct SidebarGroup<Content: View>: View {
             if showsHeader {
                 header.transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
-            if open || closing > 0 {
-                // The rows fold as one block, the 2 pt under the title with them: a zero-height
-                // first row, which the stack spaces from the rows only when there are rows.
-                VStack(alignment: .leading, spacing: 2) {
-                    if showsHeader {
-                        Color.clear.frame(height: 0)
-                    }
-                    content()
+            // Keep the rows mounted so reversing a fold continues the same animation, and
+            // their insertion transitions only run when the underlying collection changes.
+            VStack(alignment: .leading, spacing: 2) {
+                if showsHeader {
+                    Color.clear.frame(height: 0)
                 }
-                .modifier(Fold(openness: open ? 1 : 0))
-                .transition(reduceMotion ? .opacity : .fold)
+                content()
             }
+            .modifier(Fold(openness: open ? 1 : 0))
+            .allowsHitTesting(open)
+            .accessibilityHidden(!open)
+            .environment(\.isPageActive, pageActive && open)
+        }
+        .animation(reduceMotion ? nil : Motion.sidebarGroupFold, value: folded)
+        .onChange(of: savedFolded) { _, value in
+            folded = value
         }
     }
 
     private func toggleFold() {
-        let closes = !folded && !reduceMotion
-        withAnimation(Motion.fold) {
-            if closes { closing += 1 }
-            folded.toggle()
-        } completion: {
-            if closes { closing -= 1 }
-        }
+        folded.toggle()
+        savedFolded = folded
     }
 
     private var header: some View {
@@ -546,7 +548,6 @@ private struct Fold: ViewModifier, Animatable {
         let openness = min(max(openness, 0), 1)
         FoldLayout(openness: openness) { content }
             .clipShape(FoldClip(clips: openness < 1))
-            .opacity(openness)
     }
 }
 
@@ -606,10 +607,6 @@ private extension AnyTransition {
             insertion: AnyTransition.opacity.combined(with: .offset(y: 10)).animation(Motion.fold.delay(0.06)),
             removal: AnyTransition.opacity.animation(.easeOut(duration: 0.12))
         )
-    }
-
-    static var fold: AnyTransition {
-        .modifier(active: Fold(openness: 0), identity: Fold(openness: 1))
     }
 
     static func sidebarRow(_ index: Int) -> AnyTransition {

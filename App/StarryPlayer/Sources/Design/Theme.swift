@@ -126,6 +126,7 @@ enum Motion {
     static let sidebar = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32)
     static let sidebarPeek = Animation.spring(response: 0.21, dampingFraction: 0.82)
     static let sidebarUnpeek = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15)
+    static let sidebarGroupFold = Animation.spring(response: 0.28, dampingFraction: 1)
     static let selection = Animation.spring(response: 0.36, dampingFraction: 0.8)
     static let fold = Animation.spring(response: 0.34, dampingFraction: 0.88)
     static let shelf = Animation.spring(response: 0.55, dampingFraction: 0.9)
