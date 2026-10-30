@@ -144,6 +144,61 @@ struct LyricsTranslationTests {
         #expect(throws: LyricsTranslation.ValidationError.noLanguage) { try LyricsTranslation.prompt(for: draft, fields: [.translation, .ruby], language: " ") }
     }
 
+    @Test(arguments: ["スポットライト", "ｽﾎﾟｯﾄﾗｲﾄ"])
+    func katakanaOnlyLinesAcceptEnglishRubyAndPreserveOtherSyllables(_ text: String) throws {
+        var draft = LyricsDraft(lines: [.init(syllables: [
+            .init(text: text, start: 1, end: 2), .init(text: "は", start: 2, end: 3),
+            .init(text: "Hello ", start: 3, end: 4), .init(text: "123", start: 4, end: 5),
+        ], translation: "kept", isBackground: true)])
+        let original = draft
+        let prompt = try LyricsTranslation.prompt(for: draft, fields: [.ruby])
+        let start = try #require(prompt.firstIndex(of: "{"))
+        let payload = try #require(try JSONSerialization.jsonObject(with: Data(prompt[start...].utf8)) as? [String: Any])
+        let rows = try #require(payload["lines"] as? [[String: Any]])
+        let syllables = try #require(rows[0]["syllables"] as? [[String: Any]])
+        #expect(syllables.compactMap { $0["text"] as? String } == [text, "は", "Hello", "123"])
+
+        let json = try readings(draft, ruby: [["spotlight", "wa", "hello", "one two three"]], romanization: [""])
+        let changes = try LyricsTranslation.apply(json, to: &draft, fields: [.ruby])
+        #expect(changes.rubies == 1 && changes.romanizations == 0 && changes.translations == 0)
+        var expected = original
+        expected.lines[0].syllables[0].ruby = [.init(text: "spotlight")]
+        #expect(draft == expected)
+        #expect(try LyricsTranslation.apply(json, to: &draft, fields: [.ruby]).isEmpty)
+
+        draft.lines[0].syllables[0].ruby = [.init(text: "existing", span: 0...1)]
+        let annotated = draft
+        #expect(try LyricsTranslation.apply(json, to: &draft, fields: [.ruby]).isEmpty)
+        #expect(draft == annotated)
+        #expect(try LyricsTranslation.apply(json, to: &draft, fields: [.ruby], overwrite: true).rubies == 1)
+        expected.lines[0].syllables[0].ruby = [.init(text: "spotlight", span: 0...1)]
+        #expect(draft == expected)
+    }
+
+    @Test func englishLoanwordReadingCanBeSharedAcrossKatakanaSyllables() throws {
+        var draft = LyricsDraft(lines: [.init(syllables: ["ス", "ポッ", "ト", "ライ", "ト", "を"].enumerated().map {
+            .init(text: $0.element, start: Double($0.offset + 1), end: Double($0.offset + 2))
+        }, isParagraphStart: true)])
+        let original = draft
+        let syllables: [[String: Any]] = draft.lines[0].syllables.enumerated().map {
+            ["text": $0.element.text, "ruby": $0.offset == 0 ? "spotlight" : "", "joinsPrevious": (1..<5).contains($0.offset)]
+        }
+        let json = try response([["id": draft.lines[0].id.uuidString, "source": draft.lines[0].text, "syllables": syllables]])
+        let changes = try LyricsTranslation.apply(json, to: &draft, fields: [.ruby])
+        #expect(changes.rubies == 5)
+        #expect(draft.lines[0].syllables[0].groupRuby?.map(\.text) == ["spotlight"])
+        #expect(draft.lines[0].syllables.map(\.joinsRubyGroup) == [false, true, true, true, true, false])
+        #expect(draft.lines[0].syllables.allSatisfy { $0.ruby == nil })
+        #expect(draft.lines[0].syllables[5] == original.lines[0].syllables[5])
+        for index in original.lines[0].syllables.indices {
+            #expect(draft.lines[0].syllables[index].id == original.lines[0].syllables[index].id)
+            #expect(draft.lines[0].syllables[index].text == original.lines[0].syllables[index].text)
+            #expect(draft.lines[0].syllables[index].start == original.lines[0].syllables[index].start)
+            #expect(draft.lines[0].syllables[index].end == original.lines[0].syllables[index].end)
+        }
+        #expect(draft.lines[0].isParagraphStart)
+    }
+
     @Test func appliesRomanizationAndRubyToBlanksOnly() throws {
         var draft = japanese()
         let original = draft

@@ -2,14 +2,11 @@ import AppKit
 import CoreText
 import LyricsCore
 
-/// Ruby over the text (`LyricSyllable.ruby`: furigana, pinyin): each annotated syllable's ruby is
-/// centred on its ink, the syllable widened on both sides when its ruby is wider. Rows wrap
-/// between words, and every row of the line keeps room for ruby above it. `RubyLayout` instead
-/// sets romanization under the text.
+/// Centres ruby over a syllable or shared run, keeping each shared run on one row.
 struct FuriganaLayout {
-    /// The ruby as a line: a word per annotated syllable, whose syllables are the ruby pieces.
+    /// The ruby as a line: a word per annotated syllable or run, whose syllables are the ruby pieces.
     var line: LyricLine
-    var baseSyllables: [Int]
+    var baseSyllables: [ClosedRange<Int>]
     /// A row over every main row that carries ruby, in the voice's coordinates.
     var text: LineTextLayout
 
@@ -28,21 +25,21 @@ struct FuriganaLayout {
     static func layout(line: LyricLine, metrics m: Metrics) -> (text: LineTextLayout, furigana: FuriganaLayout)? {
         let syllables = line.syllables
         var rubyWords: [LyricWord] = []
-        var baseSyllables: [Int] = []
-        var group: [Int?] = []  // the ruby word over each syllable
-        for (index, syllable) in syllables.enumerated() {
-            var pieces = syllable.ruby.compactMap { r -> LyricSyllable? in
+        var baseSyllables: [ClosedRange<Int>] = []
+        var group = [Int?](repeating: nil, count: syllables.count)  // the ruby word over each syllable
+        for annotation in LyricRubyGroup.annotations(in: syllables) {
+            var pieces = annotation.ruby.compactMap { r -> LyricSyllable? in
                 let text = r.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                return text.isEmpty ? nil : LyricSyllable(start: r.start, end: r.end, text: text)
+                guard !text.isEmpty else { return nil }
+                let spaced = annotation.syllables.count > 1 && r.text.last?.isWhitespace == true
+                return LyricSyllable(start: r.start, end: r.end, text: spaced ? text + " " : text)
             }
-            guard !pieces.isEmpty, !syllable.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                group.append(nil)
-                continue
-            }
+            let bases = annotation.syllables.filter { !syllables[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            guard !pieces.isEmpty, let lo = bases.first, let hi = bases.last else { continue }
             // Ending in a space keeps the ruby of neighbouring syllables from shaping together.
-            pieces[pieces.count - 1].text += " "
-            group.append(rubyWords.count)
-            baseSyllables.append(index)
+            if !(pieces[pieces.count - 1].text.last?.isWhitespace ?? false) { pieces[pieces.count - 1].text += " " }
+            for s in annotation.syllables { group[s] = rubyWords.count }
+            baseSyllables.append(lo...hi)
             rubyWords.append(LyricWord(start: pieces[0].start, end: pieces.map(\.end).max() ?? pieces[0].end,
                                        text: pieces.map(\.text).joined(), syllables: pieces))
         }
@@ -54,28 +51,38 @@ struct FuriganaLayout {
         func width(_ ink: ClosedRange<CGFloat>) -> CGFloat { ink.upperBound - ink.lowerBound }
         func centre(_ ink: ClosedRange<CGFloat>) -> CGFloat { (ink.lowerBound + ink.upperBound) / 2 }
         let trimmed = syllables.indices.map { main.trimmed(syllable: $0) }
-        var baseInk = [ClosedRange<CGFloat>](repeating: 0...0, count: syllables.count)
-        var rubyInk = [ClosedRange<CGFloat>](repeating: 0...0, count: rubyWords.count)
-        var extra = [CGFloat](repeating: 0, count: syllables.count)
-        for (s, g) in group.enumerated() {
-            guard let g else { continue }
-            baseInk[s] = main.ink(trimmed[s])
-            rubyInk[g] = ruby.ink(words: g...g)
-            extra[s] = max(0, width(rubyInk[g]) + m.minSpacing - width(baseInk[s]))
+        let baseRange = baseSyllables.map { trimmed[$0.lowerBound].lowerBound..<trimmed[$0.upperBound].upperBound }
+        let baseInk = baseRange.map { main.ink($0) }
+        let rubyInk = rubyWords.indices.map { ruby.ink(words: $0...$0) }
+        var before = [CGFloat](repeating: 0, count: syllables.count)
+        var after = [CGFloat](repeating: 0, count: syllables.count)
+        for (g, bases) in baseSyllables.enumerated() {
+            let extra = max(0, width(rubyInk[g]) + m.minSpacing - width(baseInk[g]))
+            before[bases.lowerBound] += extra / 2
+            after[bases.upperBound] += extra / 2
         }
 
-        let syllablesOfWord = line.words.indices.map { main.syllables(of: $0...$0) }
-        let widening = syllablesOfWord.map { $0.reduce(0) { $0 + extra[$1] } }
-        var plans: [[(word: Int, x: CGFloat)]] = [[]]
-        var cursor: CGFloat = 0
+        let wordOfSyllable = line.words.indices.flatMap { w in repeatElement(w, count: line.words[w].syllables.count) }
+        var units: [ClosedRange<Int>] = []
+        var joined = [Bool](repeating: false, count: line.words.count)  // the word continues a run from the one before
+        for bases in baseSyllables where wordOfSyllable[bases.lowerBound] < wordOfSyllable[bases.upperBound] {
+            for w in (wordOfSyllable[bases.lowerBound] + 1)...wordOfSyllable[bases.upperBound] { joined[w] = true }
+        }
         for w in line.words.indices {
-            let visible = main.visibleWidth(words: w...w) + widening[w]
+            if joined[w], let last = units.last { units[units.count - 1] = last.lowerBound...w } else { units.append(w...w) }
+        }
+        let syllablesOfUnit = units.map { main.syllables(of: $0) }
+        let widening = syllablesOfUnit.map { $0.reduce(0) { $0 + before[$1] + after[$1] } }
+        var plans: [[(unit: Int, x: CGFloat)]] = [[]]
+        var cursor: CGFloat = 0
+        for (u, words) in units.enumerated() {
+            let visible = main.visibleWidth(words: words) + widening[u]
             if !plans[plans.count - 1].isEmpty, cursor + visible > m.width {
                 plans.append([])
                 cursor = 0
             }
-            plans[plans.count - 1].append((w, cursor))
-            cursor += main.advance(words: w...w) + widening[w]
+            plans[plans.count - 1].append((u, cursor))
+            cursor += main.advance(words: words) + widening[u]
         }
 
         var mainRows: [LineTextLayout.Row] = []
@@ -83,7 +90,7 @@ struct FuriganaLayout {
         var width: CGFloat = 0
         for plan in plans {
             guard let first = plan.first, let last = plan.last else { continue }
-            let visible = last.x + main.visibleWidth(words: last.word...last.word) + widening[last.word]
+            let visible = last.x + main.visibleWidth(words: units[last.unit]) + widening[last.unit]
             let rowX: CGFloat
             switch m.alignment {
             case .center: rowX = ((m.width - visible) / 2).rounded()
@@ -91,34 +98,35 @@ struct FuriganaLayout {
             default: rowX = 0
             }
 
-            let rowStart = main.x(main.start(of: first.word))
+            let rowStart = main.x(main.start(of: units[first.unit].lowerBound))
             var shift: [Int: CGFloat] = [:]
             var widen: [Int: CGFloat] = [:]
-            var pen: [Int: CGFloat] = [:]  // where an annotated syllable's glyphs start, from rowX
+            var pen: [Int: CGFloat] = [:]  // where each run's glyphs start, from rowX
             for placed in plan {
-                var before = placed.x - (main.x(main.start(of: placed.word)) - rowStart)
-                for s in syllablesOfWord[placed.word] {
-                    shift[s] = before + extra[s] / 2
-                    if extra[s] > 0 { widen[s] = extra[s] / 2 }
-                    if group[s] != nil { pen[s] = main.x(trimmed[s].lowerBound) - rowStart + before + extra[s] / 2 }
-                    before += extra[s]
+                var moved = placed.x - (main.x(main.start(of: units[placed.unit].lowerBound)) - rowStart)
+                for s in syllablesOfUnit[placed.unit] {
+                    moved += before[s]
+                    shift[s] = moved
+                    if after[s] > 0 { widen[s] = after[s] }
+                    if let g = group[s], baseSyllables[g].lowerBound == s { pen[g] = main.x(baseRange[g].lowerBound) - rowStart + moved }
+                    moved += after[s]
                 }
             }
-            let range = main.start(of: first.word)..<main.end(of: last.word)
+            let range = main.start(of: units[first.unit].lowerBound)..<main.end(of: units[last.unit].upperBound)
             let row = LineTextLayout.makeRow(main.line(range), font: m.font, leading: m.leading, x: rowX, y: 0, syllableForOffset: main.syllableForOffset, perSyllable: true, shift: shift, widen: widen)
             mainRows.append(row)
             width = max(width, row.width)
 
-            let annotated = plan.flatMap { syllablesOfWord[$0.word] }.compactMap { s in group[s].map { (syllable: s, group: $0) } }
-            guard let firstGroup = annotated.first?.group, let lastGroup = annotated.last?.group else {
+            let annotated = plan.flatMap { syllablesOfUnit[$0.unit] }.compactMap { s in group[s].flatMap { baseSyllables[$0].lowerBound == s ? $0 : nil } }
+            guard let firstGroup = annotated.first, let lastGroup = annotated.last else {
                 rubyRows.append(nil)
                 continue
             }
             let rubyRange = ruby.start(of: firstGroup)..<ruby.end(of: lastGroup)
             let rubyRowStart = ruby.x(rubyRange.lowerBound)
             var rubyShift: [Int: CGFloat] = [:]
-            for (s, g) in annotated {
-                let target = pen[s]! + centre(baseInk[s]) - centre(rubyInk[g])
+            for g in annotated {
+                let target = pen[g]! + centre(baseInk[g]) - centre(rubyInk[g])
                 let dx = target - (ruby.x(ruby.start(of: g)) - rubyRowStart)
                 for piece in ruby.syllables(of: g...g) { rubyShift[piece] = dx }
             }

@@ -140,7 +140,8 @@ final class LyricsEditorSession {
                 guard let messages = nextNotes[syllable.id], !messages.isEmpty else { return nil }
                 if notes == nil {
                     guard let previous = original[syllable.id], previous.text == syllable.text,
-                          previous.ruby?.map(\.text) == syllable.ruby?.map(\.text) else { return nil }
+                          previous.ruby?.map(\.text) == syllable.ruby?.map(\.text),
+                          previous.groupRuby?.map(\.text) == syllable.groupRuby?.map(\.text) else { return nil }
                 }
                 return (syllable.id, messages)
             })
@@ -339,12 +340,13 @@ final class LyricsEditorSession {
         }
     }
 
-    var canMergeSelection: Bool { selection.count > 1 && LyricsDraft.isRun(selectedPositions) }
+    var canMergeSelection: Bool { selection.count > 1 && draft.canMergeSyllables(selectedPositions) }
 
     func mergeSelection() {
         let targets = selectedPositions
         guard targets.count > 1 else { return }
         guard LyricsDraft.isRun(targets) else { return flash("只能合并同一行里相邻的音节") }
+        guard draft.canMergeSyllables(targets) else { return flash("共享注音的音节只能和同一组的音节合并") }
         var merged: Position?
         edit { merged = $0.mergeSyllables(targets) }
         guard let merged else { return }
@@ -365,9 +367,20 @@ final class LyricsEditorSession {
 
     func clearRuby(_ positions: [Position]? = nil) {
         let targets = positions ?? editTargets
-        edit { draft in
-            for position in targets where draft.contains(position) { draft[position].ruby = nil }
+        edit { $0.clearRuby(at: targets) }
+    }
+
+    var canShareRuby: Bool {
+        let selected = selectedPositions
+        return selected.count > 1 && LyricsDraft.isRun(selected) && !selected.contains { draft[$0].isRest }
+    }
+
+    func sharedRubyRun(at position: Position) -> ClosedRange<Int>? {
+        let selected = selectedPositions
+        if canShareRuby, selected.contains(position), let first = selected.first, let last = selected.last {
+            return first.syllable...last.syllable
         }
+        return draft.rubyGroup(at: position)
     }
 
     func focusRuby() { rubyFocusRequest += 1 }

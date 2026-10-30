@@ -32,7 +32,14 @@ struct LyricsEditorInspector: View {
                     TimeField(value: syllable.end, placeholder: "结束") { set(\.end, $0, at: position) }
                 }
                 .frame(height: 28)
-                LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
+                if let run = session.sharedRubyRun(at: position) {
+                    let positions = run.map { LyricsDraft.Position(line: position.line, syllable: $0) }
+                    LineTextField(placeholder: "\(run.count) 个音节共享的注音，用 | 分段，如 des|ti|ny",
+                                  value: session.draft.rubyGroup(at: position) == run ? session.draft.editableRuby(at: position) : "",
+                                  id: positions.map { session.draft[$0].id }, focusRequest: session.rubyFocusRequest) { setGroupRuby($0, over: positions) }
+                } else {
+                    LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
+                }
                 HStack(spacing: 10) {
                     if session.draft.agents.isEmpty {
                         SegmentSwitch(selection: Binding { line.singer } set: { singer in
@@ -116,6 +123,10 @@ struct LyricsEditorInspector: View {
         }
     }
 
+    private func setGroupRuby(_ text: String, over positions: [LyricsDraft.Position]) {
+        session.edit { $0.setGroupRuby(text, over: positions) }
+    }
+
     private func setLine<Value>(_ key: WritableKeyPath<LyricsDraft.Line, Value>, _ value: Value, at line: Int) {
         session.edit { draft in
             guard draft.lines.indices.contains(line) else { return }
@@ -166,7 +177,7 @@ private struct TimeField: View {
 private struct LineTextField: View {
     var placeholder: String
     var value: String
-    var id: UUID
+    var id: AnyHashable
     var focusRequest = 0
     var commit: (String) -> Void
     @Environment(\.theme) private var theme

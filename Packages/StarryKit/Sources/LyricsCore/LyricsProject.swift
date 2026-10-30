@@ -3,7 +3,7 @@ import Foundation
 /// Lossless JSON project, preserving untimed syllables and editor tracks omitted by TTML.
 public struct LyricsProject: Sendable, Hashable, Codable {
     public static let fileExtension = "starrylyrics"
-    public static let currentVersion = 4
+    public static let currentVersion = 5
     static let formatName = "starry-lyrics"
 
     public struct Entry: Sendable, Hashable, Codable {

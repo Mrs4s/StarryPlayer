@@ -91,6 +91,9 @@ enum KaraokeExport {
         if format != .krl, document.hasRomanization { losses.append(.romanization) }
         if format == .krl, voices(document).contains(where: { $0.romanization?.isEmpty == false && $0.romanizationWords == nil }) { losses.append(.romanization) }
         if format == .nicokara, document.hasRuby { losses.append(.ruby) }
+        if format != .nicokara, document.lines.contains(where: { line in
+            (line.syllables + (line.background?.syllables ?? [])).contains { !$0.groupRuby.isEmpty }
+        }) { losses.append(.sharedRuby) }
         if !document.agents.isEmpty || document.hasMultipleVocalists {
             losses.append(format == .rl || format == .kasugamuki ? .agents : .agentDetails)
         }

@@ -24,6 +24,10 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         public var start: TimeInterval?
         public var end: TimeInterval?
         public var ruby: [Ruby]?
+        /// Ruby on a group's first syllable; following syllables set `joinsRubyGroup`.
+        /// Spans are relative to the whole group's duration (0...1).
+        public var groupRuby: [Ruby]?
+        public var joinsRubyGroup: Bool
         /// Empty inherits the line's performers.
         public var agentIDs: [String]
         /// Seconds from the syllable's start; nil entries are untimed RL beats.
@@ -31,12 +35,14 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
         public var isRest: Bool
         public var hasRelease: Bool
 
-        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil, ruby: [Ruby]? = nil, agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false) {
+        public init(id: UUID = UUID(), text: String, start: TimeInterval? = nil, end: TimeInterval? = nil, ruby: [Ruby]? = nil, agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false, groupRuby: [Ruby]? = nil, joinsRubyGroup: Bool = false) {
             self.id = id
             self.text = text
             self.start = start
             self.end = end
             self.ruby = ruby
+            self.groupRuby = groupRuby
+            self.joinsRubyGroup = joinsRubyGroup
             self.agentIDs = agentIDs
             self.checkpoints = checkpoints
             self.isRest = isRest
@@ -247,10 +253,16 @@ extension LyricsDraft {
     }
 
     private static func syllables(of words: [LyricWord]) -> [Syllable] {
-        words.flatMap(\.syllables).filter { !$0.text.isEmpty || $0.isRest }.map {
-            let start = $0.start
-            return Syllable(text: $0.isRest ? "▨" : $0.text, start: start, end: $0.end, ruby: Ruby.relative($0.ruby, start: start, end: $0.end), agentIDs: $0.agentIDs, checkpoints: $0.checkpoints?.map { $0.map { $0 - start } }, isRest: $0.isRest, hasRelease: $0.hasRelease)
+        let source = words.flatMap(\.syllables)
+        var shared: [Int: [Ruby]] = [:]
+        for group in LyricRubyGroup.groups(in: source) {
+            shared[group.syllables.lowerBound] = Ruby.relative(group.ruby, start: source[group.syllables.lowerBound].start, end: source[group.syllables.upperBound].end)
         }
+        let syllables = source.indices.filter { !source[$0].text.isEmpty || source[$0].isRest }.map { index in
+            let syllable = source[index], start = syllable.start
+            return Syllable(text: syllable.isRest ? "▨" : syllable.text, start: start, end: syllable.end, ruby: Ruby.relative(syllable.ruby, start: start, end: syllable.end), agentIDs: syllable.agentIDs, checkpoints: syllable.checkpoints?.map { $0.map { $0 - start } }, isRest: syllable.isRest, hasRelease: syllable.hasRelease, groupRuby: shared[index], joinsRubyGroup: syllable.joinsRubyGroup)
+        }
+        return normalizedRubyGroups(syllables)
     }
 }
 
@@ -440,7 +452,11 @@ extension LyricsDraft {
             result.append(LyricSyllable(start: start, end: end, text: syllable.isRest ? "" : syllable.text, ruby: ruby, agentIDs: syllable.agentIDs, checkpoints: syllable.checkpoints?.map { $0.map { start + $0 } }, isRest: syllable.isRest, hasRelease: syllable.hasRelease))
             floor = start
         }
-        return result
+        for group in rubyGroups(in: syllables) {
+            result[group.lowerBound].groupRuby = Ruby.absolute(syllables[group.lowerBound].groupRuby, start: result[group.lowerBound].start, end: result[group.upperBound].end)
+            for index in group.dropFirst() { result[index].joinsRubyGroup = true }
+        }
+        return LyricRubyGroup.normalized(result)
     }
 }
 
@@ -478,7 +494,16 @@ extension LyricsDraft {
             new[new.count - 1 - tail].text = text
             tail += 1
         }
-        lines[index].syllables = new
+        for group in Self.rubyGroups(in: old) {
+            let ids = Set(old[group].map(\.id))
+            let kept = new.indices.filter { ids.contains(new[$0].id) }
+            if let first = kept.first, let last = kept.last, kept.count == ids.count, last - first == ids.count - 1 { continue }
+            for k in kept {
+                new[k].groupRuby = nil
+                new[k].joinsRubyGroup = false
+            }
+        }
+        lines[index].syllables = Self.normalizedRubyGroups(new)
     }
 
     public static func editableRuby(of syllable: Syllable) -> String {
@@ -487,11 +512,12 @@ extension LyricsDraft {
 
     /// Replaces a syllable's ruby with `text` split at `|` (or `｜`), each piece trimmed; blank
     /// text removes it. With as many pieces as before, each keeps its timing; otherwise they
-    /// share the syllable by length.
+    /// share the syllable by length. Dissolves any shared ruby group.
     public mutating func setRuby(_ text: String, at position: Position) {
         let pieces = text.split(whereSeparator: { $0 == "|" || $0 == "｜" })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        if let group = rubyGroup(at: position) { dissolveRubyGroup(group, inLine: position.line) }
         let old = self[position].ruby ?? []
         guard !pieces.isEmpty else {
             self[position].ruby = nil
@@ -503,7 +529,7 @@ extension LyricsDraft {
     }
 
     /// Splits a syllable into its characters (a word's trailing space stays on the last one),
-    /// sharing its timing evenly. Its ruby cannot be split with it and is dropped.
+    /// sharing its timing evenly. Own ruby is dropped; shared ruby covers the resulting parts.
     public mutating func splitSyllable(at position: Position) {
         let syllable = self[position]
         let body = syllable.text.trimmingCharacters(in: .whitespaces)
@@ -511,10 +537,15 @@ extension LyricsDraft {
         guard characters.count > 1 else { return }
         let trailing = syllable.text.hasSuffix(" ") ? " " : ""
         let step = syllable.start.flatMap { s in syllable.end.map { e in (e - s) / Double(characters.count) } }
-        let parts = characters.enumerated().map { k, character in
+        var parts = characters.enumerated().map { k, character in
             Syllable(text: character + (k == characters.count - 1 ? trailing : ""),
                      start: k == 0 ? syllable.start : step.map { syllable.start! + Double(k) * $0 },
                      end: k == characters.count - 1 ? syllable.end : step.map { syllable.start! + Double(k + 1) * $0 }, agentIDs: syllable.agentIDs)
+        }
+        if rubyGroup(at: position) != nil {
+            parts[0].groupRuby = syllable.groupRuby
+            parts[0].joinsRubyGroup = syllable.joinsRubyGroup
+            for k in parts.indices.dropFirst() { parts[k].joinsRubyGroup = true }
         }
         lines[position.line].syllables.replaceSubrange(position.syllable...position.syllable, with: parts)
     }
@@ -527,8 +558,15 @@ extension LyricsDraft {
         guard a.isRest == b.isRest else { return }
         let inherited = lines[position.line].agentIDs
         guard (a.agentIDs.isEmpty ? inherited : a.agentIDs) == (b.agentIDs.isEmpty ? inherited : b.agentIDs) else { return }
+        let group = rubyGroup(at: position)
+        guard group == rubyGroup(at: next) else { return }
         var merged = Syllable(id: a.id, text: a.text + b.text, start: a.start ?? b.start, end: b.end ?? b.start ?? a.end, agentIDs: a.agentIDs)
-        merged.ruby = Self.ruby(merging: [a, b], into: merged)
+        if group != nil {
+            merged.groupRuby = a.groupRuby
+            merged.joinsRubyGroup = a.joinsRubyGroup
+        } else {
+            merged.ruby = Self.ruby(merging: [a, b], into: merged)
+        }
         merged.isRest = a.isRest
         merged.hasRelease = b.hasRelease
         if a.checkpoints != nil || b.checkpoints != nil {
@@ -540,6 +578,7 @@ extension LyricsDraft {
             }
         }
         lines[position.line].syllables.replaceSubrange(position.syllable...next.syllable, with: [merged])
+        normalizeRubyGroups(inLine: position.line)
     }
 
     /// The ruby of `parts` over their merge, where a part without ruby reads as its own text;
@@ -636,10 +675,17 @@ extension LyricsDraft {
         dropEmpty(sources)
     }
 
+    public func canMergeSyllables(_ positions: [Position]) -> Bool {
+        let positions = valid(positions)
+        guard let first = positions.first, positions.count > 1, Self.isRun(positions) else { return false }
+        let group = rubyGroup(at: first)
+        return positions.allSatisfy { rubyGroup(at: $0) == group }
+    }
+
     @discardableResult
     public mutating func mergeSyllables(_ positions: [Position]) -> Position? {
         let positions = valid(positions)
-        guard let first = positions.first, positions.count > 1, Self.isRun(positions) else { return nil }
+        guard let first = positions.first, canMergeSyllables(positions) else { return nil }
         let inherited = lines[first.line].agentIDs
         let agents = self[first].agentIDs.isEmpty ? inherited : self[first].agentIDs
         guard positions.allSatisfy({ (self[$0].agentIDs.isEmpty ? inherited : self[$0].agentIDs) == agents && self[$0].isRest == self[first].isRest }) else { return nil }
@@ -730,6 +776,13 @@ extension LyricsDraft {
     /// Preserves word boundaries in both the removed and remaining syllables.
     /// Empty source lines remain for `dropEmpty`.
     private mutating func take(_ positions: [Position]) -> [Syllable] {
+        for (line, group) in Dictionary(grouping: positions, by: \.line) {
+            let picked = Set(group.map(\.syllable))
+            for run in Self.rubyGroups(in: lines[line].syllables) {
+                let count = run.filter(picked.contains).count
+                if count > 0, count < run.count { dissolveRubyGroup(run, inLine: line) }
+            }
+        }
         var taken: [Syllable] = []
         var previous: Position?
         for (index, group) in Dictionary(grouping: positions, by: \.line).sorted(by: { $0.key < $1.key }) {
@@ -768,6 +821,117 @@ extension LyricsDraft {
         guard let last = left.text.last, !last.isWhitespace, !right.text.isEmpty,
               !LyricWordGrouping.containsChineseJapanese(left.text), !LyricWordGrouping.containsChineseJapanese(right.text) else { return }
         left.text += " "
+    }
+}
+
+// MARK: - Shared ruby
+
+extension LyricsDraft {
+    public static func rubyGroups(in syllables: [Syllable]) -> [ClosedRange<Int>] {
+        var result: [ClosedRange<Int>] = []
+        var index = 0
+        while index < syllables.count {
+            guard !(syllables[index].groupRuby ?? []).isEmpty else {
+                index += 1
+                continue
+            }
+            var end = index
+            while end + 1 < syllables.count, syllables[end + 1].joinsRubyGroup, (syllables[end + 1].groupRuby ?? []).isEmpty { end += 1 }
+            result.append(index...end)
+            index = end + 1
+        }
+        return result
+    }
+
+    public func rubyGroup(at position: Position) -> ClosedRange<Int>? {
+        guard contains(position) else { return nil }
+        return Self.rubyGroups(in: lines[position.line].syllables).first { $0.contains(position.syllable) }
+    }
+
+    public func hasRuby(at position: Position) -> Bool {
+        !(self[position].ruby ?? []).isEmpty || rubyGroup(at: position) != nil
+    }
+
+    public func editableRuby(at position: Position) -> String {
+        guard let group = rubyGroup(at: position) else { return Self.editableRuby(of: self[position]) }
+        return (lines[position.line].syllables[group.lowerBound].groupRuby ?? []).map(\.text).joined(separator: "|")
+    }
+
+    /// A trailing space before `|` preserves a reading word break (`eternal |love`).
+    /// Replaces overlapping groups; matching piece counts preserve their relative timing.
+    public mutating func setGroupRuby(_ text: String, over positions: [Position]) {
+        let positions = valid(positions)
+        guard positions.count > 1, Self.isRun(positions), let first = positions.first, let last = positions.last else { return }
+        let line = first.line
+        let range = first.syllable...last.syllable
+        guard !lines[line].syllables[range].contains(where: \.isRest) else { return }
+        let pieces = LyricRubyGroup.cleaned(text.split(whereSeparator: { $0 == "|" || $0 == "｜" }).map(String.init))
+        let old = rubyGroup(at: first) == range ? lines[line].syllables[range.lowerBound].groupRuby ?? [] : []
+        for group in Self.rubyGroups(in: lines[line].syllables) where group.overlaps(range) {
+            dissolveRubyGroup(group, inLine: line)
+        }
+        guard !pieces.isEmpty else { return }
+        for index in range {
+            lines[line].syllables[index].ruby = nil
+            lines[line].syllables[index].joinsRubyGroup = index != range.lowerBound
+        }
+        lines[line].syllables[range.lowerBound].groupRuby = pieces.enumerated().map { k, piece in
+            Ruby(text: piece, span: pieces.count == old.count ? old[k].span : nil)
+        }
+    }
+
+    public mutating func clearRuby(at positions: [Position]) {
+        for position in valid(positions) {
+            if let group = rubyGroup(at: position) { dissolveRubyGroup(group, inLine: position.line) }
+            self[position].ruby = nil
+        }
+    }
+
+    private mutating func dissolveRubyGroup(_ group: ClosedRange<Int>, inLine line: Int) {
+        for index in group {
+            lines[line].syllables[index].groupRuby = nil
+            lines[line].syllables[index].joinsRubyGroup = false
+        }
+    }
+
+    mutating func normalizeRubyGroups(inLine line: Int) {
+        let syllables = Self.normalizedRubyGroups(lines[line].syllables)
+        if syllables != lines[line].syllables { lines[line].syllables = syllables }
+    }
+
+    static func normalizedRubyGroups(_ syllables: [Syllable]) -> [Syllable] {
+        var result = syllables
+        var head: Int?
+        func close(before end: Int) {
+            guard let first = head else { return }
+            head = nil
+            if end - 1 > first {
+                for index in first..<end { result[index].ruby = nil }
+            } else {
+                if (result[first].ruby ?? []).isEmpty { result[first].ruby = result[first].groupRuby }
+                result[first].groupRuby = nil
+            }
+        }
+        for index in result.indices {
+            if result[index].isRest {
+                close(before: index)
+                result[index].groupRuby = nil
+                result[index].joinsRubyGroup = false
+            } else if !(result[index].groupRuby ?? []).isEmpty {
+                close(before: index)
+                head = index
+                result[index].joinsRubyGroup = false
+            } else {
+                result[index].groupRuby = nil
+                if !result[index].joinsRubyGroup {
+                    close(before: index)
+                } else if head == nil {
+                    result[index].joinsRubyGroup = false
+                }
+            }
+        }
+        close(before: result.count)
+        return result
     }
 }
 
@@ -813,7 +977,7 @@ extension LyricsDraft.Line {
 }
 
 extension LyricsDraft.Syllable {
-    private enum CodingKeys: String, CodingKey { case id, text, start, end, ruby, agentIDs, checkpoints, isRest, hasRelease }
+    private enum CodingKeys: String, CodingKey { case id, text, start, end, ruby, groupRuby, joinsRubyGroup, agentIDs, checkpoints, isRest, hasRelease }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -822,6 +986,8 @@ extension LyricsDraft.Syllable {
         start = try values.decodeIfPresent(TimeInterval.self, forKey: .start)
         end = try values.decodeIfPresent(TimeInterval.self, forKey: .end)
         ruby = try values.decodeIfPresent([LyricsDraft.Ruby].self, forKey: .ruby)
+        groupRuby = try values.decodeIfPresent([LyricsDraft.Ruby].self, forKey: .groupRuby)
+        joinsRubyGroup = try values.decodeIfPresent(Bool.self, forKey: .joinsRubyGroup) ?? false
         agentIDs = try values.decodeIfPresent([String].self, forKey: .agentIDs) ?? []
         checkpoints = try values.decodeIfPresent([TimeInterval?].self, forKey: .checkpoints)
         isRest = try values.decodeIfPresent(Bool.self, forKey: .isRest) ?? false

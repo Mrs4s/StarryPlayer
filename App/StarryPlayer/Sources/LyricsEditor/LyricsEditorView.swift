@@ -344,13 +344,13 @@ struct LyricsEditorView: View {
 
     private var exportMenu: some View {
         PopMenu {
-            PopMenuItem.button("导出 TTML…", systemImage: "square.and.arrow.up") { request(.export) }
+            PopMenuItem.button("导出 AMLL TTML…", systemImage: "square.and.arrow.up") { request(.export) }
             PopMenuItem.submenu("导出其他格式", systemImage: "doc.text") {
                 for format in LyricsExportFormat.allCases where format != .ttml {
                     PopMenuItem.button("\(format.title)…") { request(.exportAs(format)) }
                 }
             }
-            PopMenuItem.button("拷贝 TTML", systemImage: "doc.on.doc") { model.copyLyrics(session) }
+            PopMenuItem.button("拷贝 AMLL TTML", systemImage: "doc.on.doc") { model.copyLyrics(session) }
             PopMenuItem.divider
             PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square") { saveProject() }
         } label: {
@@ -359,7 +359,7 @@ struct LyricsEditorView: View {
         .buttonStyle(VariantButtonStyle(variant: .secondary, isPill: true))
         .disabled(session.draft.isEmpty)
         .opacity(session.draft.isEmpty ? 0.45 : 1)
-        .help("导出 TTML（⌘E）、拷贝歌词或保存工程（⇧⌘S）")
+        .help("导出 AMLL TTML（⌘E）、拷贝歌词或保存工程（⇧⌘S）")
     }
 
     private var subtitle: String {

@@ -7,7 +7,7 @@ extension LyricsDraft.Line {
         var first = 0
         while first < syllables.count {
             let source = syllables[first]
-            if source.isRest || source.checkpoints != nil || source.hasRelease {
+            if source.isRest || source.checkpoints != nil || source.hasRelease || source.groupRuby != nil || source.joinsRubyGroup {
                 result.append(source)
                 first += 1
                 continue
@@ -16,7 +16,7 @@ extension LyricsDraft.Line {
             while end < syllables.count {
                 let next = syllables[end]
                 guard next.agentIDs == source.agentIDs, !next.isRest,
-                      next.checkpoints == nil, !next.hasRelease else { break }
+                      next.checkpoints == nil, !next.hasRelease, next.groupRuby == nil, !next.joinsRubyGroup else { break }
                 end += 1
             }
             let originals = Array(syllables[first..<end])

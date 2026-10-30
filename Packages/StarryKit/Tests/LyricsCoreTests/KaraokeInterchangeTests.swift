@@ -93,7 +93,7 @@ import Testing
         #expect(abs(original.lines[0].syllables[0].ruby[0].start - 1.2) < 1e-9)
         #expect(abs(original.lines[0].romanizationWords![0].syllables[1].start - 1.55) < 1e-9)
         let project = try LyricsProject(data: LyricsProject(draft: draft).data())
-        #expect(project.version == 4 && project.draft == draft)
+        #expect(project.version == LyricsProject.currentVersion && project.draft == draft)
         let written = try LyricsExport.write(project.draft, format: .krl)
         let parsed = try KRLParser.parse(written.text)
         #expect(parsed.lines.map(\.text) == original.lines.map(\.text))

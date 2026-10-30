@@ -1,13 +1,23 @@
 import Foundation
 
 public enum TTMLWriter {
+    public enum Format: Sendable, Equatable {
+        case amll, ttml2
+    }
+
     /// `metadata`: `amll:meta` entries in order (a key may repeat, as `artists` does); nil writes
     /// the document's own, sorted by key. `duration` is the song's length for `<body dur>`.
-    public static func write(_ document: LyricsDocument, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil, translationLanguage: String? = nil) -> String {
+    /// Ruby defaults to AMLL's representation; `.ttml2` uses the TTML2 base/text content model.
+    public static func write(_ document: LyricsDocument, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil,
+                             translationLanguage: String? = nil, format: Format = .amll) -> String {
         let lines = document.lines.filter { !$0.words.isEmpty }
         let agents = Agents(document: document, lines: lines)
         let styling = document.hasRuby ? #" xmlns:tts="http://www.w3.org/ns/ttml#styling""# : ""
-        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)>"#
+        let grouped = format == .amll && lines.contains { line in
+            !LyricRubyGroup.groups(in: line.syllables).isEmpty || !LyricRubyGroup.groups(in: line.background?.syllables ?? []).isEmpty
+        }
+        let sharedRuby = grouped ? #" xmlns:ttx="\#(LyricRubyGroup.namespace)""# : ""
+        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)\#(sharedRuby)>"#
         out += "<head><metadata>"
         out += agents.declarations
         for entry in metadata ?? document.metadata.sorted(by: { $0.key < $1.key }).map({ ($0.key, $0.value) }) where !entry.value.isEmpty {
@@ -16,10 +26,11 @@ public enum TTMLWriter {
         if lines.contains(where: { $0.romanizationWords != nil || $0.background?.romanizationWords != nil }) {
             out += #"<iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal"><transliterations><transliteration xml:lang="und-Latn">"#
             for (index, line) in lines.enumerated() where line.romanizationWords != nil || line.background?.romanizationWords != nil {
+                var groups = 0
                 out += #"<text for="L\#(index + 1)">"#
-                if let words = line.romanizationWords { out += spans(words, agents: agents) }
+                if let words = line.romanizationWords { out += spans(words, agents: agents, format: format, groups: &groups) }
                 if let words = line.background?.romanizationWords {
-                    out += #"<span ttm:role="x-bg">"# + spans(words, agents: agents) + "</span>"
+                    out += #"<span ttm:role="x-bg">"# + spans(words, agents: agents, format: format, groups: &groups) + "</span>"
                 }
                 out += "</text>"
             }
@@ -39,10 +50,11 @@ public enum TTMLWriter {
                 key += 1
                 let ids = line.agentIDs.isEmpty ? agents.fallbacks[line.singer].map { [$0] } ?? [] : line.agentIDs
                 out += #"<p begin="\#(timestamp(line.start))" end="\#(timestamp(line.end))"\#(agents.attribute(ids)) itunes:key="L\#(key)">"#
-                out += spans(line.words, agents: agents)
+                var groups = 0
+                out += spans(line.words, agents: agents, format: format, groups: &groups)
                 if let background = line.background, !background.words.isEmpty {
                     out += #"<span ttm:role="x-bg" begin="\#(timestamp(background.start))" end="\#(timestamp(background.end))"\#(agents.attribute(background.agentIDs))>"#
-                    out += spans(background.words, agents: agents)
+                    out += spans(background.words, agents: agents, format: format, groups: &groups)
                     out += extras(translation: background.translation, romanization: background.romanization, language: translationLanguage)
                     out += "</span>"
                 }
@@ -135,15 +147,92 @@ public enum TTMLWriter {
         }
     }
 
-    /// A syllable span each; a word's trailing space goes between the spans, where the parser
-    /// reads it as a word break.
-    private static func spans(_ words: [LyricWord], agents: Agents) -> String {
+    private static func spans(_ words: [LyricWord], agents: Agents, format: Format, groups: inout Int) -> String {
+        switch format {
+        case .amll: amllSpans(words, agents: agents, groups: &groups)
+        case .ttml2: ttml2Spans(words, agents: agents)
+        }
+    }
+
+    // One base/text pair avoids ambiguity when syllable and reading counts differ.
+    private static func ttml2Spans(_ words: [LyricWord], agents: Agents) -> String {
+        let syllables = words.flatMap(\.syllables)
+        func written(_ index: Int) -> Bool { !syllables[index].text.trimmingCharacters(in: .whitespaces).isEmpty }
+        let annotations = Dictionary(uniqueKeysWithValues: LyricRubyGroup.annotations(in: syllables).compactMap { annotation -> (Int, LyricRubyGroup)? in
+            var annotation = annotation
+            annotation.ruby = annotation.ruby.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            guard !annotation.ruby.isEmpty, annotation.syllables.contains(where: written) else { return nil }
+            return (annotation.syllables.lowerBound, annotation)
+        })
+        var breaks: Set<Int> = []
+        var offset = 0
+        for (index, word) in words.enumerated() {
+            offset += word.syllables.count
+            if offset > 0, index < words.count - 1, word.text.last?.isWhitespace == true { breaks.insert(offset - 1) }
+        }
+        func plain(_ syllable: LyricSyllable) -> String {
+            let text = syllable.text.trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty else { return "" }
+            return #"<span \#(times(syllable.start, syllable.end))\#(agents.attribute(syllable.agentIDs))>\#(escape(text))</span>"#
+        }
+        var out = "", position = 0
+        while position < syllables.count {
+            let last: Int
+            if let annotation = annotations[position] {
+                last = annotation.syllables.upperBound
+                let members = annotation.syllables.filter(written)
+                let first = syllables[members[0]]
+                if members.count == 1 {
+                    out += #"<span tts:ruby="container"\#(agents.attribute(first.agentIDs))><span tts:ruby="base" \#(times(first.start, first.end))>\#(escape(first.text.trimmingCharacters(in: .whitespaces)))</span>"#
+                } else {
+                    out += #"<span tts:ruby="container"><span tts:ruby="base">"#
+                    for member in annotation.syllables {
+                        out += plain(syllables[member])
+                        if member < last, breaks.contains(member) { out += " " }
+                    }
+                    out += "</span>"
+                }
+                out += rubyText(annotation.ruby) + "</span>"
+            } else {
+                last = position
+                out += plain(syllables[position])
+            }
+            if breaks.contains(last) { out += " " }
+            position = last + 1
+        }
+        return out
+    }
+
+    private static func amllSpans(_ words: [LyricWord], agents: Agents, groups: inout Int) -> String {
+        let syllables = words.flatMap(\.syllables)
+        func written(_ index: Int) -> Bool { !syllables[index].text.trimmingCharacters(in: .whitespaces).isEmpty }
+        var shared: [Int: String] = [:]
+        var own: [Int: [LyricRuby]] = [:]
+        for group in LyricRubyGroup.groups(in: syllables) {
+            let ruby = group.ruby.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            let members = group.syllables.filter(written)
+            guard let first = members.first, !ruby.isEmpty else { continue }
+            guard members.count > 1 else {
+                own[first] = ruby
+                continue
+            }
+            groups += 1
+            for member in members { shared[member] = #" ttx:rubyGroup="\#(groups)""# }
+            let stamps = ruby.map { "\(timestamp($0.start)),\(timestamp(max($0.end, $0.start)))" }.joined(separator: " ")
+            shared[first, default: ""] += #" ttx:rubyText="\#(escape(LyricRubyGroup.encode(ruby.map(\.text))))" ttx:rubyTimes="\#(stamps)""#
+        }
         var out = ""
+        var position = 0
         for (index, word) in words.enumerated() {
             for syllable in word.syllables {
+                defer { position += 1 }
                 let text = syllable.text.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
-                let ruby = syllable.ruby.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+                if let attributes = shared[position] {
+                    out += #"<span \#(times(syllable.start, syllable.end))\#(agents.attribute(syllable.agentIDs))\#(attributes)>\#(escape(text))</span>"#
+                    continue
+                }
+                let ruby = (own[position] ?? syllable.ruby).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
                 if ruby.isEmpty {
                     out += #"<span \#(times(syllable.start, syllable.end))\#(agents.attribute(syllable.agentIDs))>\#(escape(text))</span>"#
                 } else {
@@ -160,6 +249,19 @@ public enum TTMLWriter {
             if index < words.count - 1, word.text.last?.isWhitespace == true { out += " " }
         }
         return out
+    }
+
+    private static func rubyText(_ ruby: [LyricRuby]) -> String {
+        if ruby.count == 1, let piece = ruby.first {
+            return #"<span tts:ruby="text" \#(times(piece.start, piece.end))>\#(escape(piece.text.trimmingCharacters(in: .whitespaces)))</span>"#
+        }
+        var out = #"<span tts:ruby="text">"#
+        for (index, piece) in ruby.enumerated() {
+            var text = piece.text.trimmingCharacters(in: .whitespaces)
+            if index < ruby.count - 1, piece.text.last?.isWhitespace == true { text += " " }
+            out += #"<span \#(times(piece.start, piece.end))>\#(escape(text))</span>"#
+        }
+        return out + "</span>"
     }
 
     private static func times(_ start: TimeInterval, _ end: TimeInterval) -> String {

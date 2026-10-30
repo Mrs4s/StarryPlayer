@@ -24,6 +24,8 @@ struct LyricsAIPronunciation: Sendable {
         var ruby: [Range<Int>]
         var approximate: Bool
         var english: [LyricsAIEnglishSyllables.Piece] = []
+        /// Token ranges for the whole group's ruby pieces, stored on its first unit.
+        var groupRuby: [Range<Int>] = []
     }
 
     var tokens: [LyricsAICTC.Token]
@@ -42,11 +44,13 @@ struct LyricsAIPronunciation: Sendable {
         var result = Self(tokens: [], units: [], lines: [], estimatedCount: 0, backgroundCount: 0)
         var known = 0
         var firstUnknown = "歌词"
-        for (lineIndex, line) in draft.lines.enumerated() {
+        for (lineIndex, sourceLine) in draft.lines.enumerated() {
             try Task.checkCancellation()
-            if line.isBackground { result.backgroundCount += 1; continue }
-            guard !line.syllables.isEmpty else { continue }
+            if sourceLine.isBackground { result.backgroundCount += 1; continue }
+            guard !sourceLine.syllables.isEmpty else { continue }
+            let line = alignmentLine(sourceLine)
             let automatic = autoReadings(line, english: english, overrides: readings.filter { $0.line == lineIndex })
+            let shared = sharedReadings(line, english: english)
             result.words += automatic.words.map { word in
                 var word = word
                 word.line = lineIndex
@@ -64,7 +68,10 @@ struct LyricsAIPronunciation: Sendable {
                 var reading: [Character] = []
                 var ruby: [Range<Int>] = []
                 var approximate = automatic.estimated.contains(index)
-                if let parts = syllable.ruby, !parts.isEmpty {
+                if let share = shared[index] {
+                    reading = share.reading
+                    approximate = share.estimated
+                } else if let parts = syllable.ruby, !parts.isEmpty {
                     for part in parts {
                         guard let kana = annotatedReading(part.text, english: english), !kana.isEmpty else {
                             throw LyricsAIError.unreadable(part.text)
@@ -77,7 +84,8 @@ struct LyricsAIPronunciation: Sendable {
                 } else {
                     reading = automatic.values[index]
                 }
-                if reading.isEmpty, hasLetters(syllable.text) {
+                // Empty shares stay between neighbours rather than adding an unknown token.
+                if reading.isEmpty, shared[index] == nil, hasLetters(syllable.text) {
                     reading = [unknown]
                     firstUnknown = String(syllable.text.prefix(40))
                     approximate = true
@@ -86,8 +94,9 @@ struct LyricsAIPronunciation: Sendable {
                 characters += reading
                 var unit = Unit(line: lineIndex, syllable: index, tokens: start..<(start + reading.count),
                                 ruby: ruby, approximate: approximate)
+                unit.groupRuby = shared[index]?.pieces.map { (start + $0.lowerBound)..<(start + $0.upperBound) } ?? []
                 let words = englishWords.filter { NSIntersectionRange($0, textRange).length > 0 }
-                if !approximate, ruby.isEmpty, !syllable.isRest, syllable.checkpoints == nil, !syllable.hasRelease,
+                if !approximate, ruby.isEmpty, shared[index] == nil, !syllable.isRest, syllable.checkpoints == nil, !syllable.hasRelease,
                    words.count == 1, let word = words.first, NSIntersectionRange(word, textRange) == word {
                     let local = NSRange(location: word.location - textRange.location, length: word.length)
                     let source = syllable.text as NSString
@@ -135,10 +144,97 @@ struct LyricsAIPronunciation: Sendable {
         return result
     }
 
+    // English ruby on katakana is a display gloss; align the written Japanese pronunciation.
+    private static func alignmentLine(_ source: LyricsDraft.Line) -> LyricsDraft.Line {
+        var line = source
+        for index in source.syllables.indices {
+            let syllable = source.syllables[index]
+            if isEnglishLoanwordRuby(syllable.ruby, for: syllable.text) {
+                line.syllables[index].ruby = nil
+            }
+        }
+        for group in LyricsDraft.rubyGroups(in: source.syllables) {
+            let text = group.map { source.syllables[$0].text }.joined()
+            if isEnglishLoanwordRuby(source.syllables[group.lowerBound].groupRuby, for: text) {
+                line.syllables[group.lowerBound].groupRuby = nil
+                for index in group { line.syllables[index].joinsRubyGroup = false }
+            }
+        }
+        return line
+    }
+
+    private static func isEnglishLoanwordRuby(_ ruby: [LyricsDraft.Ruby]?, for source: String) -> Bool {
+        guard let ruby, !ruby.isEmpty else { return false }
+        let letters = source.precomposedStringWithCompatibilityMapping.filter {
+            $0.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+        }
+        guard letters.unicodeScalars.contains(where: { (0x30A1...0x30FA).contains($0.value) }),
+              normalizeKana(letters) != nil else { return false }
+        let reading = ruby.map(\.text).joined().folding(options: [.diacriticInsensitive, .widthInsensitive],
+                                                     locale: Locale(identifier: "en_US_POSIX"))
+        let latin = reading.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        return !latin.isEmpty && latin.allSatisfy { (0x41...0x5A).contains($0.value) || (0x61...0x7A).contains($0.value) }
+    }
+
     private struct Readings {
         var values: [[Character]]
         var estimated: Set<Int> = []
         var words: [Word] = []
+    }
+
+    private struct Share {
+        var reading: [Character]
+        var estimated: Bool
+        /// Ruby-piece ranges within the group, only on the first syllable.
+        var pieces: [Range<Int>]
+    }
+
+    private static func sharedReadings(_ line: LyricsDraft.Line, english: [String: String]) -> [Int: Share] {
+        var result: [Int: Share] = [:]
+        for group in LyricsDraft.rubyGroups(in: line.syllables) {
+            var pieces: [[Character]] = []
+            for piece in line.syllables[group.lowerBound].groupRuby ?? [] {
+                let kana = annotatedReading(piece.text.trimmingCharacters(in: .whitespaces), english: english) ?? []
+                pieces.append(kana.isEmpty ? [unknown] : kana)
+            }
+            let reading = pieces.flatMap { $0 }
+            var ranges: [Range<Int>] = []
+            for piece in pieces { ranges.append((ranges.last?.upperBound ?? 0)..<((ranges.last?.upperBound ?? 0) + piece.count)) }
+            let texts = group.map { line.syllables[$0].text }
+            let (shares, estimated) = pieces.count == group.count ? (pieces, false) : divide(reading, among: texts)
+            for (position, member) in group.enumerated() {
+                result[member] = Share(reading: shares[position], estimated: estimated || shares[position].contains(unknown),
+                                       pieces: position == 0 ? ranges : [])
+            }
+        }
+        return result
+    }
+
+    private static func divide(_ reading: [Character], among texts: [String]) -> (shares: [[Character]], estimated: Bool) {
+        let parts = texts.map { $0.trimmingCharacters(in: .whitespaces) }
+        if !reading.contains(unknown) {
+            let word = texts.joined().trimmingCharacters(in: .whitespaces)
+            if LyricsAIEnglishSyllables.wordRanges(in: word) == [NSRange(location: 0, length: word.utf16.count)] {
+                var offsets: [Int] = [], offset = 0
+                for part in parts.dropLast() { offset += part.count; offsets.append(offset) }
+                let boundaries = LyricsAIEnglishSyllables.tokenCuts(word: word, reading: reading, cuts: offsets)
+                if boundaries.count == parts.count - 1 {
+                    let edges = [0] + boundaries + [reading.count]
+                    return (parts.indices.map { Array(reading[edges[$0]..<edges[$0 + 1]]) }, false)
+                }
+            }
+            if let aligned = JapaneseReadingAlignment.align(reading: String(reading), to: parts),
+               aligned.map(\.reading).joined() == String(reading) {
+                return (aligned.map { Array($0.reading) }, aligned.contains(where: \.isEstimated))
+            }
+        }
+        let groups = morae(reading)
+        let shares = parts.indices.map { position -> [Character] in
+            let lo = Int((Double(position) * Double(groups.count) / Double(parts.count)).rounded())
+            let hi = Int((Double(position + 1) * Double(groups.count) / Double(parts.count)).rounded())
+            return groups[lo..<hi].flatMap { $0 }
+        }
+        return (shares, true)
     }
 
     private static func autoReadings(_ line: LyricsDraft.Line, english: [String: String],
@@ -148,11 +244,13 @@ struct LyricsAIPronunciation: Sendable {
         var starts = [0]
         for s in line.syllables { starts.append(starts.last! + s.text.utf16.count) }
         var result = Readings(values: .init(repeating: [], count: line.syllables.count))
+        let annotated = Set(line.syllables.indices.filter { line.syllables[$0].ruby?.isEmpty == false })
+            .union(LyricsDraft.rubyGroups(in: line.syllables).flatMap { Array($0) })
         func assign(_ kana: [Character]?, range: NSRange, replacement: [Character]?) {
             let indices = line.syllables.indices.filter { NSIntersectionRange(range, NSRange(location: starts[$0], length: starts[$0 + 1] - starts[$0])).length > 0 }
             guard !indices.isEmpty else { return }
             guard let kana, !kana.isEmpty else {
-                for i in indices where line.syllables[i].ruby?.isEmpty != false {
+                for i in indices where !annotated.contains(i) {
                     result.values[i].append(unknown); result.estimated.insert(i)
                 }
                 return
@@ -224,7 +322,7 @@ struct LyricsAIPronunciation: Sendable {
             }
             let indices = line.syllables.indices.filter { NSIntersectionRange(range, NSRange(location: starts[$0], length: starts[$0 + 1] - starts[$0])).length > 0 }
             let editable = !indices.isEmpty && indices.allSatisfy { index in
-                guard line.syllables[index].ruby?.isEmpty != false else { return false }
+                guard !annotated.contains(index) else { return false }
                 let lower = starts[index], upper = starts[index + 1]
                 guard upper <= text.length else { return false }
                 let before = text.substring(with: NSRange(location: lower, length: max(0, range.location - lower)))
@@ -311,7 +409,7 @@ struct LyricsAIPronunciation: Sendable {
         let normalized = text.precomposedStringWithCompatibilityMapping
         let value = String(String.UnicodeScalarView(normalized.unicodeScalars.map { scalar in
             (0x30A1...0x30F6).contains(scalar.value) ? UnicodeScalar(scalar.value - 0x60)! : scalar
-        }))
+        })).precomposedStringWithCanonicalMapping
         let chars = Array(value.filter { !$0.isWhitespace })
         guard !chars.isEmpty, chars.allSatisfy({ c in
             c.unicodeScalars.allSatisfy { (0x3041...0x3096).contains($0.value) || $0.value == 0x30FC }

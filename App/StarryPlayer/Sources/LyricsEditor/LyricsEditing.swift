@@ -74,7 +74,7 @@ extension AppModel {
             guard response == .OK, let url = panel.url else { return }
             do {
                 try output.text.write(to: url, atomically: true, encoding: .utf8)
-                if format == .ttml, output.losses.isEmpty { session?.markSaved() }
+                if format == .ttml || format == .ttml2, output.losses.isEmpty { session?.markSaved() }
                 session?.flash("已导出「\(url.lastPathComponent)」")
             } catch {
                 session?.flash("导出失败：\(error.localizedDescription)")
@@ -91,7 +91,7 @@ extension AppModel {
         guard let text = session.exportTTML() else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        session.flash("TTML 已拷贝")
+        session.flash("AMLL TTML 已拷贝")
     }
 
     // MARK: Projects
@@ -165,7 +165,8 @@ extension AppModel {
 extension LyricsExportFormat {
     var title: String {
         switch self {
-        case .ttml: "TTML"
+        case .ttml: "AMLL TTML"
+        case .ttml2: "TTML2"
         case .lrcLine: "LRC · 逐行"
         case .lrcEnhanced: "LRC · 增强型"
         case .lrcWord: "LRC · 逐字"
@@ -192,6 +193,7 @@ private extension LyricsExport.Loss {
         case .translation: "翻译"
         case .romanization: "音译"
         case .ruby: "注音"
+        case .sharedRuby: "跨音节的共享注音"
         case .agents: "角色信息"
         case .backgroundGrouping: "背景人声分组（会单独输出为歌词行）"
         case .metadata: "部分歌曲元数据"

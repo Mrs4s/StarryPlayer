@@ -140,6 +140,37 @@ import Testing
         }
     }
 
+    private func shared(_ texts: [String], ruby: [String], over run: ClosedRange<Int>) -> LyricLine {
+        var syllables = texts.enumerated().map { i, text in LyricSyllable(start: Double(i), end: Double(i + 1), text: text) }
+        syllables[run.lowerBound].groupRuby = LyricRuby.spread(ruby, start: Double(run.lowerBound), end: Double(run.upperBound + 1))
+        for s in run.dropFirst() { syllables[s].joinsRubyGroup = true }
+        return LyricLine(id: 0, start: 0, end: Double(texts.count), words: LyricWordGrouping.words(from: syllables))
+    }
+
+    @Test func sharedRubySitsCentredOnItsRun() throws {
+        let l = shared(["運", "命", "を"], ruby: ["des", "ti", "ny"], over: 0...1)
+        let r = try #require(FuriganaLayout.layout(line: l, metrics: metrics(width: 900)))
+        #expect(r.furigana.baseSyllables == [0...1])
+        #expect(r.furigana.line.syllables.map { $0.text.trimmingCharacters(in: .whitespaces) } == ["des", "ti", "ny"])
+        let main = r.text.rows[0], ruby = r.furigana.text.rows[0]
+        let base = try #require(ink(main, 0...1)), reading = try #require(ink(ruby, 0...2))
+        #expect(abs(centre(base) - centre(reading)) < 0.5)
+        let plain = LineTextLayout.layout(line: l, font: specs.font, width: 900, leading: specs.fontLeading, alignment: .left, perSyllable: true)
+        let gap = try #require(ink(main, 1...1)).lowerBound - (try #require(ink(main, 0...0))).upperBound
+        let plainGap = try #require(ink(plain.rows[0], 1...1)).lowerBound - (try #require(ink(plain.rows[0], 0...0))).upperBound
+        #expect(abs(gap - plainGap) < 0.5)
+    }
+
+    @Test func aRunSharingRubyAcrossWordsNeverWrapsApart() throws {
+        let l = shared(["Mer", "ry ", "Christ", "mas"], ruby: ["メリー ", "クリスマス"], over: 0...3)
+        #expect(l.words.count == 2)
+        let r = try #require(FuriganaLayout.layout(line: l, metrics: metrics(width: 120)))
+        let row = try #require(r.text.rows.first { $0.fragments.contains { $0.syllable == 0 } })
+        #expect(row.fragments.contains { $0.syllable == 3 })
+        #expect(r.furigana.text.rows.count == 1)
+        #expect(r.furigana.line.text.trimmingCharacters(in: .whitespaces) == "メリー クリスマス")
+    }
+
     @Test func rubySharesEmphasisedGlyphMotion() throws {
         let syllables = line([("瞬", ["しゅん"]), ("間", ["かん"])]).syllables
         let l = LyricLine(id: 0, start: 0, end: 2, words: [LyricWord(start: 0, end: 2, text: "瞬間", syllables: syllables)])

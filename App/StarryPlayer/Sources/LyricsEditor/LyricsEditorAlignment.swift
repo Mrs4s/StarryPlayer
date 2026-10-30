@@ -49,7 +49,7 @@ struct LyricsEditorAlignment: View {
                     .font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                 if state.language == .japanese {
-                    Text("日语优先参考字块注音；特殊读法可先补全注音或合并字块。")
+                    Text("日语优先参考字块注音和共享注音；特殊读法可先补全注音或合并字块。")
                         .font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                 }
                 if state.isWorking {

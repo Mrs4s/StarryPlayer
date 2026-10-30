@@ -5,8 +5,14 @@ import QuartzCore
 /// Only geometry-affecting fields belong in this key. Timing, selection and hover reuse it.
 struct LyricsEditorLineLayout {
     struct Input: Equatable {
+        struct RubyGroup: Equatable {
+            var syllables: ClosedRange<Int>
+            var text: String
+        }
+
         var texts: [String]
         var rubies: [String]
+        var rubyGroups: [RubyGroup]
         var translation: String
         var romanization: String
         var badge: String?
@@ -18,6 +24,9 @@ struct LyricsEditorLineLayout {
         init(line: LyricsDraft.Line, width: CGFloat, paragraph: Bool, editing: Bool, agents: [LyricAgent] = []) {
             texts = line.syllables.map(\.text)
             rubies = line.syllables.map { ($0.ruby ?? []).map(\.text).joined() }
+            rubyGroups = LyricsDraft.rubyGroups(in: line.syllables).map {
+                RubyGroup(syllables: $0, text: (line.syllables[$0.lowerBound].groupRuby ?? []).map(\.text).joined().trimmingCharacters(in: .whitespaces))
+            }
             translation = line.translation
             romanization = line.romanization
             badge = Self.badge(of: line, agents: agents)
@@ -65,7 +74,7 @@ struct LyricsEditorLineLayout {
         let available = max(26, input.width - leading - 132)
         let font = NSFont.systemFont(ofSize: input.background ? 15 : 17, weight: .medium)
         let rubyFont = Self.rubyFont(background: input.background)
-        let band: CGFloat = !input.editing && input.rubies.contains { !$0.isEmpty } ? ceil(rubyFont.ascender - rubyFont.descender) : 0
+        let band: CGFloat = !input.editing && (input.rubies.contains { !$0.isEmpty } || !input.rubyGroups.isEmpty) ? ceil(rubyFont.ascender - rubyFont.descender) : 0
         rubyBand = band
         let chipHeight: CGFloat = (input.background ? 26 : 30) + band
         var x = leading
@@ -79,17 +88,35 @@ struct LyricsEditorLineLayout {
         badge = badgeRect
         var frames: [NSRect] = []
         if !input.editing {
-            for (text, ruby) in zip(input.texts, input.rubies) {
+            var widths: [CGFloat] = zip(input.texts, input.rubies).map { text, ruby in
                 let label = text.trimmingCharacters(in: .whitespaces)
                 let labelWidth = (label as NSString).size(withAttributes: [.font: font]).width
                 let rubyWidth = (ruby as NSString).size(withAttributes: [.font: rubyFont]).width
-                let width = min(available, max(26, ceil(max(labelWidth, rubyWidth)) + 12))
-                if x > leading, x + width > leading + available {
+                return min(available, max(26, ceil(max(labelWidth, rubyWidth)) + 12))
+            }
+            let gaps = input.texts.map { CGFloat(2) + ($0.hasSuffix(" ") ? 8 : 0) }
+            var unitEnd = Array(input.texts.indices)
+            for group in input.rubyGroups where group.syllables.upperBound < input.texts.count {
+                let rubyWidth = ceil((group.text as NSString).size(withAttributes: [.font: rubyFont]).width) + 12
+                let span = group.syllables.reduce(0) { $0 + widths[$1] } + group.syllables.dropLast().reduce(0) { $0 + gaps[$1] }
+                if span < rubyWidth {
+                    for s in group.syllables { widths[s] += (rubyWidth - span) / CGFloat(group.syllables.count) }
+                }
+                unitEnd[group.syllables.lowerBound] = group.syllables.upperBound
+            }
+            var s = 0
+            while s < input.texts.count {
+                let end = unitEnd[s]
+                let unit = (s...end).reduce(0) { $0 + widths[$1] } + (s..<end).reduce(0) { $0 + gaps[$1] }
+                if x > leading, x + unit > leading + available {
                     x = leading
                     y += chipHeight + 4
                 }
-                frames.append(NSRect(x: x, y: y, width: width, height: chipHeight))
-                x += width + 2 + (text.hasSuffix(" ") ? 8 : 0)
+                for k in s...end {
+                    frames.append(NSRect(x: x, y: y, width: widths[k], height: chipHeight))
+                    x += widths[k] + gaps[k]
+                }
+                s = end + 1
             }
         }
         chips = frames
@@ -143,6 +170,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     private var endingEdit = false
     private var labels: [NSAttributedString] = []
     private var rubyLabels: [NSAttributedString?] = []
+    private var rubyGroupLabels: [NSAttributedString] = []
     private var sweeps: [(clip: CALayer, fill: CALayer)] = []
     private let pulseLayer = CAShapeLayer()
     private var accessible: [LyricsEditorActionElement] = []
@@ -194,6 +222,12 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             rubyLabels = zip(line.syllables, layout.input.rubies).map { syllable, ruby in
                 ruby.isEmpty ? nil : NSAttributedString(string: ruby, attributes: [
                     .font: rubyFont, .foregroundColor: NSColor(theme.onSurfaceVariant).withAlphaComponent(syllable.isTimed ? 0.9 : 0.5)
+                ])
+            }
+            rubyGroupLabels = layout.input.rubyGroups.map { group in
+                let timed = line.syllables.indices.contains(group.syllables.lowerBound) && line.syllables[group.syllables.lowerBound].isTimed
+                return NSAttributedString(string: group.text, attributes: [
+                    .font: rubyFont, .foregroundColor: NSColor(theme.onSurfaceVariant).withAlphaComponent(timed ? 0.9 : 0.5)
                 ])
             }
             for sweep in sweeps { sweep.clip.removeFromSuperlayer() }
@@ -297,10 +331,18 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
                 if let ruby = rubyLabels[s] {
                     ruby.draw(at: NSPoint(x: max(rect.minX + 6, rect.midX - ruby.size().width / 2), y: rect.minY + 3))
                     label.draw(at: NSPoint(x: max(rect.minX + 6, rect.midX - label.size().width / 2), y: textMidY - label.size().height / 2))
+                } else if layout.input.rubyGroups.contains(where: { $0.syllables.contains(s) }) {
+                    label.draw(at: NSPoint(x: max(rect.minX + 6, rect.midX - label.size().width / 2), y: textMidY - label.size().height / 2))
                 } else {
                     label.draw(at: NSPoint(x: rect.minX + 6, y: textMidY - label.size().height / 2))
                 }
                 NSGraphicsContext.restoreGraphicsState()
+            }
+            for (group, ruby) in zip(layout.input.rubyGroups, rubyGroupLabels) where group.syllables.upperBound < layout.chips.count {
+                let first = layout.chips[group.syllables.lowerBound]
+                let span = group.syllables.map { layout.chips[$0] }.filter { $0.minY == first.minY }.reduce(first) { $0.union($1) }
+                guard span.insetBy(dx: -3, dy: -3).intersects(dirtyRect) else { continue }
+                ruby.draw(at: NSPoint(x: max(span.minX + 6, span.midX - ruby.size().width / 2), y: span.minY + 3))
             }
         }
         if let rect = layout.translation { text(line.translation, rect: rect, font: .systemFont(ofSize: 12.5), color: secondary, wrap: true) }
@@ -459,7 +501,8 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
         accessible = layout.chips.enumerated().map { s, rect in
             let syllable = line.syllables[s]
             let state = selected.contains(s) ? "，已选中" : ""
-            let ruby = layout.input.rubies[s].isEmpty ? "" : "，注音 \(layout.input.rubies[s])"
+            let shared = layout.input.rubyGroups.first { $0.syllables.contains(s) }.map { "，共享注音 \($0.text)" }
+            let ruby = shared ?? (layout.input.rubies[s].isEmpty ? "" : "，注音 \(layout.input.rubies[s])")
             let performers = syllable.agentIDs.map { id in agents.first { $0.id == id }.map(LyricsEditorSession.name(of:)) ?? id }
             let performer = performers.isEmpty ? "" : "，由 \(performers.joined(separator: "、")) 演唱"
             return actionElement(label: "\(syllable.text)\(ruby)\(performer)，\(LyricsEditorFormat.time(syllable.start, digits: 3))\(state)", rect: rect) { [weak self] in self?.select?(s) }

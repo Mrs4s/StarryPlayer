@@ -142,7 +142,9 @@ public struct LyricLine: Sendable, Hashable, Identifiable {
 
     public var hasSyllableTiming: Bool { words.count > 1 || (words.first?.syllables.count ?? 0) > 1 }
 
-    public var hasRuby: Bool { syllables.contains { !$0.ruby.isEmpty } || (background?.syllables.contains { !$0.ruby.isEmpty } ?? false) }
+    public var hasRuby: Bool {
+        (syllables + (background?.syllables ?? [])).contains { !$0.ruby.isEmpty || !$0.groupRuby.isEmpty }
+    }
 
     public static func plain(id: Int, start: TimeInterval, end: TimeInterval, text: String, translation: String? = nil) -> LyricLine {
         LyricLine(id: id, start: start, end: end, words: [LyricWord(start: start, end: end, text: text)], translation: translation)
@@ -212,6 +214,10 @@ public struct LyricSyllable: Sendable, Hashable {
     /// Ruby over the syllable (furigana, TTML `tts:ruby`), in reading order; empty for none.
     /// The text stays the base alone.
     public var ruby: [LyricRuby]
+    /// Ruby on a group's first syllable; following syllables set `joinsRubyGroup`.
+    /// Absolute times may span the whole group.
+    public var groupRuby: [LyricRuby]
+    public var joinsRubyGroup: Bool
     /// An inline performer change; empty inherits the containing line or background voice.
     public var agentIDs: [String]
     /// Absolute beat times; nil entries are untimed.
@@ -219,11 +225,13 @@ public struct LyricSyllable: Sendable, Hashable {
     public var isRest: Bool
     public var hasRelease: Bool
 
-    public init(start: TimeInterval, end: TimeInterval, text: String, ruby: [LyricRuby] = [], agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false) {
+    public init(start: TimeInterval, end: TimeInterval, text: String, ruby: [LyricRuby] = [], agentIDs: [String] = [], checkpoints: [TimeInterval?]? = nil, isRest: Bool = false, hasRelease: Bool = false, groupRuby: [LyricRuby] = [], joinsRubyGroup: Bool = false) {
         self.start = start
         self.end = end
         self.text = text
         self.ruby = ruby
+        self.groupRuby = groupRuby
+        self.joinsRubyGroup = joinsRubyGroup
         self.agentIDs = agentIDs
         self.checkpoints = checkpoints
         self.isRest = isRest

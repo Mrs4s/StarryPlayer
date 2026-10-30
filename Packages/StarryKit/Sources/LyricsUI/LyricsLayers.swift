@@ -803,7 +803,7 @@ final class VoiceLayer: NoAnimationLayer {
     }
 
     private func rowLayers(_ text: LineTextLayout, line: LyricLine, lifts: Bool, specs: LyricsSpecs,
-                           furiganaBases: [Int]? = nil, mainRows: [RowLayer] = []) -> [RowLayer] {
+                           furiganaBases: [ClosedRange<Int>]? = nil, mainRows: [RowLayer] = []) -> [RowLayer] {
         let scale = renderScale
         let lineSyllables = line.syllables
         let padding = glyphPadding
@@ -867,11 +867,13 @@ final class VoiceLayer: NoAnimationLayer {
 
             if let furiganaBases {
                 for word in words {
-                    let base = furiganaBases[word.wordIndex]
-                    guard let mainRow = mainRows.first(where: { $0.liftsSyllables && $0.syllables.contains { $0.syllableIndex == base } }),
-                          let syllable = mainRow.syllables.first(where: { $0.syllableIndex == base }),
-                          let fragment = textLayout.rows.flatMap(\.fragments).first(where: { $0.syllable == base }),
-                          let baseInk = fragment.ink else { continue }
+                    let bases = furiganaBases[word.wordIndex]
+                    guard let mainRow = mainRows.first(where: { $0.liftsSyllables && $0.syllables.contains { $0.syllableIndex == bases.lowerBound } }),
+                          let syllable = mainRow.syllables.first(where: { $0.syllableIndex == bases.lowerBound }) else { continue }
+                    let baseFragments = textLayout.rows.flatMap(\.fragments).filter { bases.contains($0.syllable) }
+                    guard let baseLo = baseFragments.compactMap(\.ink?.lowerBound).min(),
+                          let baseHi = baseFragments.compactMap(\.ink?.upperBound).max() else { continue }
+                    let baseInk = baseLo...baseHi
                     let fragments = row.fragments.filter { f in word.syllables.contains { $0.syllableIndex == f.syllable } }
                     guard let lo = fragments.compactMap(\.ink?.lowerBound).min(),
                           let hi = fragments.compactMap(\.ink?.upperBound).max() else { continue }
@@ -886,11 +888,12 @@ final class VoiceLayer: NoAnimationLayer {
                                          steps: mainRow.steps.map { .init(start: $0.start, end: $0.end, target: min(max($0.target * ratio + offset, edgeRange.lowerBound), edgeRange.upperBound)) },
                                          timed: mainRow.isTimed, start: lo, words: [word], progressRange: edgeRange)
                     mainRow.addProgressFollower(annotation, scale: ratio, offset: offset)
-                    if !syllable.glyphLayers.isEmpty {
-                        let glyph = syllable.glyphLayers[syllable.glyphLayers.count / 2]
-                        let baseWord = syllable.superlayer?.frame.origin ?? .zero
-                        let pivot = CGPoint(x: mainRow.frame.minX + baseWord.x + syllable.frame.minX + glyph.rest.x,
-                                            y: mainRow.frame.minY + baseWord.y + syllable.frame.minY + glyph.rest.y)
+                    let glyphs = mainRow.syllables.filter { bases.contains($0.syllableIndex) }.flatMap { base in base.glyphLayers.map { (base, $0) } }
+                    if !glyphs.isEmpty {
+                        let (owner, glyph) = glyphs[glyphs.count / 2]
+                        let baseWord = owner.superlayer?.frame.origin ?? .zero
+                        let pivot = CGPoint(x: mainRow.frame.minX + baseWord.x + owner.frame.minX + glyph.rest.x,
+                                            y: mainRow.frame.minY + baseWord.y + owner.frame.minY + glyph.rest.y)
                         let frame = annotation.frame
                         annotation.anchorPoint = CGPoint(x: (pivot.x - frame.minX) / frame.width, y: (pivot.y - frame.minY) / frame.height)
                         annotation.position = pivot

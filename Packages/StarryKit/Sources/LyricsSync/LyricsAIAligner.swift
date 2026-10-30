@@ -100,7 +100,7 @@ public actor LyricsAIAligner {
                 progress(.init(0.95 + fraction * 0.04, "定位歌词时间…"))
             }
         }
-        let displayBoundaries = Set(plan.units.flatMap { [$0.tokens.lowerBound] + $0.ruby.map(\.lowerBound) })
+        let displayBoundaries = Set(plan.units.flatMap { [$0.tokens.lowerBound] + $0.ruby.map(\.lowerBound) + $0.groupRuby.map(\.lowerBound) })
         let refinement = try LyricsAIRepeatedVowels.refinement(alignment.spans, evidence: evidence, tokens: plan.tokens,
                                                                rawSpans: alignment.raw, displayBoundaries: displayBoundaries, vocals: vocals)
         let spans = refinement.spans

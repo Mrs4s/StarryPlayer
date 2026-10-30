@@ -41,8 +41,10 @@ public enum LyricsTranslation {
         /// Nil when not asked for; empty when the line needs none.
         public let romanization: String?
         /// The ruby of each syllable in order, empty where it needs none; nil when not asked
-        /// for or the line has no Han characters.
+        /// for or the line has no Han or Katakana characters.
         public let ruby: [String]?
+        /// Parallel to `ruby`, or nil with it. True joins the preceding ruby group.
+        public let rubyJoins: [Bool]?
     }
 
     public struct Changes: Sendable, Equatable {
@@ -67,7 +69,7 @@ public enum LyricsTranslation {
     public enum ValidationError: LocalizedError, Equatable {
         case noLyrics, noLanguage, noFields, invalidFormat, unknownLine, duplicateLine(Int)
         case missingLines(Int), changedSource(Int), emptyTranslation(Int), multilineTranslation(Int)
-        case multilineRomanization(Int), changedSyllables(Int), multilineRuby(Int)
+        case multilineRomanization(Int), changedSyllables(Int), multilineRuby(Int), brokenRubyGroup(Int)
 
         public var errorDescription: String? {
             switch self {
@@ -84,6 +86,7 @@ public enum LyricsTranslation {
             case .multilineRomanization(let line): "第 \(line) 行音译包含换行，请将它放在同一行。"
             case .changedSyllables(let line): "第 \(line) 行的音节与当前歌词不一致，请保留 syllables 的数量、顺序和 text，或重新生成 Prompt。"
             case .multilineRuby(let line): "第 \(line) 行的注音包含换行，请每个音节只填一个读音。"
+            case .brokenRubyGroup(let line): "第 \(line) 行的共享注音不完整：joinsPrevious 为 true 的音节要留空 ruby，并紧接在填写了 ruby 的音节或另一个共享的音节之后。"
             }
         }
     }
@@ -106,6 +109,7 @@ public enum LyricsTranslation {
     private struct Syllable: Codable {
         var text: String
         var ruby: String?
+        var joinsPrevious: Bool?
     }
 
     /// `language` and `style` matter only with `.translation`, `rubyScript` (what ruby is
@@ -138,7 +142,14 @@ public enum LyricsTranslation {
             tasks.append("romanization：这一行的读音，用拉丁字母音译。日语用平文式（赫本式）罗马字，中文用带声调的汉语拼音，韩语用国语罗马字表记法，词与词之间用空格分隔。原文本身就是拉丁字母时填写空字符串。")
         }
         if fields.contains(.ruby) {
-            tasks.append("syllables：只出现在含汉字的行，是这一行按音节拆开的列表。只填写每个音节的 ruby：含汉字的音节填写它在这句歌词里的读音，用\(script)书写，结合上下文判断训读、音读和连浊；假名、拉丁字母、数字和标点等不需要注音的音节填写空字符串。读音无法拆到单个音节时（如熟字训），把整个词的读音写在它的第一个音节上，其余音节留空。")
+            tasks.append("syllables：只出现在含汉字或片假名的行，是这一行按音节拆开的列表。只填写每个音节的 ruby：含汉字的音节填写它在这句歌词里的读音，用\(script)书写，结合上下文判断训读、音读和连浊；普通假名、拉丁字母、数字和标点等不需要注音的音节填写空字符串。")
+            tasks.append("共享注音：读音无法拆到单个音节时，例如熟字训（「今日」きょう、「大人」おとな）或当て字（汉字唱作英语、外来语等另一个词），让相邻的几个音节共用一个注音：把整个词的读音写在第一个音节的 ruby，其余音节的 ruby 留空，并为它们加上 \"joinsPrevious\": true。汉字唱作外语时按实际演唱写出那个词，例如「運命」唱作 destiny 时写 destiny，多个词之间用空格分隔。能拆到单个音节的读音不要共享；没有共享的音节不要加 joinsPrevious。")
+            if draft.lines.contains(where: { line in
+                line.text.unicodeScalars.contains { CharacterSet.letters.contains($0) && LyricRomanizationAligner.isKana($0) }
+            }) {
+                tasks.append("日语读音核对：若具备联网搜索能力，可以结合歌曲名、歌手和歌词片段搜索 UtaTen，参考对应歌曲的ふりがな（furigana），提高注音准确度，尤其核对熟字训、当て字和特殊唱法。先确认歌曲及版本匹配，再结合当前歌词与实际演唱采用读音；无法搜索或找到对应内容时按上下文判断。")
+                tasks.append("日式英语：片假名表示英语词或短语时，也要在 ruby 中标注对应的英语原词，例如「スポットライト」填写 spotlight。使用英语原词而非片假名的罗马字转写或平假名；只在能确认英语原词时标注，普通假名或无法确认的词留空。英语词跨多个音节时，将完整英语词写在第一个音节的 ruby，其余音节的 ruby 留空并加上 \"joinsPrevious\": true，共享整个词的注音。保留原文 text 和 source 不变。")
+            }
         }
         let opening = translating
             ? "请将下面的歌词逐行翻译成\(language)\(fields == .translation ? "" : "，并补充读音")。"
@@ -155,7 +166,7 @@ public enum LyricsTranslation {
         返回格式要求：
         1. 只返回完整 JSON 对象，不要解释、前言或省略号。
         2. 保持 lines 数组的行数、顺序和每个 id、source 完全不变，包括原文的空格与标点。不要合并、拆分、遗漏或去重歌词行。\(fields.contains(.ruby) ? "syllables 的数量、顺序和每个 text 同样保持不变。" : "")
-        3. 只填写上面列出的字段，每个值都是单行字符串，不要附加行号或原文。\(translating ? "译文不能为空。" : "")
+        3. 只填写上面列出的字段，每个值都是单行字符串，不要附加行号或原文。\(translating ? "译文不能为空。" : "")\(fields.contains(.ruby) ? "joinsPrevious 是布尔值，只在共享注音的音节上添加。" : "")
         4. isBackground 表示背景人声，isParagraphStart 表示段落起点，请保留这些字段。背景人声同样需要处理。
         5. 使用合法的 JSON 字符串转义，确保结果可直接解析。
 
@@ -198,17 +209,26 @@ public enum LyricsTranslation {
                 romanization = text
             }
             var ruby: [String]?
+            var rubyJoins: [Bool]?
             if fields.contains(.ruby), needsRuby(original.element) {
                 guard let syllables = row.syllables, syllables.map({ trimmed($0.text) }) == original.element.syllables.map({ trimmed($0.text) }) else {
                     throw ValidationError.changedSyllables(number)
                 }
-                ruby = try syllables.map { syllable in
+                let texts = try syllables.map { syllable in
                     let text = trimmed(syllable.ruby ?? "")
                     guard !isMultiline(text) else { throw ValidationError.multilineRuby(number) }
                     return text
                 }
+                let joins = syllables.map { $0.joinsPrevious ?? false }
+                for index in joins.indices where joins[index] {
+                    guard index > 0, texts[index].isEmpty, !texts[index - 1].isEmpty || joins[index - 1] else {
+                        throw ValidationError.brokenRubyGroup(number)
+                    }
+                }
+                ruby = texts
+                rubyJoins = joins
             }
-            entries[row.id] = Entry(id: row.id, lineNumber: number, source: row.source, translation: translation, romanization: romanization, ruby: ruby)
+            entries[row.id] = Entry(id: row.id, lineNumber: number, source: row.source, translation: translation, romanization: romanization, ruby: ruby, rubyJoins: rubyJoins)
         }
         guard entries.count == candidates.count else { throw ValidationError.missingLines(candidates.count - entries.count) }
         return candidates.compactMap { entries[$0.element.id] }
@@ -221,7 +241,8 @@ public enum LyricsTranslation {
     }
 
     /// Fills in only what is blank unless `overwrite`. Empty romanization or ruby never removes
-    /// what is there, and ruby goes only on syllables with Han characters, never repeating them.
+    /// what is there, and ruby goes only on syllables with Han or Katakana characters, never
+    /// repeating them. Shared ruby requires at least one such syllable.
     @discardableResult
     public static func apply(_ entries: [Entry], to draft: inout LyricsDraft, overwrite: Bool = false) -> Changes {
         let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -241,14 +262,26 @@ public enum LyricsTranslation {
                 changes.lines.insert(id)
             }
             if let ruby = entry.ruby, ruby.count == draft.lines[index].syllables.count {
-                for (s, text) in ruby.enumerated() where !text.isEmpty {
-                    let position = LyricsDraft.Position(line: index, syllable: s)
-                    let base = trimmed(draft[position].text)
-                    let before = draft[position].ruby
-                    guard containsHan(base), text != base, overwrite || (before ?? []).isEmpty else { continue }
-                    draft.setRuby(text, at: position)
-                    if draft[position].ruby != before {
-                        changes.rubies += 1
+                let joins = entry.rubyJoins ?? []
+                var s = 0
+                while s < ruby.count {
+                    var end = s
+                    while end + 1 < min(ruby.count, joins.count), joins[end + 1] { end += 1 }
+                    let run = s...end
+                    s = end + 1
+                    let text = ruby[run.lowerBound]
+                    guard !text.isEmpty else { continue }
+                    let positions = run.map { LyricsDraft.Position(line: index, syllable: $0) }
+                    let base = positions.map { trimmed(draft[$0].text) }.joined()
+                    let before = Array(draft.lines[index].syllables[run])
+                    guard containsRubyBase(base), text != base, overwrite || !positions.contains(where: { draft.hasRuby(at: $0) }) else { continue }
+                    if positions.count > 1 {
+                        draft.setGroupRuby(text, over: positions)
+                    } else {
+                        draft.setRuby(text, at: positions[0])
+                    }
+                    if Array(draft.lines[index].syllables[run]) != before {
+                        changes.rubies += positions.count
                         changes.lines.insert(id)
                     }
                 }
@@ -261,9 +294,14 @@ public enum LyricsTranslation {
         !line.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func needsRuby(_ line: LyricsDraft.Line) -> Bool { line.syllables.contains { containsHan($0.text) } }
+    static func needsRuby(_ line: LyricsDraft.Line) -> Bool { line.syllables.contains { containsRubyBase($0.text) } }
 
-    private static func containsHan(_ text: String) -> Bool { text.unicodeScalars.contains(where: LyricRomanizationAligner.isHan) }
+    private static func containsRubyBase(_ text: String) -> Bool {
+        text.unicodeScalars.contains {
+            LyricRomanizationAligner.isHan($0) || (0x30A1...0x30FA).contains($0.value)
+                || (0x31F0...0x31FF).contains($0.value) || (0xFF66...0xFF9D).contains($0.value)
+        }
+    }
     private static func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
     private static func isBlank(_ text: String) -> Bool { trimmed(text).isEmpty }
     private static func isMultiline(_ text: String) -> Bool { text.rangeOfCharacter(from: .newlines) != nil }

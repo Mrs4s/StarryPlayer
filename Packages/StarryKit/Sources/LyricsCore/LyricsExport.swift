@@ -1,11 +1,11 @@
 import Foundation
 
 public enum LyricsExportFormat: String, Sendable, CaseIterable {
-    case ttml, lrcLine, lrcEnhanced, lrcWord, kra, txt, txt2ass, srt, ass, nicokara, nicokaraRuby, rl, kasugamuki, krl
+    case ttml, ttml2, lrcLine, lrcEnhanced, lrcWord, kra, txt, txt2ass, srt, ass, nicokara, nicokaraRuby, rl, kasugamuki, krl
 
     public var fileExtension: String {
         switch self {
-        case .ttml: "ttml"
+        case .ttml, .ttml2: "ttml"
         case .lrcLine, .lrcEnhanced, .lrcWord, .nicokara, .nicokaraRuby: "lrc"
         case .kra: "kra"
         case .txt, .txt2ass, .rl, .kasugamuki: "txt"
@@ -18,7 +18,7 @@ public enum LyricsExportFormat: String, Sendable, CaseIterable {
 
 public enum LyricsExport {
     public enum Loss: String, Sendable, Hashable {
-        case timing, syllableTiming, lineEndTiming, translation, romanization, ruby, agents, backgroundGrouping, metadata, agentDetails, editingState
+        case timing, syllableTiming, lineEndTiming, translation, romanization, ruby, sharedRuby, agents, backgroundGrouping, metadata, agentDetails, editingState
     }
 
     public struct Output: Sendable {
@@ -41,7 +41,10 @@ public enum LyricsExport {
 
     public static func write(_ document: LyricsDocument, format: LyricsExportFormat, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil) throws -> Output {
         let editingState = document.hasAuthoringTiming
-        if format == .ttml { return Output(text: TTMLWriter.write(document, metadata: metadata, duration: duration), losses: editingState ? [.editingState] : []) }
+        if format == .ttml || format == .ttml2 {
+            return Output(text: TTMLWriter.write(document, metadata: metadata, duration: duration, format: format == .ttml2 ? .ttml2 : .amll),
+                          losses: editingState ? [.editingState] : [])
+        }
         if [.ass, .nicokara, .nicokaraRuby, .rl, .kasugamuki, .krl].contains(format) { return try KaraokeExport.write(document, format: format, metadata: metadata) }
         let sourceVoices = document.lines.flatMap { line -> [Voice] in
             let main = Voice(start: line.primaryStart, end: line.primaryEnd, text: line.text, syllables: line.syllables)

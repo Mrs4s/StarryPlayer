@@ -44,13 +44,31 @@ extension LyricsAIAligner {
                     line.syllables[unit.syllable].ruby = ruby
                 }
             }
+            let runs = LyricsDraft.rubyGroups(in: line.syllables)
+            for unit in units where !unit.groupRuby.isEmpty {
+                guard let run = runs.first(where: { $0.lowerBound == unit.syllable }),
+                      var ruby = line.syllables[unit.syllable].groupRuby, ruby.count == unit.groupRuby.count,
+                      let start = line.syllables[run.lowerBound].start, let end = line.syllables[run.upperBound].end, end > start else { continue }
+                for index in ruby.indices {
+                    let range = unit.groupRuby[index]
+                    guard !range.isEmpty, range.upperBound <= spans.count else { continue }
+                    let lo = min(max((spans[range.lowerBound].start - start) / (end - start), 0), 1)
+                    let hi = min(max((spans[range.upperBound - 1].end - start) / (end - start), lo), 1)
+                    ruby[index].span = lo...hi
+                }
+                line.syllables[unit.syllable].groupRuby = ruby
+            }
             if englishSplit != .word {
                 for unit in units.reversed() where unit.english.count > 1 {
                     let original = line.syllables[unit.syllable]
                     let pieces = englishPieces(unit, spans: spans, bounds: .init(start: original.start!, end: original.end!), mode: englishSplit)
                     let replacements = pieces.enumerated().map { index, piece in
                         var syllable = original
-                        if index > 0 { syllable.id = UUID() }
+                        if index > 0 {
+                            syllable.id = UUID()
+                            syllable.joinsRubyGroup = original.groupRuby != nil || original.joinsRubyGroup
+                            syllable.groupRuby = nil
+                        }
                         syllable.text = piece.text
                         syllable.start = piece.start
                         syllable.end = piece.end

@@ -171,8 +171,7 @@ public enum YRCParser: LyricsParser {
     }
 }
 
-/// AMLL TTML parser with syllables, singers, background vocals, timed romanization and ruby.
-/// Invalid zero timestamps inherit neighbouring timing rather than starting at zero.
+/// Parses AMLL and TTML2 lyrics. Zero placeholder timestamps inherit neighbouring timing.
 public enum TTMLParser: LyricsParser {
     public static let format: LyricsDocument.Format = .ttml
 
@@ -259,7 +258,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
 
     private enum SpanKind {
         case syllable(start: TimeInterval, end: TimeInterval), placeholder, background, translation, roman, other
-        case ruby(start: TimeInterval?, end: TimeInterval?), rubyBase, rubyTexts, rubyText(start: TimeInterval?, end: TimeInterval?)
+        case ruby
     }
     private var spanStack: [SpanKind] = []
     private var spanText = ""
@@ -267,13 +266,18 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     private var inBackground: Bool { spanStack.contains { if case .background = $0 { return true } else { return false } } }
     private var inRuby: Bool { spanStack.contains { if case .ruby = $0 { return true } else { return false } } }
 
-    struct PendingRuby {
-        var text: String
-        var start: TimeInterval?
-        var end: TimeInterval?
+    typealias PendingRuby = TTMLRuby.Piece
+    private var ruby: TTMLRuby?
+
+    struct RubyGroupMark {
+        var id: String
+        var text: String?
+        var times: String?
+        var reading: [PendingRuby]? = nil
     }
-    private var rubyBase = ""
-    private var rubyTexts: [PendingRuby] = []
+    private var spanGroupMarks: [Int: RubyGroupMark] = [:]
+    private var mainGroupMarks: [Int: RubyGroupMark] = [:]
+    private var backgroundGroupMarks: [Int: RubyGroupMark] = [:]
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
         var namespaces = namespaceStack.last ?? [:]
@@ -286,6 +290,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             switch namespaces[String(parts[0])] {
             case "http://www.w3.org/ns/ttml#metadata": attributes["ttm:\(parts[1])"] = value
             case "http://www.w3.org/ns/ttml#styling": attributes["tts:\(parts[1])"] = value
+            case .some(LyricRubyGroup.namespace): attributes[Self.sharedRuby + parts[1]] = value
             default: break
             }
         }
@@ -358,18 +363,17 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             spanStack = []
             spanText = ""
             pendingWordBreak = false
+            spanGroupMarks = [:]
+            mainGroupMarks = [:]
+            backgroundGroupMarks = [:]
+            ruby = nil
         case "span":
             guard inParagraph else { return }
             let begin = attributes["begin"].flatMap(TTMLParser.parseTime)
             let end = attributes["end"].flatMap(TTMLParser.parseTime)
             if inRuby {
-                switch Self.rubyRole(attributes) {
-                case "base": spanStack.append(.rubyBase)
-                case "textContainer": spanStack.append(.rubyTexts)
-                case "text": spanStack.append(.rubyText(start: begin, end: end))
-                default: spanStack.append(.other)
-                }
-                spanText = ""
+                ruby?.begin(role: Self.rubyRole(attributes), start: begin, end: end, agentIDs: currentAgents)
+                spanStack.append(.other)
                 return
             }
             flushLooseText()
@@ -379,10 +383,10 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             }
             let role = attributes["ttm:role"] ?? attributes["role"] ?? ""
             let kind: SpanKind
+            var group: RubyGroupMark?
             if Self.rubyRole(attributes) == "container" {
-                kind = .ruby(start: begin, end: end)
-                rubyBase = ""
-                rubyTexts = []
+                kind = .ruby
+                ruby = TTMLRuby(start: begin, end: end, agentIDs: currentAgents)
             } else {
                 switch role {
                 case "x-bg":
@@ -401,9 +405,11 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
                     } else {
                         kind = .other
                     }
+                    group = Self.rubyGroupMark(attributes)
                 }
             }
             spanStack.append(kind)
+            if let group { spanGroupMarks[spanStack.count - 1] = group }
             spanText = ""
         default:
             break
@@ -424,6 +430,10 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             return
         }
         guard inParagraph else { return }
+        if inRuby {
+            ruby?.append(string)
+            return
+        }
         let inContainer: Bool
         if let top = spanStack.last, case .background = top { inContainer = true } else { inContainer = spanStack.isEmpty }
         if inContainer {
@@ -466,13 +476,23 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             inTransliteration = false
         case "span":
             guard inParagraph, let kind = spanStack.popLast() else { return }
+            if let annotation = ruby {
+                if case .ruby = kind {
+                    ruby = nil
+                    appendRuby(annotation)
+                } else {
+                    ruby?.finishSpan()
+                }
+                return
+            }
+            let group = spanGroupMarks.removeValue(forKey: spanStack.count)
             let text = spanText
             spanText = ""
             switch kind {
             case .syllable(let start, let end):
-                appendSyllable(text: text, start: start, end: end)
+                appendSyllable(text: text, start: start, end: end, group: group)
             case .placeholder:
-                appendSyllable(text: text, start: nil, end: nil, placeholder: true)
+                appendSyllable(text: text, start: nil, end: nil, placeholder: true, group: group)
             case .translation:
                 let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty {
@@ -487,16 +507,9 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
                 let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if backgroundWords.isEmpty, !t.isEmpty { backgroundPlain = t }
             case .other:
-                if !text.isEmpty, !inRuby { appendSyllable(text: text, start: nil, end: nil) }
-            case .rubyBase:
-                rubyBase += text
-            case .rubyText(let start, let end):
-                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { rubyTexts.append(PendingRuby(text: t, start: start, end: end)) }
-            case .rubyTexts:
+                if !text.isEmpty, !inRuby { appendSyllable(text: text, start: nil, end: nil, group: group) }
+            case .ruby:
                 break
-            case .ruby(let start, let end):
-                appendRuby(start: start, end: end)
             }
         case "p":
             guard inParagraph else { return }
@@ -528,22 +541,80 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         attributes["tts:ruby"] ?? attributes.first { $0.key == "ruby" || $0.key.hasSuffix(":ruby") }?.value
     }
 
-    /// A ruby container is one syllable, its base: timed by the container, or else by its ruby
-    /// texts, whose own times are kept.
-    private func appendRuby(start: TimeInterval?, end: TimeInterval?) {
-        let base = rubyBase, texts = rubyTexts
-        rubyBase = ""
-        rubyTexts = []
-        guard !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard let begin = start ?? texts.compactMap(\.start).min() else {
-            appendSyllable(text: base, start: nil, end: nil, ruby: texts)
-            return
+    private static let sharedRuby = "{\(LyricRubyGroup.namespace)}"
+
+    private static func rubyGroupMark(_ attributes: [String: String]) -> RubyGroupMark? {
+        guard let id = attributes[sharedRuby + "rubyGroup"], !id.isEmpty else { return nil }
+        return RubyGroupMark(id: id, text: attributes[sharedRuby + "rubyText"], times: attributes[sharedRuby + "rubyTimes"])
+    }
+
+    static func applyRubyGroups(_ marks: [Int: RubyGroupMark], to syllables: [LyricSyllable]) -> [LyricSyllable] {
+        guard !marks.isEmpty else { return syllables }
+        var runs: [(id: String, range: ClosedRange<Int>)] = []
+        for index in marks.keys.sorted() where index < syllables.count {
+            let id = marks[index]!.id
+            if let last = runs.last, last.id == id, last.range.upperBound == index - 1 {
+                runs[runs.count - 1].range = last.range.lowerBound...index
+            } else {
+                runs.append((id, index...index))
+            }
         }
-        let finish = max(begin, end ?? texts.compactMap { $0.end ?? $0.start }.max() ?? begin)
-        if isPlaceholder(begin: begin, end: finish) {
-            appendSyllable(text: base, start: nil, end: nil, placeholder: true, ruby: texts)
-        } else {
-            appendSyllable(text: base, start: begin, end: finish, ruby: texts)
+        let occurrences = Dictionary(runs.map { ($0.id, 1) }, uniquingKeysWith: +)
+        var result = syllables
+        for run in runs where occurrences[run.id] == 1 {
+            guard let first = marks[run.range.lowerBound],
+                  run.range.dropFirst().allSatisfy({ marks[$0]?.text == nil && marks[$0]?.times == nil && marks[$0]?.reading == nil }) else { continue }
+            let start = result[run.range.lowerBound].start
+            let end = max(result[run.range.upperBound].end, start)
+            let ruby: [LyricRuby]
+            if let reading = first.reading {
+                ruby = Self.ruby(reading, start: start, end: end)
+            } else {
+                guard let text = first.text, let pieces = LyricRubyGroup.decode(text) else { continue }
+                var values = LyricRuby.spread(pieces, start: start, end: end)
+                if let raw = first.times {
+                    guard let times = LyricRubyGroup.decodeTimes(raw), times.count == pieces.count else { continue }
+                    // Unset (all zero) times share the run, as untimed ruby does.
+                    if times.contains(where: { $0.end > 0 }) || start <= 0 {
+                        values = zip(pieces, times).map { LyricRuby(start: $1.start, end: $1.end, text: $0) }
+                    }
+                }
+                ruby = values
+            }
+            result[run.range.lowerBound].groupRuby = ruby
+            for index in run.range.dropFirst() { result[index].joinsRubyGroup = true }
+        }
+        return LyricRubyGroup.normalized(result)
+    }
+
+    // Shared ruby is applied after placeholder timing is resolved.
+    private func appendRuby(_ container: TTMLRuby) {
+        for annotation in container.annotations {
+            var bases = annotation.base.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            guard !bases.isEmpty else { continue }
+            let begin = bases.compactMap(\.start).min() ?? container.start ?? annotation.ruby.compactMap(\.start).min()
+            let finish = bases.compactMap(\.end).max() ?? container.end ?? annotation.ruby.compactMap { $0.end ?? $0.start }.max()
+            if bases.count == 1 {
+                let placeholder = begin.map { isPlaceholder(begin: $0, end: finish ?? $0) } ?? true
+                appendSyllable(text: bases[0].text, start: placeholder ? nil : begin, end: placeholder ? nil : finish,
+                               placeholder: placeholder, ruby: annotation.ruby, agents: bases[0].agentIDs)
+                continue
+            }
+            if bases.allSatisfy({ $0.start == nil }), let begin, let finish, finish > begin {
+                let times = LyricRuby.spread(bases.map(\.text), start: begin, end: finish)
+                for index in bases.indices {
+                    bases[index].start = times[index].start
+                    bases[index].end = times[index].end
+                }
+            }
+            let id = UUID().uuidString
+            for (index, base) in bases.enumerated() {
+                let placeholder = base.start.map { isPlaceholder(begin: $0, end: base.end ?? $0) } ?? true
+                let mark = annotation.ruby.isEmpty ? nil : RubyGroupMark(id: id, text: nil, times: nil,
+                                                                       reading: index == 0 ? annotation.ruby : nil)
+                appendSyllable(text: base.text, start: placeholder ? nil : base.start, end: placeholder ? nil : base.end,
+                               placeholder: placeholder, group: mark, agents: base.agentIDs)
+            }
         }
     }
 
@@ -551,7 +622,10 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     /// they share the syllable by length.
     static func ruby(_ texts: [PendingRuby], start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
         guard !texts.isEmpty else { return [] }
-        guard texts.allSatisfy({ $0.start != nil }) else { return LyricRuby.spread(texts.map(\.text), start: start, end: end) }
+        guard texts.allSatisfy({ $0.start != nil }),
+              start <= 0 || texts.contains(where: { ($0.start ?? 0) > 0 || ($0.end ?? 0) > 0 }) else {
+            return LyricRuby.spread(texts.map(\.text), start: start, end: end)
+        }
         return texts.map { text in
             let s = min(max(text.start!, start), end)
             return LyricRuby(start: s, end: min(max(text.end ?? s, s), end), text: text.text)
@@ -571,17 +645,21 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         begin <= 0 && (end <= 0 || lineStart > 0 || (mainWords.last?.end ?? 0) > 0 || (backgroundEnd ?? 0) > 0)
     }
 
-    private func appendSyllable(text rawText: String, start: TimeInterval?, end: TimeInterval?, placeholder: Bool = false, ruby: [PendingRuby] = []) {
+    private func appendSyllable(text rawText: String, start: TimeInterval?, end: TimeInterval?, placeholder: Bool = false,
+                                ruby: [PendingRuby] = [], group: RubyGroupMark? = nil, agents: [String]? = nil) {
         let text = rawText.replacingOccurrences(of: "\n", with: "")
         guard !text.isEmpty else { return }
         let bg = inBackground
         let s = start ?? (bg ? (backgroundEnd ?? backgroundSpan?.start ?? lineStart) : (mainWords.last?.end ?? lineStart))
         let e = end ?? (bg && start == nil && !placeholder ? max(s, backgroundSpan?.end ?? s) : s)
         let voiceAgents = bg && !backgroundAgentIDs.isEmpty ? backgroundAgentIDs : lineAgentIDs
-        let currentAgents = agentStack.last ?? []
+        let currentAgents = agents ?? agentStack.last ?? []
         let syllable = LyricSyllable(start: s, end: e, text: text, ruby: Self.ruby(ruby, start: s, end: e), agentIDs: currentAgents == voiceAgents ? [] : currentAgents)
+        let index = (bg ? backgroundWords : mainWords).reduce(0) { $0 + $1.syllables.count }
+        if let group {
+            if bg { backgroundGroupMarks[index] = group } else { mainGroupMarks[index] = group }
+        }
         if placeholder {
-            let index = (bg ? backgroundWords : mainWords).reduce(0) { $0 + $1.syllables.count }
             if bg { backgroundPlaceholders.insert(index) } else { mainPlaceholders.insert(index) }
         } else if bg {
             backgroundEnd = max(backgroundEnd ?? e, e)
@@ -626,7 +704,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             let syllables = mainWords.flatMap(\.syllables)
             let untimed = mainTimed ? mainPlaceholders : Set(syllables.indices)
             let retimed = Self.retimePlaceholders(syllables, at: untimed, fallback: (lineStart, lineEnd))
-            words = LyricWordGrouping.words(from: retimed)
+            words = LyricWordGrouping.words(from: Self.applyRubyGroups(mainGroupMarks, to: retimed))
         }
         if let last = words.last, last.text.hasSuffix(" ") {
             words[words.count - 1].text = String(last.text.dropLast())
@@ -692,7 +770,8 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     }
 
     private func backgroundVocals(transliteration: [LyricWord]?) -> LyricBackgroundVocals? {
-        let syllables = Self.retimePlaceholders(backgroundWords.flatMap(\.syllables), at: backgroundPlaceholders, fallback: backgroundSpan ?? (lineStart, lineEnd))
+        let retimed = Self.retimePlaceholders(backgroundWords.flatMap(\.syllables), at: backgroundPlaceholders, fallback: backgroundSpan ?? (lineStart, lineEnd))
+        let syllables = Self.applyRubyGroups(backgroundGroupMarks, to: retimed)
         var words = LyricWordGrouping.words(from: syllables)
         if words.isEmpty {
             guard !backgroundPlain.isEmpty else { return nil }

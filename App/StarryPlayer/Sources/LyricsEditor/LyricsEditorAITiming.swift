@@ -127,7 +127,7 @@ struct LyricsEditorAITiming: View {
                 SegmentSwitch(selection: $englishSplit, options: LyricsAIEnglishSplit.allCases.map { ($0, $0.title) })
                     .disabled(state.isWorking)
                     .opacity(state.isWorking ? 0.5 : 1)
-                    .help("自动：按音节切分，并合并不超过 60 毫秒的短片段。按音节：保留所有可对齐的音节。按词：保留当前字块。已有注音和节拍标记的字块保持原切分。")
+                    .help("自动：按音节切分，并合并不超过 60 毫秒的短片段。按音节：保留所有可对齐的音节。按词：保留当前字块。已有注音（包括共享注音）和节拍标记的字块保持原切分。")
             }
             Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
             settingRow("text.word.spacing") {

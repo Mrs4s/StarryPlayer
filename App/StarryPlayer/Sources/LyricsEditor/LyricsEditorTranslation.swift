@@ -131,7 +131,7 @@ struct LyricsEditorTranslation: View {
                         .frame(width: 190)
                         .background(theme.onSurface.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
                         .accessibilityLabel("注音用字")
-                    Text("只为含汉字的音节生成注音")
+                    Text("为汉字和日式英语生成注音；跨音节的读音会共享注音")
                         .font(.system(size: 12))
                         .foregroundStyle(theme.onSurfaceVariant)
                     Spacer(minLength: 0)
@@ -262,7 +262,17 @@ struct LyricsEditorTranslation: View {
 
     private func rubyText(_ entry: LyricsTranslation.Entry, line: LyricsDraft.Line?) -> String? {
         guard let ruby = entry.ruby, let line, ruby.count == line.syllables.count else { return nil }
-        let pairs = zip(line.syllables, ruby).filter { !$1.isEmpty }.map { "\($0.text.trimmingCharacters(in: .whitespaces))(\($1))" }
+        let joins = entry.rubyJoins ?? []
+        var pairs: [String] = []
+        var s = 0
+        while s < ruby.count {
+            var end = s
+            while end + 1 < min(ruby.count, joins.count), joins[end + 1] { end += 1 }
+            if !ruby[s].isEmpty {
+                pairs.append("\(line.syllables[s...end].map { $0.text.trimmingCharacters(in: .whitespaces) }.joined())(\(ruby[s]))")
+            }
+            s = end + 1
+        }
         return pairs.isEmpty ? nil : "注音：" + pairs.joined(separator: "  ")
     }
 
