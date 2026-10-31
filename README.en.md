@@ -15,16 +15,34 @@ A high-performance native macOS music player with rich visual effects
 
 ## Screenshots
 
-<p align="center">
-  <img src="screenshots/screen-1.webp" width="800" alt="Home page">
-  <img src="screenshots/screen-2.webp" width="800" alt="Lyrics page">
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-1.webp" width="400" height="300" alt="Home page">
+      <p><strong>Home</strong><br>Browse recommendations, playlists, and recently played music</p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-2.webp" width="400" height="300" alt="Word-by-word lyrics">
+      <p><strong>Word-by-word lyrics</strong><br>Follow highlighted lyrics with translations, romanization, and animated backgrounds</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-3.png" width="400" height="300" alt="Titanium sand background and singer labels">
+      <p><strong>Now Playing</strong><br>Titanium sand background and singer labels</p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-4.png" width="400" height="300" alt="Lyric editor">
+      <p><strong>High-precision lyric editor</strong><br>A wide range of tools for visual lyric timing</p>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
 - 🎤 **Word-by-word lyrics**: Highlight each word as it is sung, with translations, pronunciation guides, and automatic lyric matching. Lyrics can also appear in the menu bar, around the notch, or on the desktop
-- 🎯 **Lyric alignment**: Analyze vocals to automatically correct lyric timing with one click, and remember the offset for each song
-- ✏️ **Lyric editor**: Paste or open lyrics and they are split into syllables automatically. The editor plays the song itself, apart from the queue, slowed down or sped up with the pitch kept and with its waveform shown
+- 🎯 **Lyric alignment**: Analyze vocals to automatically correct lyric timing with one click, and optionally use AI to generate word-by-word lyrics for songs that do not have them
+- ✏️ **Lyric editor**: Drag and drop syllables on the spectrogram timeline, align their boundaries with onset cues, and preview changes in real time. See the [lyric editor guide](docs/lyrics-editor.md) (Chinese)
 - 🌌 **Animated backgrounds**: Flowing cover-art backgrounds that pulse with the music, or a titanium sand background
 - 🎵 **Multiple sources**: NetEase Cloud Music, Jellyfin, Subsonic / Navidrome, and local music
 - 🧩 **Plugins**: A flexible plugin system lets developers add custom music sources

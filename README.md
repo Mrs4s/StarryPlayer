@@ -15,16 +15,34 @@
 
 ## 截图
 
-<p align="center">
-  <img src="screenshots/screen-1.webp" width="800" alt="首页">
-  <img src="screenshots/screen-2.webp" width="800" alt="歌词页">
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-1.webp" width="400" height="300" alt="首页">
+      <p><strong>首页</strong><br>浏览推荐、歌单与最近播放</p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-2.webp" width="400" height="300" alt="逐字歌词">
+      <p><strong>逐字歌词</strong><br>逐字高亮，搭配翻译、音译与律动背景</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-3.png" width="400" height="300" alt="钛金流沙背景和演唱者标识">
+      <p><strong>播放页面</strong><br>钛金流沙背景和演唱者标识</p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="screenshots/screen-4.png" width="400" height="300" alt="歌词编辑器">
+      <p><strong>高精度歌词编辑器</strong><br>提供大量以视觉打轴为主的辅助功能</p>
+    </td>
+  </tr>
+</table>
 
 ## 特性
 
 - 🎤 **逐字歌词**：随演唱逐字点亮，带翻译和注音，歌词自动匹配，也能放到菜单栏、刘海和桌面上
-- 🎯 **歌词校准**：歌词和演唱对不上时，一键分析人声自动校准偏移，每首歌单独记住
-- ✏️ **歌词编辑器**：在频谱时间轴上拖放音节，用起字提示对齐边界并实时预览。详见[歌词编辑器使用教程](docs/lyrics-editor.md)。
+- 🎯 **歌词校准**：一键分析人声自动校准偏移, 同时支持可选的为没有逐字歌词的歌曲使用AI生成逐字歌词
+- ✏️ **歌词编辑器**：在频谱时间轴上拖放音节，用起字提示对齐边界并实时预览。详见[歌词编辑器使用教程](docs/lyrics-editor.md)
 - 🌌 **律动背景**：流动的封面背景，跟着音乐节奏起伏；也可选钛金流沙背景
 - 🎵 **多种来源**：网易云音乐、Jellyfin、Subsonic / Navidrome、本地音乐
 - 🧩 **插件**：灵活的插件系统，开发者可以接入自定义音源
