@@ -76,4 +76,25 @@ import Testing
         #expect(!state.isCancelling)
         #expect(defaults.string(forKey: LyricsAIModelDownloadState.directoryKey) == "/custom-model")
     }
+
+    @Test(arguments: [false, true])
+    func removingDownloadedModelPreservesOtherSelections(usesCustomModel: Bool) async throws {
+        let name = "starry-ai-download-test-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("starry-ai-model-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let state = LyricsAIModelDownloadState(defaults: defaults) { _, _ in folder }
+        state.start()
+        try await wait(state)
+        if usesCustomModel { defaults.set("/custom-model", forKey: LyricsAIModelDownloadState.directoryKey) }
+
+        state.removeInstalled()
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        #expect(state.installedDirectory == nil)
+        #expect(defaults.string(forKey: LyricsAIModelDownloadState.directoryKey) == (usesCustomModel ? "/custom-model" : nil))
+        #expect(state.error == nil)
+    }
 }

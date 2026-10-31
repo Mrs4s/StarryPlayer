@@ -7,14 +7,31 @@ import SwiftUI
 @MainActor @Observable
 final class LyricsEditorTranslationState {
     enum Step { case prompt, result }
+    static let languageKey = "starry.lyricsEditor.translation.language"
+    static let styleKey = "starry.lyricsEditor.translation.style"
+    static let rubyScriptKey = "starry.lyricsEditor.translation.rubyScript"
+    static let defaultLanguage = "简体中文"
+    static let defaultRubyScript = "平假名"
+
     var step: Step = .prompt
     var fields: LyricsTranslation.Fields = .translation
-    var language = "简体中文"
-    var style: LyricsTranslation.Style = .accurate
-    var rubyScript = "平假名"
+    var language: String
+    var style: LyricsTranslation.Style
+    var rubyScript: String
     var instructions = ""
     var response = ""
     var overwrite = false
+
+    init(defaults: UserDefaults = .standard) {
+        language = Self.stored(Self.languageKey, in: defaults) ?? Self.defaultLanguage
+        style = defaults.string(forKey: Self.styleKey).flatMap(LyricsTranslation.Style.init(rawValue:)) ?? .accurate
+        rubyScript = Self.stored(Self.rubyScriptKey, in: defaults) ?? Self.defaultRubyScript
+    }
+
+    private static func stored(_ key: String, in defaults: UserDefaults) -> String? {
+        let value = defaults.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
 }
 
 extension LyricsEditorSession {

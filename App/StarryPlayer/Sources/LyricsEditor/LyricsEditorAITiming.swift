@@ -650,7 +650,7 @@ private struct AICheckbox: View {
     }
 }
 
-private struct AIProgressBar: View {
+struct AIProgressBar: View {
     var fraction: Double
     var active = true
     @Environment(\.theme) private var theme

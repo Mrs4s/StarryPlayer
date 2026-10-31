@@ -5,6 +5,9 @@ import SwiftUI
 
 struct LyricsEditorView: View {
     static let defaultContentSize = NSSize(width: 1440, height: 960)
+    static let autoAlignAfterTimingKey = "starry.lyricsEditor.autoAlignAfterTiming"
+    static let tapLeadKey = "starry.lyricsEditor.tapLead"
+    static let tapLeads: [TimeInterval] = [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2]
 
     let session: LyricsEditorSession
     let audio: LyricsEditorAudio
@@ -21,9 +24,10 @@ struct LyricsEditorView: View {
     @State private var autoAlignment = LyricsEditorAutoAlignment()
     @State private var quickAlignment: LyricsEditorAlignmentState?
     @State private var aiTiming = LyricsEditorAITimingState()
-    @AppStorage("starry.lyricsEditor.autoAlignAfterTiming") private var autoAlignAfterTiming = false
-    @AppStorage("starry.lyricsEditor.splitOnsetHints") private var splitOnsetHints = false
-    @AppStorage("starry.lyricsEditor.hintVoice") private var hintVoice = LyricsEditorAudio.HintVoice.all
+    @AppStorage(Self.autoAlignAfterTimingKey) private var autoAlignAfterTiming = false
+    @AppStorage(Self.tapLeadKey) private var tapLead = 0.0
+    @AppStorage(LyricsEditorTimeline.splitOnsetHintsKey) private var splitOnsetHints = false
+    @AppStorage(LyricsEditorTimeline.hintVoiceKey) private var hintVoice = LyricsEditorAudio.HintVoice.all
     @AppStorage(LyricsEditorTimeline.gainKey) private var spectrogramGain = 3.0
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
 
@@ -117,10 +121,12 @@ struct LyricsEditorView: View {
             if playing { audio.pause() }
         }
         .onAppear {
+            session.tapLead = tapLead
             installKeys()
             if session.draft.isEmpty { panel = .importer }
             withAnimation(Motion.reveal) { appeared = true }
         }
+        .onChange(of: tapLead) { _, lead in session.tapLead = lead }
         .onChange(of: autoAlignAfterTiming) { _, enabled in
             if enabled, audio.isPrecise { audio.prepareVocals() }
             else { autoAlignment.cancelAll() }
@@ -384,9 +390,9 @@ struct LyricsEditorView: View {
                     autoAlignAfterTiming.toggle()
                     if !autoAlignAfterTiming { autoAlignment.cancelAll() }
                 }
-                PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(session.tapLead)) {
-                    for lead in [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2] {
-                        PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(session.tapLead - lead) < 0.001) { session.tapLead = lead }
+                PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(tapLead)) {
+                    for lead in Self.tapLeads {
+                        PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(tapLead - lead) < 0.001) { tapLead = lead }
                     }
                 }
                 PopMenuItem.submenu("频谱亮度", systemImage: "sun.max", detail: LyricsEditorFormat.gain(spectrogramGain)) {
@@ -395,6 +401,7 @@ struct LyricsEditorView: View {
                     }
                 }
             }
+            PopMenuItem.button("歌词编辑器设置…", systemImage: "gearshape") { model.openSettings(.lyricsEditor) }
             PopMenuItem.divider
             PopMenuItem.button("清除全部时间", systemImage: "eraser", role: .destructive, disabled: session.draft.timedCount == 0) {
                 session.edit { draft in
@@ -406,7 +413,7 @@ struct LyricsEditorView: View {
             menuLabel("工具", systemImage: "slider.horizontal.3")
         }
         .buttonStyle(VariantButtonStyle(variant: .ghost, isPill: true))
-        .help("歌曲信息、虚拟轨、演唱角色、翻译注音与打点设置")
+        .help("歌曲信息、虚拟轨、演唱角色、翻译注音、打点设置与编辑器设置")
     }
 
     private var audioBanner: some View {

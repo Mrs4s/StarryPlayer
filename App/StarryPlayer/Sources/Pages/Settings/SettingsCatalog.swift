@@ -57,6 +57,7 @@ struct SettingsCatalog {
         case .playback: playback
         case .nowPlaying: nowPlaying
         case .lyrics: lyrics
+        case .lyricsEditor: lyricsEditor
         case .account: account
         case .storage: storage
         case .plugins: pluginsPage

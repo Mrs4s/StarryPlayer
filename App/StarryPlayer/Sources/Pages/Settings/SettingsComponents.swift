@@ -3,7 +3,7 @@ import StarryCore
 import SwiftUI
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case general, appearance, playback, nowPlaying, lyrics, account, storage, plugins, about
+    case general, appearance, playback, nowPlaying, lyrics, lyricsEditor, account, storage, plugins, about
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .playback: LocalizedStringResource("category.playback", defaultValue: "播放", table: "Settings")
         case .nowPlaying: LocalizedStringResource("category.nowPlaying", defaultValue: "播放页", table: "Settings")
         case .lyrics: LocalizedStringResource("category.lyrics", defaultValue: "歌词", table: "Settings")
+        case .lyricsEditor: LocalizedStringResource("category.lyricsEditor", defaultValue: "歌词编辑器", table: "Settings")
         case .account: LocalizedStringResource("category.account", defaultValue: "账号", table: "Settings")
         case .storage: LocalizedStringResource("category.storage", defaultValue: "存储", table: "Settings")
         case .plugins: LocalizedStringResource("category.plugins", defaultValue: "插件", table: "Settings")
@@ -28,6 +29,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .playback: "play.circle"
         case .nowPlaying: "text.below.photo"
         case .lyrics: "text.quote"
+        case .lyricsEditor: "wand.and.stars"
         case .account: "person.crop.circle"
         case .storage: "internaldrive"
         case .plugins: "puzzlepiece.extension"
@@ -42,6 +44,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .playback: LocalizedStringResource("category.playback.summary", defaultValue: "音质、输出设备、切歌与唱歌", table: "Settings")
         case .nowPlaying: LocalizedStringResource("category.nowPlaying.summary", defaultValue: "歌词的样子与背景效果", table: "Settings")
         case .lyrics: LocalizedStringResource("category.lyrics.summary", defaultValue: "歌词来源、菜单栏与桌面歌词", table: "Settings")
+        case .lyricsEditor: LocalizedStringResource("category.lyricsEditor.summary", defaultValue: "AI 打轴模型、AI 翻译、打点与起字提示", table: "Settings")
         case .account: LocalizedStringResource("category.account.summary", defaultValue: "登录的账号与听歌记录", table: "Settings")
         case .storage: LocalizedStringResource("category.storage.summary", defaultValue: "缓存与本地数据", table: "Settings")
         case .plugins: LocalizedStringResource("category.plugins.summary", defaultValue: "第三方音源与歌词源", table: "Settings")

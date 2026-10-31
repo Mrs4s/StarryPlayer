@@ -20,6 +20,19 @@ struct LyricsEditorTranslationTests {
         return String(decoding: try JSONSerialization.data(withJSONObject: ["lines": rows]), as: UTF8.self)
     }
 
+    @Test func blankOrUnknownTranslationDefaultsFallBack() throws {
+        let name = "starry-lyrics-editor-settings-test-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set("  ", forKey: LyricsEditorTranslationState.languageKey)
+        defaults.set("poetic", forKey: LyricsEditorTranslationState.styleKey)
+        defaults.set("", forKey: LyricsEditorTranslationState.rubyScriptKey)
+        let state = LyricsEditorTranslationState(defaults: defaults)
+        #expect(state.language == LyricsEditorTranslationState.defaultLanguage)
+        #expect(state.style == .accurate)
+        #expect(state.rubyScript == LyricsEditorTranslationState.defaultRubyScript)
+    }
+
     @Test func translationIsOneUndoableEditPreservingSelectionAndExportingBackgroundVocals() throws {
         let session = session()
         session.select(.init(line: 0, syllable: 0))

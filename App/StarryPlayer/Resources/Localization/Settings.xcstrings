@@ -81,6 +81,22 @@
         }
       }
     },
+    "category.lyricsEditor": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌词编辑器"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lyrics Editor"
+          }
+        }
+      }
+    },
     "category.account": {
       "localizations": {
         "zh-Hans": {
@@ -221,6 +237,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lyrics sources, menu bar lyrics, and desktop lyrics"
+          }
+        }
+      }
+    },
+    "category.lyricsEditor.summary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 打轴模型、AI 翻译、打点与起字提示"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI timing model, AI translation, tapping, and onset hints"
           }
         }
       }

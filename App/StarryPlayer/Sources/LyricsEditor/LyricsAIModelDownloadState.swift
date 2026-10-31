@@ -75,6 +75,18 @@ final class LyricsAIModelDownloadState {
         error = nil; notice = nil
     }
 
+    func removeInstalled() {
+        guard let installedDirectory, !isDownloading else { return }
+        request = UUID()
+        do { try FileManager.default.removeItem(at: installedDirectory) }
+        catch { self.error = error.localizedDescription; return }
+        self.installedDirectory = nil
+        if defaults.string(forKey: Self.directoryKey) == installedDirectory.path {
+            defaults.removeObject(forKey: Self.directoryKey)
+        }
+        error = nil; notice = "已删除下载的模型"
+    }
+
     func start() {
         guard !isDownloading else { return }
         let previousPath = defaults.string(forKey: Self.directoryKey) ?? ""

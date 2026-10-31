@@ -14,13 +14,17 @@ struct LyricsEditorTimeline: View {
     @Environment(\.theme) private var theme
     @AppStorage(LyricsEditorTimeline.gainKey) private var gain = Double(Spectrogram.defaultGain)
     @AppStorage(LyricsEditorTimeline.vocalsOnlyKey) private var vocalsOnly = false
-    @AppStorage("starry.lyricsEditor.onsetHints") private var onsetHints = false
-    @AppStorage("starry.lyricsEditor.onsetSensitivity") private var sensitivity = VocalOnsetDetector.Sensitivity.medium
-    @AppStorage("starry.lyricsEditor.splitOnsetHints") private var splitHints = false
-    @AppStorage("starry.lyricsEditor.hintVoice") private var hintVoice = LyricsEditorAudio.HintVoice.all
+    @AppStorage(LyricsEditorTimeline.onsetHintsKey) private var onsetHints = false
+    @AppStorage(LyricsEditorTimeline.onsetSensitivityKey) private var sensitivity = VocalOnsetDetector.Sensitivity.medium
+    @AppStorage(LyricsEditorTimeline.splitOnsetHintsKey) private var splitHints = false
+    @AppStorage(LyricsEditorTimeline.hintVoiceKey) private var hintVoice = LyricsEditorAudio.HintVoice.all
 
     static let gainKey = "starry.lyricsEditor.spectrogramGain"
     static let vocalsOnlyKey = "starry.lyricsEditor.vocalsOnly"
+    static let onsetHintsKey = "starry.lyricsEditor.onsetHints"
+    static let onsetSensitivityKey = "starry.lyricsEditor.onsetSensitivity"
+    static let splitOnsetHintsKey = "starry.lyricsEditor.splitOnsetHints"
+    static let hintVoiceKey = "starry.lyricsEditor.hintVoice"
     static let gains: [Double] = [1, 1.5, 2, 3, 4, 6, 8]
     private var onSpectrogram: Bool { audio.isPrecise }
     private var accent: Color { onSpectrogram ? model.theme(for: .dark).primary : theme.primary }
