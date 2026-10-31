@@ -25,7 +25,7 @@
 - 🎤 **逐字歌词**：随演唱逐字点亮，带翻译和注音，歌词自动匹配，也能放到菜单栏、刘海和桌面上
 - 🎯 **歌词校准**：歌词和演唱对不上时，一键分析人声自动校准偏移，每首歌单独记住
 - ✏️ **歌词编辑器**：在频谱时间轴上拖放音节，用起字提示对齐边界并实时预览。详见[歌词编辑器使用教程](docs/lyrics-editor.md)。
-- 🌌 **律动背景**：流动的封面背景，跟着音乐节奏起伏
+- 🌌 **律动背景**：流动的封面背景，跟着音乐节奏起伏；也可选钛金流沙背景
 - 🎵 **多种来源**：网易云音乐、Jellyfin、Subsonic / Navidrome、本地音乐
 - 🧩 **插件**：灵活的插件系统，开发者可以接入自定义音源
 - 🎧 **播放**：无缝播放、交叉淡化、ReplayGain、十段与参数均衡器（可导入 AutoEQ、Equalizer APO 设置）
@@ -64,6 +64,7 @@ open StarryPlayer.xcodeproj
 ## 致谢
 
 - [AMLL TTML 歌词库](https://github.com/Steve-xmh/amll-ttml-db): 逐字歌词来源
+- [AMLL](https://github.com/Steve-xmh/applemusic-like-lyrics): 钛金流沙背景移植自其 Titanium 背景渲染器
 - [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next): 部分功能和逻辑参考
 - [KANJIDIC2 / EDRDG](https://www.edrdg.org/wiki/KANJIDIC_Project.html): 日语汉字读音数据（James William BREEN 与 EDRDG，CC BY-SA 4.0）
 

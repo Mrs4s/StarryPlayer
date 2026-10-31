@@ -25,7 +25,7 @@ A high-performance native macOS music player with rich visual effects
 - 🎤 **Word-by-word lyrics**: Highlight each word as it is sung, with translations, pronunciation guides, and automatic lyric matching. Lyrics can also appear in the menu bar, around the notch, or on the desktop
 - 🎯 **Lyric alignment**: Analyze vocals to automatically correct lyric timing with one click, and remember the offset for each song
 - ✏️ **Lyric editor**: Paste or open lyrics and they are split into syllables automatically. The editor plays the song itself, apart from the queue, slowed down or sped up with the pitch kept and with its waveform shown
-- 🌌 **Animated backgrounds**: Flowing cover-art backgrounds that pulse with the music
+- 🌌 **Animated backgrounds**: Flowing cover-art backgrounds that pulse with the music, or a titanium sand background
 - 🎵 **Multiple sources**: NetEase Cloud Music, Jellyfin, Subsonic / Navidrome, and local music
 - 🧩 **Plugins**: A flexible plugin system lets developers add custom music sources
 - 🎧 **Playback**: Gapless playback, crossfade, ReplayGain, and 10-band and parametric equalizers with support for importing AutoEQ and Equalizer APO settings
@@ -64,6 +64,7 @@ For project structure, testing, and packaging, see the [development guide](docs/
 ## Acknowledgments
 
 - [AMLL TTML Lyrics Database](https://github.com/Steve-xmh/amll-ttml-db): A source of word-by-word lyrics
+- [AMLL](https://github.com/Steve-xmh/applemusic-like-lyrics): The titanium sand background is ported from its Titanium background renderer
 - [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next): A reference for some features and implementation logic
 
 ## Disclaimer

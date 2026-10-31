@@ -42,6 +42,36 @@ struct AppSettingsTests {
         #expect(partial.menuBarLyrics.maxWidth == 300)
     }
 
+    @Test func backgroundStyleRoundTripsAndUnknownStylesFallBack() throws {
+        var settings = AppSettings()
+        settings.background.style = .titanium
+        #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)).background.style == .titanium)
+
+        let saved = try decode(#"{"background": {"style": "aurora", "scrim": 0.3}}"#)
+        #expect(saved.background.style == .artwork)
+        #expect(saved.background.scrim == 0.3)
+    }
+
+    @Test func titaniumLookRoundTripsAndOlderSettingsGetItsDefaults() throws {
+        var settings = AppSettings()
+        settings.background.titanium.grain = 0.2
+        settings.background.titanium.sparkle = 1
+        settings.background.titanium.crestShift = 0
+        settings.background.titanium.softGlints = false
+        settings.background.titanium.highDynamicRange = false
+        #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
+
+        let older = try decode(#"{"background": {"style": "artwork", "speed": 1.5}}"#)
+        #expect(older.background.speed == 1.5)
+        #expect(older.background.titanium == AppSettings.Background.Titanium())
+
+        let partial = try decode(#"{"background": {"titanium": {"sparkle": 3, "crestShift": -1}}}"#)
+        #expect(partial.background.titanium.sparkle == 1)
+        #expect(partial.background.titanium.crestShift == 0)
+        #expect(partial.background.titanium.grain == 0.7)
+        #expect(partial.background.titanium.softGlints && partial.background.titanium.highDynamicRange)
+    }
+
     @Test func lyricsSettingsSavedBeforeRubyKeepTheirValues() throws {
         var settings = AppSettings()
         settings.lyrics.showRomanization = true

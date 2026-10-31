@@ -97,7 +97,7 @@ struct NowPlayingView: View {
         GeometryReader { geo in
             let layout = NowPlayingLayout(size: geo.size)
             ZStack(alignment: .topLeading) {
-                PlayerBackground(track: player.current, image: player.coverImage, accent: player.accentColor, settings: model.settings.settings.background, fullscreen: isFullscreen, behindLyrics: model.nowPlayingPanel == .lyrics && !(player.lyrics?.isEmpty ?? true), energyProvider: { [player] in player.energies() })
+                PlayerBackground(track: player.current, image: player.coverImage, accent: player.accentColor, settings: model.settings.settings.background, fullscreen: isFullscreen, behindLyrics: model.nowPlayingPanel == .lyrics && !(player.lyrics?.isEmpty ?? true), behindPanel: model.nowPlayingPanel != .lyrics, playing: player.isPlaying, energyProvider: { [player] in player.energies() }, spectrum: { [player] after in player.audibleSpectrum(lead: PlayerController.displayLead, after: after) })
                     .opacity(backdropIn ? 1 : 0)
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {

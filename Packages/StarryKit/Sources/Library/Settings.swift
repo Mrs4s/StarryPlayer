@@ -235,7 +235,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
     }
 
     public struct Background: Codable, Sendable, Equatable {
-        public enum Style: String, Codable, Sendable, CaseIterable { case artwork, blur, gradient }
+        public enum Style: String, Codable, Sendable, CaseIterable { case artwork, titanium, blur, gradient }
         /// Spectrum intensity: auto = lively while the page shows lyrics (`isBehindLyrics`), calm
         /// otherwise.
         public enum Motion: String, Codable, Sendable, CaseIterable { case auto, calm, lively }
@@ -254,10 +254,39 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var colorGrade: Bool = true
         public var framesPerSecond: Int = 30
         public var fullscreenFramesPerSecond: Int = 60
+        public var titanium = Titanium()
         public init() {}
 
+        public struct Titanium: Codable, Sendable, Hashable {
+            public var grain: Double = 0.7
+            public var sparkle: Double = 0.75
+            public var sheen: Double = 0.5
+            public var metalness: Double = 0.35
+            public var crestShift: Double = 2
+            public var softGlints = true
+            public var highDynamicRange = true
+            public init() {}
+
+            private enum CodingKeys: String, CodingKey { case grain, sparkle, sheen, metalness, crestShift, softGlints, highDynamicRange }
+
+            public init(from decoder: any Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let d = Titanium()
+                func unit(_ key: CodingKeys, _ fallback: Double) throws -> Double {
+                    min(1, max(0, try c.decodeIfPresent(Double.self, forKey: key) ?? fallback))
+                }
+                grain = try unit(.grain, d.grain)
+                sparkle = try unit(.sparkle, d.sparkle)
+                sheen = try unit(.sheen, d.sheen)
+                metalness = try unit(.metalness, d.metalness)
+                crestShift = min(10, max(0, try c.decodeIfPresent(Double.self, forKey: .crestShift) ?? d.crestShift))
+                softGlints = try c.decodeIfPresent(Bool.self, forKey: .softGlints) ?? d.softGlints
+                highDynamicRange = try c.decodeIfPresent(Bool.self, forKey: .highDynamicRange) ?? d.highDynamicRange
+            }
+        }
+
         private enum CodingKeys: String, CodingKey {
-            case style, motion, speed, blurScale, saturationScale, brightness, scrim, whiteScrim, audioReactivity, pinchStrength, colorGrade, framesPerSecond, fullscreenFramesPerSecond
+            case style, motion, speed, blurScale, saturationScale, brightness, scrim, whiteScrim, audioReactivity, pinchStrength, colorGrade, framesPerSecond, fullscreenFramesPerSecond, titanium
         }
 
         public init(from decoder: any Decoder) throws {
@@ -276,6 +305,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
             colorGrade = try c.decodeIfPresent(Bool.self, forKey: .colorGrade) ?? d.colorGrade
             framesPerSecond = try c.decodeIfPresent(Int.self, forKey: .framesPerSecond) ?? d.framesPerSecond
             fullscreenFramesPerSecond = try c.decodeIfPresent(Int.self, forKey: .fullscreenFramesPerSecond) ?? d.fullscreenFramesPerSecond
+            titanium = (try? c.decodeIfPresent(Titanium.self, forKey: .titanium)) ?? d.titanium
         }
     }
 

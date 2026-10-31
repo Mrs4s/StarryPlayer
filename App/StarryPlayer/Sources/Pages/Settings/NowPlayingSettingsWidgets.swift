@@ -1,4 +1,5 @@
 import AppKit
+import Backdrop
 import Library
 import LyricsCore
 import SwiftUI
@@ -176,13 +177,17 @@ struct BackgroundStylePicker: View {
         var colors = PlaceholderArt.colors(for: player.current?.artwork?.seed ?? "starry")
         if let accent = player.accentColor { colors.insert(accent, at: 0) }
         return VisualPicker(selection: Binding { store.settings.background.style } set: { store.settings.background.style = $0 }, options: AppSettings.Background.Style.allCases.map { style in
-            .init(value: style, title: Self.name(style)) { [colors] hovering in AnyView(BackgroundStylePreview(style: style, image: player.coverImage, colors: colors, hovering: hovering)) }
+            .init(value: style, title: Self.name(style)) { [colors] hovering in
+                AnyView(BackgroundStylePreview(style: style, image: player.coverImage, colors: colors, seed: player.current?.artwork?.seed ?? "starry",
+                                               accent: player.accentColor, titanium: store.settings.background.titanium, hovering: hovering))
+            }
         }, previewSize: compact ? CGSize(width: 92, height: 58) : CGSize(width: 104, height: 66))
     }
 
     static func name(_ style: AppSettings.Background.Style) -> String {
         switch style {
         case .artwork: "流动封面"
+        case .titanium: "钛金流沙"
         case .blur: "模糊封面"
         case .gradient: "渐变"
         }
@@ -193,12 +198,16 @@ private struct BackgroundStylePreview: View {
     var style: AppSettings.Background.Style
     var image: NSImage?
     var colors: [Color]
+    var seed: String
+    var accent: Color?
+    var titanium: AppSettings.Background.Titanium
     var hovering: Bool
 
     var body: some View {
         ZStack {
             switch style {
             case .artwork: flowing
+            case .titanium: TitaniumStylePreview(image: image, colors: colors, seed: seed, accent: accent, options: titanium, hovering: hovering)
             case .blur: blurred
             case .gradient:
                 LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -244,6 +253,57 @@ private struct BackgroundStylePreview: View {
                 LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom).blur(radius: 6)
             }
             Color.black.opacity(0.3)
+        }
+    }
+}
+
+private struct TitaniumStylePreview: View {
+    var image: NSImage?
+    var colors: [Color]
+    var seed: String
+    var accent: Color?
+    var options: AppSettings.Background.Titanium
+    var hovering: Bool
+    @State private var frames: Frames?
+
+    private struct Frames {
+        var rest: NSImage
+        var beat: NSImage
+    }
+
+    private struct Key: Hashable {
+        var image: ObjectIdentifier?
+        var seed: String
+        var accent: Color?
+        var options: AppSettings.Background.Titanium
+    }
+
+    var body: some View {
+        ZStack {
+            if let frames {
+                Image(nsImage: frames.rest).resizable().scaledToFill()
+                Image(nsImage: frames.beat).resizable().scaledToFill()
+                    .opacity(hovering ? 1 : 0)
+                    .animation(hovering ? .easeOut(duration: 0.45).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: hovering)
+            } else {
+                sketch
+            }
+        }
+        .task(id: Key(image: image.map(ObjectIdentifier.init), seed: seed, accent: accent, options: options)) {
+            let cover = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            let palette = BackdropRepresentable.palette(seed: seed, accent: accent)
+            guard let drawn = TitaniumBackdropView.previewFrames(cover: cover, palette: palette, seed: seed, options: TitaniumBackdropRepresentable.options(options),
+                                                                 size: CGSize(width: 800, height: 500), pixels: CGSize(width: 416, height: 260)) else { return }
+            frames = Frames(rest: NSImage(cgImage: drawn.rest, size: .zero), beat: NSImage(cgImage: drawn.beat, size: .zero))
+        }
+    }
+
+    private var sketch: some View {
+        ZStack {
+            LinearGradient(colors: Array(colors.prefix(4)), startPoint: .topLeading, endPoint: .bottomTrailing)
+                .saturation(0.65)
+            LinearGradient(stops: [.init(color: .black.opacity(0.05), location: 0), .init(color: .black.opacity(0.1), location: 0.5), .init(color: .black.opacity(0.75), location: 0.56), .init(color: .black.opacity(0.85), location: 1)],
+                           startPoint: UnitPoint(x: 0.6, y: 0), endPoint: UnitPoint(x: 0.3, y: 1))
         }
     }
 }

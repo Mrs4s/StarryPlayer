@@ -285,7 +285,7 @@ struct SettingsCatalog {
                 BackgroundStylePicker()
             },
         ]
-        if settings.background.style == .artwork {
+        if settings.background.style == .artwork || settings.background.style == .titanium {
             entries.append(SettingsEntry("backgroundMotion", "随音乐律动", detail: backgroundMotionDetail, keywords: "动态 律动 节奏") {
                 SegmentSwitch(selection: bind(\.background.motion), options: [(.auto, "自动"), (.calm, "平静"), (.lively, "律动")])
             })
@@ -298,7 +298,14 @@ struct SettingsCatalog {
         let amount: (Double) -> String = { String(format: "%.2f", $0) }
         let rates = [15, 24, 30, 60, 120].map { ($0, "\($0) fps") }
         let flowing = settings.background.style == .artwork
+        let titanium = settings.background.style == .titanium
         var entries: [SettingsEntry] = []
+        if titanium {
+            entries += [
+                slider("speed", "流动速度", "沙粒流动与光线绕行的快慢", \.background.speed, 0...3, step: 0.05, format: percent, keywords: "旋转速度"),
+                slider("brightness", "亮度", "整体的明暗", \.background.brightness, 0.2...2, step: 0.05, format: amount),
+            ]
+        }
         if flowing {
             entries += [
                 slider("speed", "流动速度", "色块流动的快慢", \.background.speed, 0...3, step: 0.05, format: percent, keywords: "旋转速度"),
@@ -318,7 +325,24 @@ struct SettingsCatalog {
                 menu("fullscreenFps", "全屏帧率", nil, \.background.fullscreenFramesPerSecond, rates),
             ]
         }
-        let footer = flowing ? "1.00× 为默认数值。" : "\(BackgroundStylePicker.name(settings.background.style))只能调压暗，其他细节属于流动封面。"
+        if titanium {
+            let seconds: (Double) -> String = { $0 == 0 ? "立即" : String(format: "%.1f 秒", $0) }
+            entries += [
+                slider("titaniumGrain", "粉末", "细小沙粒的多少与亮度", \.background.titanium.grain, 0...1, step: 0.05, format: amount, keywords: "沙粒 颗粒"),
+                slider("titaniumSparkle", "闪粉", "沙粒反光闪烁的强度", \.background.titanium.sparkle, 0...1, step: 0.05, format: amount, keywords: "闪光 反光"),
+                slider("titaniumSheen", "金属光泽", "沙面泛出的金属光", \.background.titanium.sheen, 0...1, step: 0.05, format: amount, keywords: "高光"),
+                slider("titaniumMetalness", "金属感", "颜色向钛灰靠拢的程度，越高越不像封面原色", \.background.titanium.metalness, 0...1, step: 0.05, format: amount, keywords: "去饱和 钛"),
+                toggle("titaniumSoftGlints", "柔和闪光", "闪光渐亮渐灭；关闭后像 AMLL 一样一闪即逝", \.background.titanium.softGlints, keywords: "闪光"),
+                toggle("titaniumHDR", "HDR 闪光", "在 XDR 等支持高亮度的屏幕上，闪粉亮过普通白色", \.background.titanium.highDynamicRange, keywords: "EDR XDR 高动态范围 亮度"),
+                slider("titaniumCrestShift", "切歌过渡", "切歌时沙脊移到新位置所用的时间", \.background.titanium.crestShift, 0...4, step: 0.1, format: seconds, keywords: "沙脊 换歌"),
+                slider("audioReactivity", "跟随音乐强度", "鼓点让沙脊微微发亮、闪粉闪烁的幅度；亮度变化有上限，每秒最多约两次", \.background.audioReactivity, 0...3, step: 0.05, format: percent),
+                menu("fps", "帧率", "越高越流畅，也越耗电", \.background.framesPerSecond, rates),
+                menu("fullscreenFps", "全屏帧率", nil, \.background.fullscreenFramesPerSecond, rates),
+            ]
+        }
+        let footer = flowing ? "1.00× 为默认数值。"
+            : titanium ? "倍数以 1.00× 为默认；质感数值可用「恢复播放页默认设置」还原。"
+            : "\(BackgroundStylePicker.name(settings.background.style))只能调压暗，其他细节属于流动封面。"
         return SettingsGroup("backgroundDetails", title: "背景细节", footer: footer, advanced: true, entries: entries)
     }
 
@@ -760,6 +784,7 @@ struct SettingsCatalog {
     private var backgroundDetail: String {
         switch settings.background.style {
         case .artwork: "封面色彩缓缓流动"
+        case .titanium: "金属质感的流沙，沙粒随光闪烁"
         case .blur: "模糊的封面，安静不打扰"
         case .gradient: "取封面颜色的渐变"
         }

@@ -11,7 +11,10 @@ struct PlayerBackground: View {
     var settings: AppSettings.Background
     var fullscreen: Bool
     var behindLyrics: Bool
+    var behindPanel = false
+    var playing: Bool
     var energyProvider: @MainActor () -> SIMD4<Float>
+    var spectrum: @MainActor (_ after: TimeInterval?) -> (bands: [Float], time: TimeInterval)
     @State private var largeImage: NSImage?
     @State private var largeSettled = false
 
@@ -23,6 +26,8 @@ struct PlayerBackground: View {
             switch settings.style {
             case .artwork:
                 ArtworkBackdropRepresentable(image: largeImage ?? image, coverPending: coverPending, seed: track?.artwork?.seed ?? track?.id.id ?? "starry", accent: accent, settings: settings, fullscreen: fullscreen, behindLyrics: behindLyrics, energyProvider: energyProvider)
+            case .titanium:
+                TitaniumBackdropRepresentable(image: largeImage ?? image, coverPending: coverPending, seed: track?.artwork?.seed ?? track?.id.id ?? "starry", accent: accent, settings: settings, fullscreen: fullscreen, behindLyrics: behindLyrics, behindPanel: behindPanel, playing: playing, spectrum: spectrum)
             case .blur:
                 if let image = largeImage ?? image {
                     Color.clear
@@ -119,6 +124,91 @@ struct ArtworkBackdropRepresentable: NSViewRepresentable {
             let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
             view.setCover(cg, seed: seed)
         }
+    }
+}
+
+struct TitaniumBackdropRepresentable: NSViewRepresentable {
+    var image: NSImage?
+    var coverPending = false
+    var seed: String
+    var accent: Color?
+    var settings: AppSettings.Background
+    var fullscreen: Bool
+    var behindLyrics: Bool
+    var behindPanel: Bool
+    var playing: Bool
+    var spectrum: @MainActor (_ after: TimeInterval?) -> (bands: [Float], time: TimeInterval)
+
+    final class Coordinator {
+        var lastImage: NSImage?
+        var lastSeed: String?
+        var paletteKey: (seed: String, accent: Color?)?
+        var palette: CoverPalette = .fallback
+        var spectrumTime: TimeInterval?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> TitaniumBackdropView {
+        let view = TitaniumBackdropView(frame: .zero)
+        apply(to: view, context: context)
+        return view
+    }
+
+    func updateNSView(_ view: TitaniumBackdropView, context: Context) {
+        apply(to: view, context: context)
+    }
+
+    private func apply(to view: TitaniumBackdropView, context: Context) {
+        var p = TitaniumBackdropView.Parameters()
+        switch settings.motion {
+        case .auto: p.motion = .auto
+        case .calm: p.motion = .subdued
+        case .lively: p.motion = .exciting
+        }
+        p.speed = Float(settings.speed)
+        p.brightness = Float(settings.brightness)
+        p.blackScrim = Float(settings.scrim)
+        p.audioReactivity = Float(settings.audioReactivity)
+        p.framesPerSecond = fullscreen ? settings.fullscreenFramesPerSecond : settings.framesPerSecond
+        p.options = Self.options(settings.titanium)
+        if view.parameters != p { view.parameters = p }
+        view.isBehindLyrics = behindLyrics
+        view.isBehindText = behindPanel
+        view.isPlaying = playing
+        let coordinator = context.coordinator
+        view.spectrumProvider = { [spectrum, weak coordinator] in
+            guard let coordinator else { return [] }
+            let read = spectrum(coordinator.spectrumTime)
+            coordinator.spectrumTime = read.time
+            return read.bands
+        }
+        if context.coordinator.paletteKey?.seed != seed || context.coordinator.paletteKey?.accent != accent {
+            context.coordinator.paletteKey = (seed, accent)
+            context.coordinator.palette = BackdropRepresentable.palette(seed: seed, accent: accent)
+        }
+        view.palette = context.coordinator.palette
+        let holding = image == nil && coverPending && context.coordinator.lastImage != nil
+        if !holding, context.coordinator.lastImage !== image || context.coordinator.lastSeed != seed {
+            context.coordinator.lastImage = image
+            context.coordinator.lastSeed = seed
+            let cg = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            view.setCover(cg, seed: seed)
+        }
+    }
+}
+
+extension TitaniumBackdropRepresentable {
+    static func options(_ settings: AppSettings.Background.Titanium) -> TitaniumOptions {
+        var options = TitaniumOptions()
+        options.grain = Float(settings.grain)
+        options.sparkle = Float(settings.sparkle)
+        options.sheen = Float(settings.sheen)
+        options.metalness = Float(settings.metalness)
+        options.crestShift = settings.crestShift
+        options.softGlints = settings.softGlints
+        options.highDynamicRange = settings.highDynamicRange
+        return options
     }
 }
 

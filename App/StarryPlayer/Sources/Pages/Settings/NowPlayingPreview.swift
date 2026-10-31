@@ -84,7 +84,7 @@ struct NowPlayingPreview: View {
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
         .background {
-            PlayerBackground(track: player.current, image: player.coverImage, accent: player.accentColor, settings: model.settings.settings.background, fullscreen: false, behindLyrics: true, energyProvider: { [player] in player.energies() })
+            PlayerBackground(track: player.current, image: player.coverImage, accent: player.accentColor, settings: model.settings.settings.background, fullscreen: false, behindLyrics: true, playing: player.isPlaying, energyProvider: { [player] in player.energies() }, spectrum: { [player] after in player.audibleSpectrum(lead: PlayerController.displayLead, after: after) })
         }
         .clipShape(shape)
         .overlay(shape.strokeBorder(theme.onSurface.opacity(theme.isDark ? 0.1 : 0.08), lineWidth: 1))

@@ -467,17 +467,36 @@ struct VisualPicker<Value: Hashable>: View {
     @Binding var selection: Value
     var options: [Option]
     var previewSize = CGSize(width: 104, height: 66)
+    @Environment(\.settingsCompact) private var compact
     @Namespace private var ring
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            ForEach(options.indices, id: \.self) { index in
-                let option = options[index]
-                VisualPickerOption(title: option.title, selected: selection == option.value, size: previewSize, ring: ring, preview: option.preview) {
-                    guard selection != option.value else { return }
-                    withAnimation(Motion.selection) { selection = option.value }
+        let spacing: CGFloat = compact ? 10 : 16
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: spacing) {
+                ForEach(options.indices, id: \.self) { index in
+                    option(at: index)
                 }
             }
+            .fixedSize()
+            Grid(alignment: .topLeading, horizontalSpacing: spacing, verticalSpacing: 16) {
+                ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { start in
+                    GridRow(alignment: .top) {
+                        ForEach(start..<min(start + 2, options.count), id: \.self) { index in
+                            option(at: index)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private func option(at index: Int) -> some View {
+        let option = options[index]
+        return VisualPickerOption(title: option.title, selected: selection == option.value, size: previewSize, ring: ring, preview: option.preview) {
+            guard selection != option.value else { return }
+            withAnimation(Motion.selection) { selection = option.value }
         }
     }
 }
@@ -513,6 +532,8 @@ private struct VisualPickerOption: View {
                 Text(title)
                     .font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? theme.onSurface : theme.onSurfaceVariant)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .opacity(isEnabled ? 1 : 0.5)
             .contentShape(Rectangle())
