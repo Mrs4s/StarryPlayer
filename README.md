@@ -15,25 +15,26 @@
 
 ## 截图
 
+<!-- Keep preview images at 1600 × 1200; GitHub renders them with height: auto. -->
 <table>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-1.webp" width="400" height="300" alt="首页">
+      <a href="screenshots/screen-1.webp"><img src="screenshots/readme/screen-1.webp" width="400" height="300" alt="首页"></a>
       <p><strong>首页</strong><br>浏览推荐、歌单与最近播放</p>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-2.webp" width="400" height="300" alt="逐字歌词">
+      <a href="screenshots/screen-2.webp"><img src="screenshots/readme/screen-2.webp" width="400" height="300" alt="逐字歌词"></a>
       <p><strong>逐字歌词</strong><br>逐字高亮，搭配翻译、音译与律动背景</p>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-3.png" width="400" height="300" alt="钛金流沙背景和演唱者标识">
-      <p><strong>播放页面</strong><br>钛金流沙背景和演唱者标识</p>
+      <a href="screenshots/screen-3.png"><img src="screenshots/readme/screen-3.webp" width="400" height="300" alt="钛金流沙背景和演唱者标识"></a>
+      <p><strong>播放页面(HDR)</strong><br>钛金流沙背景和演唱者标识</p>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-4.png" width="400" height="300" alt="歌词编辑器">
-      <p><strong>高精度歌词编辑器</strong><br>提供大量以视觉打轴为主的辅助功能</p>
+      <a href="screenshots/screen-4.png"><img src="screenshots/readme/screen-4.webp" width="400" height="300" alt="歌词编辑器"></a>
+      <p><strong>高精度歌词编辑器</strong><br>提供大量以视觉打轴为主的辅助功能和AI辅助</p>
     </td>
   </tr>
 </table>

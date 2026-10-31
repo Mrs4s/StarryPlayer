@@ -15,24 +15,25 @@ A high-performance native macOS music player with rich visual effects
 
 ## Screenshots
 
+<!-- Keep preview images at 1600 × 1200; GitHub renders them with height: auto. -->
 <table>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-1.webp" width="400" height="300" alt="Home page">
+      <a href="screenshots/screen-1.webp"><img src="screenshots/readme/screen-1.webp" width="400" height="300" alt="Home page"></a>
       <p><strong>Home</strong><br>Browse recommendations, playlists, and recently played music</p>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-2.webp" width="400" height="300" alt="Word-by-word lyrics">
+      <a href="screenshots/screen-2.webp"><img src="screenshots/readme/screen-2.webp" width="400" height="300" alt="Word-by-word lyrics"></a>
       <p><strong>Word-by-word lyrics</strong><br>Follow highlighted lyrics with translations, romanization, and animated backgrounds</p>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-3.png" width="400" height="300" alt="Titanium sand background and singer labels">
+      <a href="screenshots/screen-3.png"><img src="screenshots/readme/screen-3.webp" width="400" height="300" alt="Titanium sand background and singer labels"></a>
       <p><strong>Now Playing</strong><br>Titanium sand background and singer labels</p>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="screenshots/screen-4.png" width="400" height="300" alt="Lyric editor">
+      <a href="screenshots/screen-4.png"><img src="screenshots/readme/screen-4.webp" width="400" height="300" alt="Lyric editor"></a>
       <p><strong>High-precision lyric editor</strong><br>A wide range of tools for visual lyric timing</p>
     </td>
   </tr>
