@@ -82,6 +82,7 @@ struct SettingsEntry: Identifiable {
     var advanced: Bool
     var layout: Layout
     var content: AnyView
+    var isNested = false
 
     init<Content: View>(_ id: String, _ title: String, detail: String? = nil, keywords: String = "", advanced: Bool = false, layout: Layout = .row, @ViewBuilder content: () -> Content) {
         self.id = id
@@ -101,6 +102,14 @@ struct SettingsEntry: Identifiable {
         self.advanced = advanced
         self.layout = layout
         self.content = AnyView(content())
+    }
+}
+
+extension SettingsEntry {
+    func nested() -> SettingsEntry {
+        var entry = self
+        entry.isNested = true
+        return entry
     }
 }
 
@@ -164,7 +173,7 @@ struct SettingsGroupView: View {
                     SettingsEntryRow(entry: entry, isAdvanced: group.advanced || entry.advanced, tagged: tagsAdvanced && (group.advanced || entry.advanced))
                         .overlay(alignment: .top) {
                             if index > 0 {
-                                Rectangle().fill(theme.onSurface.opacity(theme.isDark ? 0.07 : 0.06)).frame(height: 1).padding(.leading, 16)
+                                Rectangle().fill(theme.onSurface.opacity(theme.isDark ? 0.07 : 0.06)).frame(height: 1).padding(.leading, entry.isNested ? 36 : 16)
                             }
                         }
                         .transition(.settingsEntry)
@@ -214,6 +223,7 @@ private struct SettingsEntryRow: View {
                 entry.content
             }
         }
+        .padding(.leading, entry.isNested ? (compact ? 14 : 20) : 0)
         .padding(.horizontal, entry.layout == .custom ? 0 : (compact ? 12 : 16))
         .padding(.vertical, entry.layout == .custom ? 0 : (compact ? 8 : 12))
         .frame(maxWidth: .infinity, minHeight: entry.layout == .custom ? 0 : (compact ? 40 : 52), alignment: .leading)

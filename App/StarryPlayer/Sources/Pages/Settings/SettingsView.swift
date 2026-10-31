@@ -141,7 +141,7 @@ struct SettingsView: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 let page = model.settingsPage
-                SettingsPageView(info: catalog.info(for: page), groups: catalog.groups(for: page).compactMap { $0.visible(advanced: advanced) })
+                SettingsPageView(info: catalog.info(for: page), groups: catalog.groups(for: page).compactMap { $0.visible(advanced: advanced) }, preview: catalog.preview(for: page))
                     .id(page)
                     .transition(pageTransition)
             } else {
@@ -292,17 +292,27 @@ private struct SettingsRailItem: View {
 private struct SettingsPageView: View {
     var info: SettingsPageInfo
     var groups: [SettingsGroup]
+    var preview: AnyView?
     @Environment(\.theme) private var theme
     @State private var shown = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                header
-                ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                    SettingsGroupView(group: group)
-                        .reveal(shown, delay: 0.02 + Double(min(index, 8)) * 0.035, distance: 10)
-                        .transition(.settingsEntry)
+            Group {
+                if let preview {
+                    LazyVStack(alignment: .leading, spacing: 26, pinnedViews: [.sectionHeaders]) {
+                        header
+                        Section {
+                            groupViews
+                        } header: {
+                            pinned(preview)
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 26) {
+                        header
+                        groupViews
+                    }
                 }
             }
             .padding(.horizontal, 36)
@@ -312,6 +322,28 @@ private struct SettingsPageView: View {
         }
         .scrollIndicators(.automatic)
         .onAppear { shown = true }
+    }
+
+    private var groupViews: some View {
+        ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+            SettingsGroupView(group: group)
+                .reveal(shown, delay: 0.02 + Double(min(index, 8)) * 0.035, distance: 10)
+                .transition(.settingsEntry)
+        }
+    }
+
+    private func pinned(_ preview: AnyView) -> some View {
+        preview
+            .reveal(shown, delay: 0.02, distance: 10)
+            .padding(.top, 18)
+            .padding(.bottom, 4)
+            .background(theme.surface)
+            .background(alignment: .bottom) {
+                LinearGradient(colors: [theme.surface, theme.surface.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 14)
+                    .offset(y: 14)
+                    .allowsHitTesting(false)
+            }
     }
 
     private var header: some View {

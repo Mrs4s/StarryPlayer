@@ -29,6 +29,10 @@ struct SettingsCatalog {
         }
     }
 
+    func preview(for page: SettingsPage) -> AnyView? {
+        page == .app(.nowPlaying) ? AnyView(NowPlayingPreview()) : nil
+    }
+
     func isListed(_ page: SettingsPage, advanced: Bool) -> Bool {
         guard case .source = page else { return true }
         return groups(for: page).contains { $0.visible(advanced: advanced) != nil }
@@ -200,99 +204,134 @@ struct SettingsCatalog {
     }
 
     private var nowPlaying: [SettingsGroup] {
-        nowPlayingBasics + nowPlayingDetails
+        [lyricContent, lyricLayout, lyricMotion, background, backgroundDetails, nowPlayingReset]
     }
 
-    private var nowPlayingBasics: [SettingsGroup] {
+    private var lyricContent: SettingsGroup {
+        var entries = [
+            SettingsEntry("lyricLayers", "显示内容", detail: "点选要随歌词一起显示的内容；歌词本身没有的内容不会出现", keywords: "翻译 译文 音译 罗马音 注音 振假名 假名 拼音 读音 ruby 演唱者 演唱者标记 对唱 合唱 歌手 角色 颜色", layout: .block) {
+                LyricLayerChips()
+            },
+        ]
+        if settings.lyrics.performerMarks {
+            entries.append(toggle("performerNames", "显示演唱者名字", "在正在唱的行上方标出每段的歌手", \.lyrics.performerNames, keywords: "对唱 合唱 歌手 名字").nested())
+            if settings.lyrics.performerNames && settings.lyrics.showRuby {
+                entries.append(toggle("hideRubyUnderPerformerNames", localizedTitle: LocalizedStringResource("hideRubyUnderPerformerNames.title", defaultValue: "隐藏与演唱者名字重叠的注音", table: "Settings"), detail: LocalizedStringResource("hideRubyUnderPerformerNames.detail", defaultValue: "保持演唱者名字的位置，仅隐藏与名字重叠的注音", table: "Settings"), \.lyrics.hideRubyUnderPerformerNames, keywords: "演唱者 歌手 名字 注音 振假名 假名 拼音 ruby 重叠 遮挡 singer performer name overlap").nested())
+            }
+        }
+        return SettingsGroup("lyricContent", title: "歌词", entries: entries)
+    }
+
+    private var lyricLayout: SettingsGroup {
         let advanced = model.showsAdvancedSettings
-        var lyricEntries: [SettingsEntry] = []
-        if !advanced {
-            lyricEntries.append(SettingsEntry("lyricSize", "歌词大小", detail: "随窗口自动缩放，可在此基础上调大调小", keywords: "字号 字体 缩放") {
+        let scale: (Double) -> String = { String(format: "%.2f×", $0) }
+        let points: (Double) -> String = { $0 == 0 ? "预设" : "\(Int($0)) pt" }
+        var entries: [SettingsEntry] = []
+        if advanced {
+            entries += [
+                slider("windowedScale", "窗口缩放", "窗口里的歌词大小；预设为 48 pt 粗体，行距 40", \.lyrics.windowedScale, 0.5...2, step: 0.05, format: scale, keywords: "歌词大小 预设", advanced: true),
+                slider("fullscreenScale", "全屏缩放", "全屏时的歌词大小", \.lyrics.fullscreenScale, 0.5...3, step: 0.05, format: scale, keywords: "歌词大小 预设", advanced: true),
+            ]
+        } else {
+            entries.append(SettingsEntry("lyricSize", "歌词大小", detail: "随窗口自动缩放，可在此基础上调大调小", keywords: "字号 字体 缩放") {
                 SettingsSlider(value: lyricSizeBinding, range: 0.6...1.6, step: 0.05) { "\(Int(($0 * 100).rounded()))%" }
             })
         }
-        lyricEntries += [
+        entries += [
             SettingsEntry("lyricAlignment", "对齐", keywords: "居中 靠左") {
                 SegmentSwitch(selection: bind(\.lyrics.alignment), options: [(.leading, "靠左"), (.center, "居中")])
             },
-            toggle("translation", "显示翻译", "外文歌词下方显示中文翻译", \.lyrics.showTranslation, keywords: "译文"),
-            toggle("romanization", "显示音译", "为日语、韩语等歌词标注读音", \.lyrics.showRomanization, keywords: "注音 罗马音 拼音 读音"),
-            toggle("ruby", "显示注音", "在汉字上方显示歌词自带的假名、拼音等注音", \.lyrics.showRuby, keywords: "振假名 假名 拼音 读音 ruby"),
-            toggle("performerMarks", "演唱者标记", "多人演唱时，在每位歌手开口的位置显示其颜色（需要歌词带演唱者颜色）", \.lyrics.performerMarks, keywords: "对唱 合唱 歌手 角色 颜色"),
+            SettingsEntry("anchor", "当前行位置", detail: "正在唱的那一行停在哪里", keywords: "当前行 位置 封面 靠上 居中", advanced: true) {
+                SegmentSwitch(selection: bind(\.lyrics.anchor), options: [(.preset, "对齐封面"), (.top, "靠上"), (.center, "居中")])
+            },
+            toggle("autoScale", "随窗口高度缩放", "窗口越高，歌词越大", \.lyrics.autoScale, keywords: "自动 缩放 窗口", advanced: true),
+            slider("fontSize", "字号", "设为“预设”时按缩放计算", \.lyrics.fontSize, 0...96, step: 1, format: points, keywords: "字体 大小", advanced: true),
+            slider("lineSpacing", "行距", "设为“预设”时按缩放计算", \.lyrics.lineSpacing, 0...80, step: 1, format: points, keywords: "间距", advanced: true),
+            slider("inactiveOpacity", "其他行不透明度", "越小，没在唱的行越淡", \.lyrics.inactiveOpacity, 0...0.8, step: 0.005, format: { $0 == 0 ? "预设" : String(format: "%.2f", $0) }, keywords: "透明 淡 亮度", advanced: true),
+            toggle("hoverHighlight", "悬停高亮", "指针所在的行变亮，点击跳到那里", \.lyrics.hoverHighlight, keywords: "鼠标 指针 点击 跳转", advanced: true),
+        ]
+        return SettingsGroup("lyricLayout", title: "排版", footer: advanced ? "窗口和全屏的缩放分开保存。字号、行距和不透明度为“预设”时跟随缩放。" : nil, entries: entries)
+    }
+
+    private var lyricMotion: SettingsGroup {
+        let store = store
+        let preset = LyricMotionPreset(settings.lyrics)
+        var entries = [
             toggle("perSyllable", "逐字点亮", "随演唱进度一个字一个字亮起（需要逐字歌词）", \.lyrics.perSyllable, keywords: "逐字 卡拉ok"),
-            SettingsEntry("blurLines", "模糊其他行", detail: "只让正在唱的那一行保持清晰", keywords: "模糊 聚焦") {
-                SettingsSwitch(isOn: Binding { store.settings.lyrics.blurMode != .off } set: { store.settings.lyrics.blurMode = $0 ? .both : .off })
+            SettingsEntry("motionPreset", "动画效果", detail: preset.detail, keywords: "动效 动画 弹簧 回弹 上浮 放大 辉光 发光 省电 简洁 标准 丰富") {
+                SegmentSwitch(selection: Binding { LyricMotionPreset(store.settings.lyrics) } set: { $0.apply(to: &store.settings.lyrics) }, options: LyricMotionPreset.allCases.filter { $0 != .custom || preset == .custom }.map { (value: $0, title: $0.title) })
+            },
+            toggle("spring", "弹簧换行", "换行时带一点回弹，各行依次跟上", \.lyrics.spring, keywords: "动效 回弹", advanced: true),
+            toggle("lift", "音节上浮", "唱到的字轻轻上浮", \.lyrics.lift, keywords: "动效 上浮", advanced: true),
+            toggle("emphasis", "重音放大", "拉长的音稍稍放大", \.lyrics.emphasis, keywords: "动效 长音 放大", advanced: true),
+            toggle("glow", "辉光", "拉长的音微微发光", \.lyrics.glow, keywords: "动效 长音 发光", advanced: true),
+            SettingsEntry("blurMode", "模糊其他行", detail: "只让正在唱的那一行保持清晰", keywords: "模糊 聚焦 景深 模糊范围") {
+                SegmentSwitch(selection: bind(\.lyrics.blurMode), options: [(.off, "关闭"), (.upcoming, "仅后面"), (.both, "前后")])
             },
         ]
-        if settings.lyrics.performerMarks, let index = lyricEntries.firstIndex(where: { $0.id == "performerMarks" }) {
-            lyricEntries.insert(toggle("performerNames", "显示演唱者名字", "在正在唱的行上方标出每段的歌手", \.lyrics.performerNames, keywords: "对唱 合唱 歌手 名字"), at: index + 1)
-            if settings.lyrics.performerNames {
-                lyricEntries.insert(toggle("hideRubyUnderPerformerNames", localizedTitle: LocalizedStringResource("hideRubyUnderPerformerNames.title", defaultValue: "隐藏与演唱者名字重叠的注音", table: "Settings"), detail: LocalizedStringResource("hideRubyUnderPerformerNames.detail", defaultValue: "保持演唱者名字的位置，仅隐藏与名字重叠的注音", table: "Settings"), \.lyrics.hideRubyUnderPerformerNames, keywords: "演唱者 歌手 名字 注音 振假名 假名 拼音 ruby 重叠 遮挡 singer performer name overlap"), at: index + 2)
-            }
+        if settings.lyrics.blurMode != .off {
+            entries += [
+                slider("blurRadius", "模糊程度", "离正在唱的行每远一行，多模糊这么多", \.lyrics.blurRadius, 0...8, step: 0.1, format: { String(format: "%.1f", $0) }, keywords: "模糊半径", advanced: true),
+                slider("blurMax", "模糊上限", "最远的行最多模糊到这里", \.lyrics.blurMax, 0...12, step: 0.1, format: { String(format: "%.1f", $0) }, keywords: "模糊", advanced: true),
+            ]
         }
-        var background: [SettingsEntry] = [
-            SettingsEntry("backgroundStyle", "背景", detail: backgroundDetail, keywords: "封面 模糊 渐变 流动") {
-                SegmentSwitch(selection: bind(\.background.style), options: [(.artwork, "流动封面"), (.blur, "模糊封面"), (.gradient, "渐变")])
+        return SettingsGroup("lyricMotion", title: "动效", entries: entries)
+    }
+
+    private var background: SettingsGroup {
+        var entries = [
+            SettingsEntry("backgroundStyle", "背景样式", detail: backgroundDetail, keywords: "背景 封面 模糊 渐变 流动", layout: .block) {
+                BackgroundStylePicker()
             },
         ]
         if settings.background.style == .artwork {
-            background.append(SettingsEntry("backgroundMotion", "随音乐律动", detail: "自动：显示歌词时跟着节奏起伏", keywords: "动态 律动 节奏") {
+            entries.append(SettingsEntry("backgroundMotion", "随音乐律动", detail: backgroundMotionDetail, keywords: "动态 律动 节奏") {
                 SegmentSwitch(selection: bind(\.background.motion), options: [(.auto, "自动"), (.calm, "平静"), (.lively, "律动")])
             })
         }
-        return [
-            SettingsGroup("lyricsLook", title: "歌词", entries: lyricEntries),
-            SettingsGroup("background", title: "背景", entries: background),
-        ]
+        return SettingsGroup("background", title: "背景", entries: entries)
     }
 
-    private var nowPlayingDetails: [SettingsGroup] {
+    private var backgroundDetails: SettingsGroup {
         let percent: (Double) -> String = { String(format: "%.2f×", $0) }
+        let amount: (Double) -> String = { String(format: "%.2f", $0) }
         let rates = [15, 24, 30, 60, 120].map { ($0, "\($0) fps") }
-        return [
-            SettingsGroup("lyricLayout", title: "歌词排版", footer: "窗口和全屏各用一套预设。数值为 0 时使用预设。", advanced: true, entries: [
-                slider("windowedScale", "窗口缩放", "窗口预设：48 pt 粗体，行距 40", \.lyrics.windowedScale, 0.5...2, step: 0.05, format: percent, keywords: "歌词大小 预设"),
-                slider("fullscreenScale", "全屏缩放", "全屏预设：当前行居中，按 1080 pt 画布设计", \.lyrics.fullscreenScale, 0.5...3, step: 0.05, format: percent, keywords: "歌词大小 预设"),
-                toggle("autoScale", "随窗口高度缩放", nil, \.lyrics.autoScale),
-                slider("fontSize", "字号", nil, \.lyrics.fontSize, 0...96, step: 1, format: { $0 == 0 ? "预设" : "\(Int($0)) pt" }),
-                slider("lineSpacing", "行距", nil, \.lyrics.lineSpacing, 0...80, step: 1, format: { $0 == 0 ? "预设" : "\(Int($0)) pt" }),
-                menu("anchor", "当前行位置", nil, \.lyrics.anchor, [(.preset, "跟随预设"), (.top, "靠上"), (.center, "居中")]),
-                slider("inactiveOpacity", "其他行不透明度", nil, \.lyrics.inactiveOpacity, 0...0.8, step: 0.005, format: { $0 == 0 ? "预设" : String(format: "%.2f", $0) }),
-                toggle("hoverHighlight", "悬停高亮", "指针所在的行变亮，点击跳到那里", \.lyrics.hoverHighlight),
-            ]),
-            SettingsGroup("lyricEffects", title: "歌词特效", advanced: true, entries: [
-                toggle("spring", "弹簧换行", "mass 1 · stiffness 100 · damping 18，逐行错开", \.lyrics.spring),
-                toggle("lift", "音节上浮", "唱到的字上浮 2 pt", \.lyrics.lift),
-                toggle("emphasis", "重音放大", "长音 1.00 → 1.14", \.lyrics.emphasis),
-                toggle("glow", "辉光", "长音发光，半径 5", \.lyrics.glow),
-                menu("blurMode", "模糊范围", nil, \.lyrics.blurMode, [(.off, "关闭"), (.upcoming, "仅后面的行"), (.both, "前后的行")]),
-                slider("blurRadius", "模糊半径", "每隔一行增加的模糊", \.lyrics.blurRadius, 0...8, step: 0.1, format: { String(format: "%.1f", $0) }),
-                slider("blurMax", "模糊上限", nil, \.lyrics.blurMax, 0...12, step: 0.1, format: { String(format: "%.1f", $0) }),
-            ]),
-            SettingsGroup("backgroundDetails", title: "背景细节", footer: "1.00× 为默认数值。", advanced: true, entries: [
-                slider("speed", "旋转速度", nil, \.background.speed, 0...3, step: 0.05, format: percent),
-                slider("blurScale", "模糊", "平静 160 / 200 pt，律动 85 / 120 pt", \.background.blurScale, 0.25...2, step: 0.05, format: percent),
-                slider("saturation", "饱和度", "平静 2.4 / 2.9，律动 2.0 / 2.4", \.background.saturationScale, 0...2, step: 0.05, format: percent),
-                slider("brightness", "亮度", nil, \.background.brightness, 0.2...2, step: 0.05, format: { String(format: "%.2f", $0) }),
-                slider("scrim", "压暗", "黑色遮罩", \.background.scrim, 0...0.9, step: 0.01, format: { String(format: "%.2f", $0) }),
-                slider("whiteScrim", "提亮", "白色遮罩", \.background.whiteScrim, 0...0.4, step: 0.01, format: { String(format: "%.2f", $0) }),
-                slider("audioReactivity", "跟随音乐强度", nil, \.background.audioReactivity, 0...3, step: 0.05, format: percent),
-                slider("pinch", "律动扭曲", nil, \.background.pinchStrength, 0...1, step: 0.05, format: percent),
+        let flowing = settings.background.style == .artwork
+        var entries: [SettingsEntry] = []
+        if flowing {
+            entries += [
+                slider("speed", "流动速度", "色块流动的快慢", \.background.speed, 0...3, step: 0.05, format: percent, keywords: "旋转速度"),
+                slider("blurScale", "模糊", "越小越能看出封面的轮廓", \.background.blurScale, 0.25...2, step: 0.05, format: percent),
+                slider("saturation", "饱和度", "颜色的浓淡", \.background.saturationScale, 0...2, step: 0.05, format: percent),
+                slider("brightness", "亮度", "整体的明暗", \.background.brightness, 0.2...2, step: 0.05, format: amount),
+            ]
+        }
+        entries.append(slider("scrim", "压暗", "盖一层黑色，让歌词更清楚", \.background.scrim, 0...0.9, step: 0.01, format: amount, keywords: "黑色遮罩"))
+        if flowing {
+            entries += [
+                slider("whiteScrim", "提亮", "盖一层白色，画面更柔和", \.background.whiteScrim, 0...0.4, step: 0.01, format: amount, keywords: "白色遮罩"),
+                slider("audioReactivity", "跟随音乐强度", "随节奏起伏的幅度", \.background.audioReactivity, 0...3, step: 0.05, format: percent),
+                slider("pinch", "律动扭曲", "随节奏变形的幅度", \.background.pinchStrength, 0...1, step: 0.05, format: percent),
                 toggle("colorGrade", "色彩分级", "用调色表收敛过艳的红与蓝", \.background.colorGrade),
                 menu("fps", "帧率", "越高越流畅，也越耗电", \.background.framesPerSecond, rates),
                 menu("fullscreenFps", "全屏帧率", nil, \.background.fullscreenFramesPerSecond, rates),
-            ]),
-            SettingsGroup("nowPlayingReset", advanced: true, entries: [
-                SettingsEntry("nowPlayingReset", "恢复播放页默认设置", detail: "歌词与背景的所有选项回到初始值", keywords: "重置", advanced: true) {
-                    SettingsButton(title: "恢复默认", systemName: "arrow.counterclockwise") {
-                        withAnimation(Motion.reveal) {
-                            store.settings.lyrics = AppSettings.Lyrics()
-                            store.settings.background = AppSettings.Background()
-                        }
+            ]
+        }
+        let footer = flowing ? "1.00× 为默认数值。" : "\(BackgroundStylePicker.name(settings.background.style))只能调压暗，其他细节属于流动封面。"
+        return SettingsGroup("backgroundDetails", title: "背景细节", footer: footer, advanced: true, entries: entries)
+    }
+
+    private var nowPlayingReset: SettingsGroup {
+        SettingsGroup("nowPlayingReset", advanced: true, entries: [
+            SettingsEntry("nowPlayingReset", "恢复播放页默认设置", detail: "歌词与背景的所有选项回到初始值", keywords: "重置", advanced: true) {
+                SettingsButton(title: "恢复默认", systemName: "arrow.counterclockwise") {
+                    withAnimation(Motion.reveal) {
+                        store.settings.lyrics = AppSettings.Lyrics()
+                        store.settings.background = AppSettings.Background()
                     }
-                },
-            ]),
-        ]
+                }
+            },
+        ])
     }
 
     var popoverGroups: [SettingsGroup] {
@@ -655,8 +694,8 @@ struct SettingsCatalog {
         }
     }
 
-    private func slider(_ id: String, _ title: String, _ detail: String?, _ keyPath: WritableKeyPath<AppSettings, Double>, _ range: ClosedRange<Double>, step: Double, format: @escaping (Double) -> String, keywords: String = "") -> SettingsEntry {
-        SettingsEntry(id, title, detail: detail, keywords: keywords) {
+    private func slider(_ id: String, _ title: String, _ detail: String?, _ keyPath: WritableKeyPath<AppSettings, Double>, _ range: ClosedRange<Double>, step: Double, format: @escaping (Double) -> String, keywords: String = "", advanced: Bool = false) -> SettingsEntry {
+        SettingsEntry(id, title, detail: detail, keywords: keywords, advanced: advanced) {
             SettingsSlider(value: bind(keyPath), range: range, step: step, format: format)
         }
     }
@@ -722,6 +761,14 @@ struct SettingsCatalog {
         case .artwork: "封面色彩缓缓流动"
         case .blur: "模糊的封面，安静不打扰"
         case .gradient: "取封面颜色的渐变"
+        }
+    }
+
+    private var backgroundMotionDetail: String {
+        switch settings.background.motion {
+        case .auto: "显示歌词时跟着节奏起伏，其他时候保持平静"
+        case .calm: "始终缓缓流动"
+        case .lively: "始终跟着节奏起伏"
         }
     }
 
