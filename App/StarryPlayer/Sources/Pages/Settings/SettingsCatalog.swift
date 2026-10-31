@@ -218,11 +218,15 @@ struct SettingsCatalog {
             toggle("translation", "显示翻译", "外文歌词下方显示中文翻译", \.lyrics.showTranslation, keywords: "译文"),
             toggle("romanization", "显示音译", "为日语、韩语等歌词标注读音", \.lyrics.showRomanization, keywords: "注音 罗马音 拼音 读音"),
             toggle("ruby", "显示注音", "在汉字上方显示歌词自带的假名、拼音等注音", \.lyrics.showRuby, keywords: "振假名 假名 拼音 读音 ruby"),
+            toggle("performerMarks", "演唱者标记", "多人演唱时，在每位歌手开口的位置显示其颜色（需要歌词带演唱者颜色）", \.lyrics.performerMarks, keywords: "对唱 合唱 歌手 角色 颜色"),
             toggle("perSyllable", "逐字点亮", "随演唱进度一个字一个字亮起（需要逐字歌词）", \.lyrics.perSyllable, keywords: "逐字 卡拉ok"),
             SettingsEntry("blurLines", "模糊其他行", detail: "只让正在唱的那一行保持清晰", keywords: "模糊 聚焦") {
                 SettingsSwitch(isOn: Binding { store.settings.lyrics.blurMode != .off } set: { store.settings.lyrics.blurMode = $0 ? .both : .off })
             },
         ]
+        if settings.lyrics.performerMarks, let index = lyricEntries.firstIndex(where: { $0.id == "performerMarks" }) {
+            lyricEntries.insert(toggle("performerNames", "显示演唱者名字", "在正在唱的行上方标出每段的歌手", \.lyrics.performerNames, keywords: "对唱 合唱 歌手 名字"), at: index + 1)
+        }
         var background: [SettingsEntry] = [
             SettingsEntry("backgroundStyle", "背景", detail: backgroundDetail, keywords: "封面 模糊 渐变 流动") {
                 SegmentSwitch(selection: bind(\.background.style), options: [(.artwork, "流动封面"), (.blur, "模糊封面"), (.gradient, "渐变")])

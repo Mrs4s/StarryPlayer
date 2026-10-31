@@ -424,22 +424,13 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                 change(&draft.lines[i])
             }
         }
-        let singers: [(String, LyricSinger)] = [("主唱", .primary), ("对唱", .secondary), ("合唱", .duet)]
         let manageRoles = { [weak self] in
             self?.window?.makeFirstResponder(nil)
             self?.manageRoles?()
         }
-        let performers: PopMenuItem = session.draft.agents.isEmpty
-            ? .submenu("演唱", systemImage: "person.2", detail: singers.first(where: { $0.1 == line.singer })?.0) {
-                for (title, singer) in singers {
-                    PopMenuItem.option(title, selected: line.singer == singer) { editLine { $0.setSinger(singer, agents: session.draft.agents) } }
-                }
-                PopMenuItem.divider
-                PopMenuItem.button("设置演唱角色…", systemImage: "person.crop.rectangle.stack", action: manageRoles)
-            }
-            : .submenu("演唱", systemImage: "person.2", detail: LyricsEditorRoleStyle.names(line.agentIDs, in: session) ?? "未分配") {
-                LyricsEditorRoleMenu.lineItems(session, line: id, manage: manageRoles)
-            }
+        let performers = PopMenuItem.submenu("演唱者", systemImage: "person.2", detail: LyricsEditorRoleStyle.names(line.agentIDs, in: session) ?? "未分配") {
+            LyricsEditorRoleMenu.lineItems(session, line: id, manage: manageRoles)
+        }
         return PopMenuItem.tidy([
             .button("编辑文本", systemImage: "pencil") { session.editingLine = id },
             .button("生成日语音译（替换已有）", systemImage: "wand.and.stars", disabled: session.isGeneratingRomanization || !JapaneseRomanization.containsJapaneseScript(line.text)) { [weak self] in
@@ -468,6 +459,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             },
             .divider,
             performers,
+            LyricsEditorRoleMenu.positionItem(session, line: id),
             .option("背景人声", selected: line.isBackground) { editLine { $0.isBackground.toggle() } },
             .submenu("虚拟轨", systemImage: "rectangle.split.1x2", detail: session.draft.tracks.first { $0.id == line.track }.map { LyricsEditorSession.name(of: $0) }) {
                 PopMenuItem.option("不放在轨道上（按演唱）", selected: !session.draft.isOnTrack(line)) { session.setTrack(nil, ofLine: id) }

@@ -81,7 +81,7 @@ import Testing
         let parsed = try TTMLParser.parse(TTMLWriter.write(document))
         #expect(parsed.agents == document.agents)
         #expect(parsed.lines.map(\.agentIDs) == [["alice", "bob"], []])
-        #expect(parsed.lines.map(\.singer) == [.duet, .primary])
+        #expect(parsed.lines.map(\.singer) == [.primary, .primary])
     }
 
     @Test func foreignIDsAndMissingDeclarationsProduceConsistentXMLReferences() throws {
@@ -117,15 +117,5 @@ import Testing
         let result = try TTMLParser.parse(TTMLWriter.write(draft.document()))
         #expect(result.lines[0].agentIDs == ["alice"])
         #expect(result.lines[0].syllables.last?.agentIDs == ["bob"])
-    }
-
-    @Test func theLegacySingerControlReassignsNamedRolesInsteadOfExportingStaleIDs() throws {
-        var draft = LyricsDraft(document: try TTMLParser.parse(Self.ttml))
-        draft.lines[0].setSinger(.secondary, agents: draft.agents)
-        #expect(draft.lines[0].agentIDs == ["bob"])
-        #expect(draft.lines[0].syllables.allSatisfy { $0.agentIDs.isEmpty })
-        let parsed = try TTMLParser.parse(TTMLWriter.write(draft.document()))
-        #expect(parsed.lines[0].agentIDs == ["bob"])
-        #expect(parsed.lines[0].singer == .secondary)
     }
 }

@@ -121,6 +121,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var showRomanization = false
         public var showRuby = true
         public var hoverHighlight = true
+        public var performerMarks = true
+        public var performerNames = true
         /// 0 uses the preset value.
         public var inactiveOpacity: Double = 0
         public init() {}
@@ -128,6 +130,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         private enum CodingKeys: String, CodingKey {
             case windowedScale, fullscreenScale, autoScale, fontSize, lineSpacing, anchor, alignment, perSyllable, spring, lift, emphasis, glow
             case blurMode, blurRadius, blurMax, showTranslation, showRomanization, showRuby, hoverHighlight, inactiveOpacity
+            case performerMarks, performerNames
         }
 
         public init(from decoder: any Decoder) throws {
@@ -152,6 +155,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             showRomanization = try c.decodeIfPresent(Bool.self, forKey: .showRomanization) ?? d.showRomanization
             showRuby = try c.decodeIfPresent(Bool.self, forKey: .showRuby) ?? d.showRuby
             hoverHighlight = try c.decodeIfPresent(Bool.self, forKey: .hoverHighlight) ?? d.hoverHighlight
+            performerMarks = try c.decodeIfPresent(Bool.self, forKey: .performerMarks) ?? d.performerMarks
+            performerNames = try c.decodeIfPresent(Bool.self, forKey: .performerNames) ?? d.performerNames
             inactiveOpacity = try c.decodeIfPresent(Double.self, forKey: .inactiveOpacity) ?? d.inactiveOpacity
         }
     }

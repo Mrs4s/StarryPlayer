@@ -137,6 +137,13 @@ public struct LyricsSpecs: Sendable, Equatable {
     public var highlightViewCornerRadius: CGFloat = 16
     public var highlightViewMargin: CGFloat = 16
     public var hoverHighlightEnabled = true
+    public var performerMarksEnabled = true
+    public var performerNamesEnabled = true
+    /// Gap and bar width in ems of the voice's font.
+    public var performerGap: CGFloat = 0.45
+    public var performerBarWidth: CGFloat = 0.09
+    public var deselectedPerformerMarkAlpha: CGFloat = 0.45
+    public var deselectedScrollPerformerMarkAlpha: CGFloat = 0.7
 
     public var instrumentalBreakMinimumGap: TimeInterval = 7
     public var instrumentalBreakCountdownDotCount = 3

@@ -31,6 +31,7 @@ final class LyricsEditorSession {
     let metadataSearch = LyricsEditorMetadataSearchState()
     @ObservationIgnored private var flashTask: Task<Void, Never>?
     private var undoStack: [Snapshot] = []
+    @ObservationIgnored private var coalescing: (key: String, epoch: Int, depth: Int)?
     private var redoStack: [Snapshot] = []
     @ObservationIgnored private var previewCache: (revision: Int, document: LyricsDocument)?
     @ObservationIgnored private var rangesCache: (revision: Int, ranges: [ClosedRange<TimeInterval>?], end: TimeInterval)?
@@ -129,7 +130,7 @@ final class LyricsEditorSession {
 
     // MARK: Editing
 
-    func edit(aiReviewNotes notes: [UUID: [String]]? = nil, _ change: (inout LyricsDraft) -> Void) {
+    func edit(aiReviewNotes notes: [UUID: [String]]? = nil, coalescing key: String? = nil, _ change: (inout LyricsDraft) -> Void) {
         let before = Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes)
         var next = draft
         change(&next)
@@ -147,8 +148,11 @@ final class LyricsEditorSession {
             })
         }
         guard next != draft || nextNotes != aiReviewNotes else { return }
-        undoStack.append(before)
-        if undoStack.count > 300 { undoStack.removeFirst() }
+        if key == nil || coalescing?.key != key || coalescing?.epoch != historyEpoch || coalescing?.depth != undoStack.count {
+            undoStack.append(before)
+            if undoStack.count > 300 { undoStack.removeFirst() }
+        }
+        coalescing = key.map { ($0, historyEpoch, undoStack.count) }
         redoStack.removeAll()
         draft = next
         aiReviewNotes = nextNotes
@@ -159,6 +163,7 @@ final class LyricsEditorSession {
 
     func editMetadata(_ entries: [MetadataEntry]) {
         guard entries != metadata else { return }
+        coalescing = nil
         undoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: metadata))
         if undoStack.count > 300 { undoStack.removeFirst() }
         redoStack.removeAll()

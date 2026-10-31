@@ -41,16 +41,15 @@ struct LyricsEditorInspector: View {
                     LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
                 }
                 HStack(spacing: 10) {
-                    if session.draft.agents.isEmpty {
-                        SegmentSwitch(selection: Binding { line.singer } set: { singer in
-                            session.edit { draft in draft.lines[position.line].setSinger(singer, agents: draft.agents) }
-                        }, options: [(.primary, "主唱"), (.secondary, "对唱"), (.duet, "合唱")])
-                            .controlSize(.small)
-                            .transition(.opacity)
-                    } else {
-                        LyricsEditorRolePicker(session: session, line: line, manage: manageRoles)
-                            .transition(.opacity)
-                    }
+                    Text("演唱者").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
+                    LyricsEditorRolePicker(session: session, line: line, manage: manageRoles)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 8) {
+                    Text("位置").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
+                    SegmentSwitch(selection: Binding { line.singer } set: { session.setDisplayPosition($0, ofLines: [line.id]) },
+                                  options: [(.primary, "左侧"), (.secondary, "右侧"), (.duet, "居中")])
+                        .controlSize(.small)
                     Spacer(minLength: 0)
                     Text("背景").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                     SettingsSwitch(isOn: Binding { line.isBackground } set: { setLine(\.isBackground, $0, at: position.line) })

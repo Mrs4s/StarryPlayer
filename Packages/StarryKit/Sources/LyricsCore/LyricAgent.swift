@@ -2,6 +2,8 @@ import Foundation
 
 /// Document-local performer identity, mapped to TTML `ttm:agent` / `xml:id`.
 public struct LyricAgent: Sendable, Hashable, Identifiable, Codable {
+    public static let styleNamespace = "urn:ttml:extensions:vocalist-style:1"
+
     public enum Kind: String, Sendable, Codable {
         case person, character, group, organization, other
     }
@@ -27,12 +29,16 @@ public struct LyricAgent: Sendable, Hashable, Identifiable, Codable {
     public var names: [Name]
     /// The performer portraying this character (`ttm:actor`).
     public var actorID: String?
+    public var color: LyricColor?
+    public var memberIDs: [String]
 
-    public init(id: String, kind: Kind = .person, names: [Name] = [], actorID: String? = nil) {
+    public init(id: String, kind: Kind = .person, names: [Name] = [], actorID: String? = nil, color: LyricColor? = nil, memberIDs: [String] = []) {
         self.id = id
         self.kind = kind
         self.names = names
         self.actorID = actorID
+        self.color = color
+        self.memberIDs = memberIDs
     }
 
     public var displayName: String {
@@ -51,5 +57,28 @@ public struct LyricAgent: Sendable, Hashable, Identifiable, Codable {
     static func references(_ ids: [String]) -> [String] {
         var seen: Set<String> = []
         return ids.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    static func sanitizingMembers(_ agents: [LyricAgent]) -> [LyricAgent] {
+        let performers = Set(agents.filter { $0.kind != .group }.map(\.id))
+        return agents.map { agent in
+            var agent = agent
+            agent.memberIDs = agent.kind == .group ? references(agent.memberIDs).filter(performers.contains) : []
+            return agent
+        }
+    }
+}
+
+extension LyricAgent {
+    private enum CodingKeys: String, CodingKey { case id, kind, names, actorID, color, memberIDs }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try values.decode(String.self, forKey: .id),
+                  kind: try values.decode(Kind.self, forKey: .kind),
+                  names: try values.decode([Name].self, forKey: .names),
+                  actorID: try values.decodeIfPresent(String.self, forKey: .actorID),
+                  color: try values.decodeIfPresent(LyricColor.self, forKey: .color),
+                  memberIDs: try values.decodeIfPresent([String].self, forKey: .memberIDs) ?? [])
     }
 }

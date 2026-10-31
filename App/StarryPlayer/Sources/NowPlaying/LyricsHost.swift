@@ -86,6 +86,8 @@ extension LyricsSpecs {
         specs.showRomanization = settings.showRomanization
         specs.showRuby = settings.showRuby
         specs.hoverHighlightEnabled = settings.hoverHighlight
+        specs.performerMarksEnabled = settings.performerMarks
+        specs.performerNamesEnabled = settings.performerNames
         if settings.inactiveOpacity > 0 {
             specs.deselectedTextAlpha = CGFloat(settings.inactiveOpacity)
             specs.deselectedScrollTextAlpha = max(CGFloat(settings.inactiveOpacity), 0.4)

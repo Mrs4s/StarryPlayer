@@ -17,6 +17,7 @@ struct RubyLayout {
         var alignment: NSTextAlignment
         var minWordSpacing: CGFloat
         var lineHeightAdjustment: CGFloat
+        var gaps: [Int: CGFloat] = [:]
     }
 
     /// Main rows and romanization rows of `line`, or nil when no romanization word overlaps a
@@ -40,7 +41,7 @@ struct RubyLayout {
         }
         let rubyLine = LyricLine(id: line.id, start: rubyWords.map(\.start).min() ?? line.start, end: rubyWords.map(\.end).max() ?? line.end, words: rubyWords)
 
-        let main = Measured(line: line, font: m.font)
+        let main = Measured(line: line, font: m.font, gaps: m.gaps)
         let ruby = Measured(line: rubyLine, font: m.rubyFont)
 
         // Layout units in text order: a group, or a word no romanization covers.
@@ -154,8 +155,8 @@ struct RubyLayout {
         /// UTF-16 start of each syllable, plus the text length at the end.
         let syllableOffsets: [Int]
 
-        init(line: LyricLine, font: NSFont) {
-            let (attributed, syllableForOffset) = LineTextLayout.attributedText(line.syllables, font: font)
+        init(line: LyricLine, font: NSFont, gaps: [Int: CGFloat] = [:]) {
+            let (attributed, syllableForOffset) = LineTextLayout.attributedText(line.syllables, font: font, gaps: gaps)
             text = attributed.string as NSString
             self.syllableForOffset = syllableForOffset
             typesetter = CTTypesetterCreateWithAttributedString(attributed)

@@ -645,6 +645,22 @@ private final class Harness {
         #expect(right.position.x > left.position.x + left.bounds.width)
     }
 
+    @Test func assignedPositionsOverrideThePageAlignmentIndependentlyOfCoSingers() {
+        var document = Harness.document()
+        document.agents = [.init(id: "alice"), .init(id: "bob")]
+        for index in [5, 6, 7] { document.lines[index].agentIDs = ["alice", "bob"] }
+        document.lines[5].singer = .primary
+        document.lines[6].singer = .secondary
+        document.lines[7].singer = .duet
+        let h = Harness(document: document)
+        h.view.textAlignment = .center
+        h.setTime(12.05)
+        h.spin(0.2)
+        #expect(h.line(5)?.anchorPoint.x == 0)
+        #expect(h.line(6)?.anchorPoint.x == 1)
+        #expect(h.line(7)?.anchorPoint.x == 0.5)
+    }
+
     @Test func backgroundVocalsOpenUnderTheirLineWhileSelected() {
         let h = Harness(document: Harness.duetDocument())
         h.setTime(15.4)

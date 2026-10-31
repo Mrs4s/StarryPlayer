@@ -38,11 +38,11 @@ public struct LyricsDocument: Sendable, Hashable {
     }
     public var hasDuet: Bool { lines.contains { $0.singer == .secondary } }
     public var hasMultipleVocalists: Bool {
-        if lines.contains(where: { $0.singer != .primary }) { return true }
         let ids = Set(lines.flatMap { line in
             line.agentIDs + line.syllables.flatMap(\.agentIDs)
                 + (line.background.map { $0.agentIDs + $0.syllables.flatMap(\.agentIDs) } ?? [])
         })
+        if ids.isEmpty && agents.isEmpty { return lines.contains { $0.singer != .primary } }
         return ids.count > 1 || agents.contains { ids.contains($0.id) && $0.kind == .group }
     }
 
@@ -94,9 +94,11 @@ public struct InstrumentalGap: Sendable, Hashable {
     public var duration: TimeInterval { max(0, end - start) }
 }
 
-/// Compatibility presentation (lead / opposite side / chorus), not a performer identity.
+/// Display position, independent of performer identity.
 public enum LyricSinger: String, Sendable, Codable {
     case primary, secondary, duet
+
+    static let positionNamespace = "urn:ttml:extensions:display-position:1"
 }
 
 public struct LyricLine: Sendable, Hashable, Identifiable {

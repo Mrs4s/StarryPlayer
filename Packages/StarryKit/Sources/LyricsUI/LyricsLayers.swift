@@ -345,24 +345,23 @@ final class WordLayer: NoAnimationLayer {
         }
     }
 
-    private func move(_ glyph: GlyphLayer, to phase: GlyphLayer.Phase, specs: LyricsSpecs, spring: LyricsSpecs.Spring?) {
-        glyph.phase = phase
+    func glyphMotion(_ glyph: GlyphLayer, to phase: GlyphLayer.Phase, specs: LyricsSpecs) -> (offset: CGPoint, scale: CGFloat) {
         let lift = specs.syllableLiftEnabled ? specs.syllableLift : 0
         let s = specs.emphasizingScaleRange.lowerBound + emphasisFactor * (specs.emphasizingScaleRange.upperBound - specs.emphasizingScaleRange.lowerBound)
-        let offset: CGPoint
-        let scale: CGFloat
         switch phase {
         case .rest:
-            offset = .zero
-            scale = 1
+            return (.zero, 1)
         case .up:
             let x = glyph.wordX - contentMinX
-            offset = CGPoint(x: (s - 1) * (x - contentWidth / 2) / 2, y: -(s - 1) * rowHeight / 4 - lift)
-            scale = s
+            return (CGPoint(x: (s - 1) * (x - contentWidth / 2) / 2, y: -(s - 1) * rowHeight / 4 - lift), s)
         case .down:
-            offset = CGPoint(x: 0, y: -lift)
-            scale = 1
+            return (CGPoint(x: 0, y: -lift), 1)
         }
+    }
+
+    private func move(_ glyph: GlyphLayer, to phase: GlyphLayer.Phase, specs: LyricsSpecs, spring: LyricsSpecs.Spring?) {
+        glyph.phase = phase
+        let (offset, scale) = glyphMotion(glyph, to: phase, specs: specs)
         let moving: [(CALayer, CGPoint)] = [(glyph, glyph.rest)] + (glyph.ruby.map { [($0.layer, $0.rest)] } ?? [])
         for (layer, rest) in moving {
             let position = CGPoint(x: rest.x + offset.x, y: rest.y + offset.y)
@@ -711,6 +710,7 @@ struct VoiceLayout {
     var romanization: TextBlockLayout? = nil
     var ruby: RubyLayout? = nil
     var furigana: FuriganaLayout? = nil
+    var performers: [LyricPerformerRun] = []
 
     var textHeight: CGFloat { max(text.size.height, ruby?.text.size.height ?? 0, furigana?.text.size.height ?? 0) }
 
@@ -752,11 +752,20 @@ final class VoiceLayer: NoAnimationLayer {
     private var rowTint: CGColor = .white
     private var rowColors: (unsung: Float, sung: Float)?
     private var snapsNextUpdate = false
+    private let marksLayer = NoAnimationLayer()
+    private let namesLayer = NoAnimationLayer()
+    private var names: [(layer: CALayer, start: TimeInterval, end: TimeInterval)] = []
+    private var nameLevels: [Float] = []
+    private var markTint: NSColor = .white
+    var showsPerformerNames = true
 
     init(layout: VoiceLayout) {
         self.layout = layout
         super.init()
         addSublayer(secondaryLayer)
+        addSublayer(marksLayer)
+        namesLayer.opacity = 0
+        addSublayer(namesLayer)
     }
 
     override init(layer: Any) {
@@ -778,8 +787,10 @@ final class VoiceLayer: NoAnimationLayer {
         renderColorSpace = colorSpace
         secondaryTint = translationTint.cgColor
         rowTint = tint.cgColor
+        markTint = tint
         rows = makeRows(specs: specs)
         rows.forEach { insertSublayer($0, below: secondaryLayer) }
+        buildPerformerMarks(specs: specs)
 
         blocks.values.forEach { $0.removeFromSuperlayer() }
         blocks = [:]
@@ -988,7 +999,10 @@ final class VoiceLayer: NoAnimationLayer {
         layout = new
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if (old.ruby == nil) != (new.ruby == nil) || (old.furigana == nil) != (new.furigana == nil) { replaceRows(specs: specs, animated: animated) }
+        if (old.ruby == nil) != (new.ruby == nil) || (old.furigana == nil) != (new.furigana == nil) {
+            replaceRows(specs: specs, animated: animated)
+            buildPerformerMarks(specs: specs)
+        }
         for kind in VoiceLayout.Secondary.allCases {
             let top = new.top(of: kind, specs: specs)
             switch (blocks[kind], new.block(kind)) {
@@ -1099,6 +1113,119 @@ final class VoiceLayer: NoAnimationLayer {
         return steps
     }
 
+    private func rubyMotionBounds(specs: LyricsSpecs) -> [CGRect] {
+        guard let furigana = layout.furigana else { return [] }
+        let wordOfSyllable = furigana.line.words.indices.flatMap { word in
+            repeatElement(word, count: furigana.line.words[word].syllables.count)
+        }
+        var inkByWord: [Int: [CGRect]] = [:]
+        for ink in PerformerMarks.rubyBounds(text: furigana.text) {
+            inkByWord[wordOfSyllable[ink.syllable], default: []].append(ink.frame)
+        }
+        var result: [CGRect] = []
+        func append(_ annotation: RowLayer, transforms: [CGAffineTransform]) {
+            guard let word = annotation.words.first else { return }
+            for ink in inkByWord[word.wordIndex] ?? [] {
+                let bounds = transforms.reduce(ink) { $0.union(ink.applying($1)) }
+                result.append(bounds)
+            }
+        }
+        let timed = line.hasSyllableTiming && specs.perSyllableEnabled
+        let lift = timed && specs.syllableLiftEnabled ? specs.syllableLift : 0
+        for row in rows where row.liftsSyllables {
+            for word in row.words {
+                for syllable in word.syllables {
+                    if let annotation = syllable.ruby {
+                        append(annotation, transforms: [CGAffineTransform(translationX: 0, y: -lift)])
+                    }
+                    for glyph in syllable.glyphLayers {
+                        guard let ruby = glyph.ruby else { continue }
+                        let transforms = [GlyphLayer.Phase.up, .down].map { phase in
+                            let (offset, scale) = word.glyphMotion(glyph, to: phase, specs: specs)
+                            return CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
+                                                     tx: ruby.rest.x * (1 - scale) + offset.x,
+                                                     ty: ruby.rest.y * (1 - scale) + offset.y)
+                        }
+                        append(ruby.layer, transforms: transforms)
+                    }
+                }
+            }
+        }
+        return result.sorted { $0.minY > $1.minY }
+    }
+
+    private func buildPerformerMarks(specs: LyricsSpecs) {
+        marksLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        namesLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        names = []
+        nameLevels = []
+        let runs = layout.performers
+        guard !runs.isEmpty else { return }
+        let em = textLayout.font.pointSize
+        let bars = PerformerMarks.bars(text: textLayout, runs: runs, specs: specs)
+        let segmentGap = max(1, em * 0.05)
+        for bar in bars {
+            let count = CGFloat(bar.colors.count)
+            let height = (bar.frame.height - segmentGap * (count - 1)) / count
+            for (index, color) in bar.colors.enumerated() {
+                let segment = NoAnimationLayer()
+                segment.frame = CGRect(x: bar.frame.minX, y: bar.frame.minY + CGFloat(index) * (height + segmentGap), width: bar.frame.width, height: height)
+                segment.cornerRadius = min(bar.frame.width, height) / 2
+                segment.backgroundColor = PerformerMarks.displayColor(color, tint: markTint)
+                marksLayer.addSublayer(segment)
+            }
+        }
+        guard specs.performerNamesEnabled, showsPerformerNames else { return }
+        let syllables = line.syllables
+        func start(of run: Int) -> TimeInterval {
+            let first = runs[run].syllables.lowerBound
+            return syllables.indices.contains(first) ? syllables[first].start : line.start
+        }
+        let fontSize = max(11, (em * 0.3).rounded())
+        let rubyBounds = rubyMotionBounds(specs: specs)
+        let clearance = em * 0.16
+        var minX = -CGFloat.infinity
+        for bar in bars where bar.row == 0 {
+            guard let label = runs[bar.run].label,
+                  let name = PerformerMarks.nameImage(label: label, colors: runs[bar.run].colors.map { PerformerMarks.displayColor($0, tint: markTint) }, tint: markTint,
+                                                      fontSize: fontSize, scale: renderScale, colorSpace: renderColorSpace) else { continue }
+            let layer = NoAnimationLayer()
+            layer.contents = name.image
+            layer.contentsScale = renderScale
+            layer.contentsGravity = .resize
+            var frame = CGRect(x: max(bar.frame.minX, minX), y: bar.frame.minY - em * 0.16 - name.size.height, width: name.size.width, height: name.size.height)
+            // Visit lower readings first so clearing one cannot overlap a higher reading.
+            for ruby in rubyBounds where frame.intersects(ruby) {
+                frame.origin.y = ruby.minY - clearance - frame.height
+            }
+            layer.frame = frame
+            namesLayer.addSublayer(layer)
+            minX = layer.frame.maxX + fontSize * 0.4
+            names.append((layer, start(of: bar.run), bar.run + 1 < runs.count ? start(of: bar.run + 1) : .infinity))
+        }
+        nameLevels = Array(repeating: -1, count: names.count)
+    }
+
+    private func updatePerformerNames(time t: TimeInterval) {
+        for (index, name) in names.enumerated() {
+            let level: Float = t < name.start - 0.15 ? 0.4 : (t >= name.end - 0.15 ? 0.55 : 1)
+            guard nameLevels[index] != level else { continue }
+            let animated = nameLevels[index] >= 0
+            nameLevels[index] = level
+            Self.fade(name.layer, to: level, duration: animated ? 0.2 : 0, curve: CAMediaTimingFunction(name: .easeInEaseOut))
+        }
+    }
+
+    func setPerformerMarks(opacity: Float, names: Float, duration: CFTimeInterval, curve: CAMediaTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)) {
+        Self.fade(marksLayer, to: opacity, duration: duration, curve: curve)
+        Self.fade(namesLayer, to: names, duration: duration, curve: curve)
+    }
+
+    var performerBarLayers: [CALayer] { marksLayer.sublayers ?? [] }
+    var performerNameLayers: [CALayer] { names.map(\.layer) }
+    var performerMarksOpacity: Float { marksLayer.opacity }
+    var performerNamesOpacity: Float { namesLayer.opacity }
+
     func setColors(unsung: Float, sung: Float, translation: Float, duration: CFTimeInterval, curve: CAMediaTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)) {
         rowColors = (unsung, sung)
         for row in rows {
@@ -1118,6 +1245,7 @@ final class VoiceLayer: NoAnimationLayer {
     }
 
     func updateSyllables(time t: TimeInterval, specs: LyricsSpecs) {
+        updatePerformerNames(time: t)
         if !ignoresProgress {
             for row in rows where !row.followsProgress { row.setEdge(row.edge(at: t)) }
         }
@@ -1252,6 +1380,8 @@ final class LineLayer: NoAnimationLayer {
         self.background = background.map { VoiceLayer(layout: $0) }
         self.backgroundAbove = line.background?.isAbove(line) ?? false
         super.init()
+        self.main.showsPerformerNames = !backgroundAbove
+        self.background?.showsPerformerNames = false
         highlightLayer.opacity = 0
         containerLayer.addSublayer(highlightLayer)
         containerLayer.addSublayer(self.main)
@@ -1313,6 +1443,7 @@ final class LineLayer: NoAnimationLayer {
         if let background {
             background.build(width: width, specs: specs, tint: tint, scale: scale, colorSpace: colorSpace, translationTint: translationTint)
             background.setColors(unsung: Float(specs.selectedUpcomingBackgroundVocalsAlpha), sung: Float(specs.lineProgressionBackgroundVocalsAlpha), translation: Float(specs.translationAlpha), duration: 0)
+            background.setPerformerMarks(opacity: 0.6, names: 0, duration: 0)
             background.opacity = 0
             background.setAffineTransform(CGAffineTransform(scaleX: specs.backgroundVocalsDeselectedScale, y: specs.backgroundVocalsDeselectedScale))
         }
@@ -1401,6 +1532,9 @@ final class LineLayer: NoAnimationLayer {
             main.setColors(unsung: unsung, sung: sung, translation: translationAlpha, duration: duration)
             setScale(scale, specs: specs, animated: animated)
         }
+        let marks = state == .selected ? 1 : (scrolling ? specs.deselectedScrollPerformerMarkAlpha : specs.deselectedPerformerMarkAlpha)
+        main.setPerformerMarks(opacity: Float(marks), names: state == .selected ? 1 : 0, duration: duration,
+                               curve: CAMediaTimingFunction(name: linear == nil ? .easeInEaseOut : .linear))
         if state != previous {
             setExpanded(state == .selected, specs: specs, animated: animated, spring: spring ?? specs.lineChangeSpring)
         }

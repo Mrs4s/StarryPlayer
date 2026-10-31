@@ -20,6 +20,7 @@ struct FuriganaLayout {
         var minSpacing: CGFloat
         /// Added to every ruby row's height; negative brings the ruby closer to its text.
         var lineHeightAdjustment: CGFloat
+        var gaps: [Int: CGFloat] = [:]
     }
 
     static func layout(line: LyricLine, metrics m: Metrics) -> (text: LineTextLayout, furigana: FuriganaLayout)? {
@@ -45,7 +46,7 @@ struct FuriganaLayout {
         }
         guard !rubyWords.isEmpty, !line.words.isEmpty else { return nil }
         let rubyLine = LyricLine(id: line.id, start: line.start, end: line.end, words: rubyWords)
-        let main = RubyLayout.Measured(line: line, font: m.font)
+        let main = RubyLayout.Measured(line: line, font: m.font, gaps: m.gaps)
         let ruby = RubyLayout.Measured(line: rubyLine, font: m.rubyFont)
 
         func width(_ ink: ClosedRange<CGFloat>) -> CGFloat { ink.upperBound - ink.lowerBound }

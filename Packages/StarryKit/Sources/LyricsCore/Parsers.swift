@@ -188,11 +188,12 @@ public enum TTMLParser: LyricsParser {
         }
         guard !delegate.lines.isEmpty else { throw LyricsParseError.empty }
         var lines = delegate.lines
+        let agents = LyricAgent.sanitizingMembers(delegate.agents.filter { delegate.displayAgents[$0.id] == nil })
         for i in lines.indices {
             lines[i].id = i
-            lines[i].singer = LyricAgent.singer(for: lines[i].agentIDs, in: delegate.agents)
+            lines[i].singer = delegate.displayPositions[i] ?? LyricAgent.singer(for: lines[i].agentIDs, in: agents)
         }
-        var document = LyricsDocument(format: .ttml, lines: lines, metadata: delegate.metadata, agents: delegate.agents)
+        var document = LyricsDocument(format: .ttml, lines: lines, metadata: delegate.metadata, agents: agents)
         LyricRomanizationAligner.alignMissing(in: &document)
         return document
     }
@@ -217,6 +218,8 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     var metadata: [String: String] = [:]
 
     var agents: [LyricAgent] = []
+    var displayAgents: [String: LyricSinger] = [:]
+    var displayPositions: [Int: LyricSinger] = [:]
     private var inHead = false
     private var currentAgent: Int?
     private var agentName: LyricAgent.Name?
@@ -229,6 +232,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     private var lineStart: TimeInterval = 0
     private var lineEnd: TimeInterval = 0
     private var lineSinger: LyricSinger = .primary
+    private var lineDisplayPosition: LyricSinger?
     private var lineAgentIDs: [String] = []
     private var backgroundAgentIDs: [String] = []
     private var mainWords: [LyricWord] = []
@@ -291,12 +295,14 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             case "http://www.w3.org/ns/ttml#metadata": attributes["ttm:\(parts[1])"] = value
             case "http://www.w3.org/ns/ttml#styling": attributes["tts:\(parts[1])"] = value
             case .some(LyricRubyGroup.namespace): attributes[Self.sharedRuby + parts[1]] = value
+            case .some(LyricAgent.styleNamespace): attributes[Self.vocalistStyle + parts[1]] = value
+            case .some(LyricSinger.positionNamespace): attributes[Self.displayPosition + parts[1]] = value
             default: break
             }
         }
         let inheritedAgents = agentStack.last ?? []
         let language = attributes["xml:lang"] ?? (languageStack.last ?? nil)
-        let currentAgents = (attributes["ttm:agent"] ?? attributes["agent"]).map {
+        let currentAgents = (attributes[Self.displayPosition + "agents"] ?? attributes["ttm:agent"] ?? attributes["agent"]).map {
             LyricAgent.references($0.split(whereSeparator: \.isWhitespace).map(String.init))
         } ?? inheritedAgents
         // Flush preceding text with its enclosing performers before pushing the new span.
@@ -309,7 +315,12 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         case "head": inHead = true
         case "agent":
             if inHead, let id = attributes["xml:id"], !agents.contains(where: { $0.id == id }) {
-                agents.append(LyricAgent(id: id, kind: attributes["type"].flatMap(LyricAgent.Kind.init(rawValue:)) ?? .person))
+                if let position = attributes[Self.displayPosition + "position"].flatMap(LyricSinger.init(rawValue:)) {
+                    displayAgents[id] = position
+                }
+                agents.append(LyricAgent(id: id, kind: attributes["type"].flatMap(LyricAgent.Kind.init(rawValue:)) ?? .person,
+                                         color: attributes[Self.vocalistStyle + "color"].flatMap(LyricColor.init(hex:)),
+                                         memberIDs: attributes[Self.vocalistStyle + "members"].map { $0.split(whereSeparator: \.isWhitespace).map(String.init) } ?? []))
                 currentAgent = agents.count - 1
             }
         case "name" where currentAgent != nil:
@@ -346,6 +357,8 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             lineStart = attributes["begin"].flatMap(TTMLParser.parseTime) ?? 0
             lineEnd = attributes["end"].flatMap(TTMLParser.parseTime) ?? lineStart
             lineAgentIDs = currentAgents
+            lineDisplayPosition = (attributes["ttm:agent"] ?? attributes["agent"]).flatMap { displayAgents[$0] }
+            lineSinger = lineDisplayPosition ?? .primary
             mainWords = []
             mainPlainText = ""
             translation = nil
@@ -542,6 +555,8 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     }
 
     private static let sharedRuby = "{\(LyricRubyGroup.namespace)}"
+    private static let vocalistStyle = "{\(LyricAgent.styleNamespace)}"
+    private static let displayPosition = "{\(LyricSinger.positionNamespace)}"
 
     private static func rubyGroupMark(_ attributes: [String: String]) -> RubyGroupMark? {
         guard let id = attributes[sharedRuby + "rubyGroup"], !id.isEmpty else { return nil }
@@ -729,6 +744,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         }
         let romanizationWords = transliterationWords(transliteration?.main)
         let romanizationText = romanization ?? romanizationWords.map { $0.map(\.text).joined().trimmingCharacters(in: .whitespaces) }
+        displayPositions[lines.count] = lineDisplayPosition
         lines.append(LyricLine(id: lines.count, start: start, end: end, words: words, translation: translation, romanization: romanizationText, romanizationWords: romanizationWords, singer: lineSinger, background: background, primaryStart: background == nil ? start : primaryStart, primaryEnd: background == nil ? end : primaryEnd, isParagraphStart: paragraphPending, agentIDs: lineAgentIDs))
         paragraphPending = false
     }

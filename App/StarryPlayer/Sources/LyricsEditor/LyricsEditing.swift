@@ -197,7 +197,7 @@ private extension LyricsExport.Loss {
         case .agents: "角色信息"
         case .backgroundGrouping: "背景人声分组（会单独输出为歌词行）"
         case .metadata: "部分歌曲元数据"
-        case .agentDetails: "角色 ID、类型、别名和扮演者关系（保留演唱名称）"
+        case .agentDetails: "角色 ID、类型、别名、颜色、组合成员和扮演者关系（保留演唱名称）"
         case .editingState: "多拍、休止及未完成的时间编辑状态"
         }
     }

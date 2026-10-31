@@ -18,7 +18,7 @@ import Testing
 
     @Test func projectsFromBeforeRubyStillOpen() throws {
         let old = #"{"format":"starry-lyrics","version":1,"title":"","artists":[],"metadata":[],"draft":{"lines":[{"id":"00000000-0000-0000-0000-000000000001","syllables":[{"id":"00000000-0000-0000-0000-000000000002","text":"我","start":1,"end":1.5}],"translation":"","romanization":"","singer":"primary","isBackground":false,"isParagraphStart":false}],"metadata":{},"tracks":[]}}"#
-        for version in [1, 2, 3, 4] {
+        for version in [1, 2, 3, 4, 5] {
             let json = old.replacingOccurrences(of: #""version":1"#, with: "\"version\":\(version)")
             let read = try LyricsProject(data: Data(json.utf8))
             #expect(read.draft.agents.isEmpty)
@@ -31,8 +31,8 @@ import Testing
 
     @Test func otherJSONAndProjectsFromLaterVersionsAreRefused() {
         #expect(throws: LyricsProject.ReadError.notAProject) { try LyricsProject(data: Data(#"{"lines": []}"#.utf8)) }
-        #expect(throws: LyricsProject.ReadError.newerVersion(6)) {
-            try LyricsProject(data: Data(#"{"format": "starry-lyrics", "version": 6}"#.utf8))
+        #expect(throws: LyricsProject.ReadError.newerVersion(7)) {
+            try LyricsProject(data: Data(#"{"format": "starry-lyrics", "version": 7}"#.utf8))
         }
         #expect(throws: (any Error).self) { try LyricsProject(data: Data("[00:01.00]歌词".utf8)) }
     }

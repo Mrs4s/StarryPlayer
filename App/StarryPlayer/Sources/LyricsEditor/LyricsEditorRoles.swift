@@ -34,6 +34,22 @@ extension LyricsEditorSession {
         edit { $0.updateAgent(agent) }
     }
 
+    func setColor(_ color: LyricColor?, ofAgent id: String) {
+        edit(coalescing: "color \(id)") { draft in
+            guard var agent = draft.agents.first(where: { $0.id == id }) else { return }
+            agent.color = color
+            draft.updateAgent(agent)
+        }
+    }
+
+    func toggleMember(_ member: String, ofGroup id: String) {
+        edit { draft in
+            guard var group = draft.agents.first(where: { $0.id == id }) else { return }
+            if let index = group.memberIDs.firstIndex(of: member) { group.memberIDs.remove(at: index) } else { group.memberIDs.append(member) }
+            draft.updateAgent(group)
+        }
+    }
+
     func moveAgent(_ id: String, by offset: Int) {
         guard let index = draft.agents.firstIndex(where: { $0.id == id }) else { return }
         edit { $0.moveAgent(id, to: index + offset) }
@@ -52,6 +68,18 @@ extension LyricsEditorSession {
                 if let index = draft.lines.firstIndex(where: { $0.id == id }) { draft.setAgents(ids, ofLine: index) }
             }
         }
+    }
+
+    func setDisplayPosition(_ position: LyricSinger, ofLines lineIDs: [UUID]) {
+        edit { draft in
+            for id in lineIDs {
+                if let index = draft.lines.firstIndex(where: { $0.id == id }) { draft.lines[index].singer = position }
+            }
+        }
+    }
+
+    func selectAllAgents(ofLine lineID: UUID) {
+        setAgents(draft.agents.map(\.id), ofLines: [lineID])
     }
 
     func toggleAgent(_ agent: String, ofLine lineID: UUID) {
@@ -86,22 +114,33 @@ extension LyricsEditorSession {
 // MARK: - Style
 
 enum LyricsEditorRoleStyle {
-    private static let palette: [(light: String, dark: String)] = [
-        ("#D9695B", "#F08A7C"), ("#4C6FD1", "#86A2F0"), ("#3F9A66", "#6CC892"), ("#C98A1E", "#E9B34F"),
-        ("#8462CC", "#AF94EE"), ("#2F93A3", "#5EC0CF"), ("#C2558D", "#E58AB8"), ("#7D8A35", "#B0BD5E"),
-    ]
+    private static let darkPalette = ["#F08A7C", "#86A2F0", "#6CC892", "#E9B34F", "#AF94EE", "#5EC0CF", "#E58AB8", "#B0BD5E"]
 
     static let kinds: [(LyricAgent.Kind, String)] = [
         (.person, "歌手"), (.group, "组合"), (.character, "剧中角色"), (.organization, "机构"), (.other, "其他"),
     ]
 
-    static func color(_ index: Int, dark: Bool) -> Color {
-        let entry = palette[index % palette.count]
-        return Color(hex: dark ? entry.dark : entry.light)
+    static func stored(_ color: LyricColor) -> NSColor {
+        NSColor(srgbRed: CGFloat(color.red) / 255, green: CGFloat(color.green) / 255, blue: CGFloat(color.blue) / 255, alpha: 1)
+    }
+
+    static func lyricColor(_ color: Color) -> LyricColor? {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        func byte(_ value: CGFloat) -> UInt8 { UInt8(min(max((value * 255).rounded(), 0), 255)) }
+        return LyricColor(red: byte(rgb.redComponent), green: byte(rgb.greenComponent), blue: byte(rgb.blueComponent))
+    }
+
+    static func color(_ color: LyricColor, dark: Bool) -> Color {
+        if dark, let index = LyricColor.performerPalette.firstIndex(of: color) { return Color(hex: darkPalette[index]) }
+        let base = stored(color)
+        let luminance = 0.2126 * base.redComponent + 0.7152 * base.greenComponent + 0.0722 * base.blueComponent
+        if dark, luminance < 0.45 { return Color(nsColor: base.blended(withFraction: 0.35, of: .white) ?? base) }
+        if !dark, luminance > 0.6 { return Color(nsColor: base.blended(withFraction: 0.3, of: .black) ?? base) }
+        return Color(nsColor: base)
     }
 
     static func color(of id: String, in agents: [LyricAgent], dark: Bool) -> Color? {
-        agents.firstIndex { $0.id == id }.map { color($0, dark: dark) }
+        LyricPerformerStyle.colors(of: agents)[id].map { color($0, dark: dark) }
     }
 
     static func title(of kind: LyricAgent.Kind) -> String {
@@ -145,6 +184,9 @@ enum LyricsEditorRoleMenu {
         }
         if agents.count > 1 {
             items.append(.submenu("同唱", systemImage: "person.2", detail: ids.count > 1 ? "\(ids.count) 位" : nil) {
+                PopMenuItem.button("全选", systemImage: "checkmark.circle") { session.selectAllAgents(ofLine: id) }
+                PopMenuItem.button("清空", systemImage: "circle") { session.setAgents([], ofLines: [id]) }
+                PopMenuItem.divider
                 for agent in agents {
                     PopMenuItem.option(LyricsEditorSession.name(of: agent), selected: ids.contains(agent.id)) { session.toggleAgent(agent.id, ofLine: id) }
                 }
@@ -154,6 +196,17 @@ enum LyricsEditorRoleMenu {
             items += [.divider, .button("管理演唱角色…", systemImage: "person.crop.rectangle.stack", action: manage)]
         }
         return PopMenuItem.tidy(items)
+    }
+
+    static func positionItem(_ session: LyricsEditorSession, line id: UUID) -> PopMenuItem {
+        guard let line = session.draft.lines.first(where: { $0.id == id }) else { return .empty }
+        return .submenu("显示位置", systemImage: "text.alignleft", detail: LyricsEditorRoleStyle.side(line.singer)) {
+            for position in [LyricSinger.primary, .secondary, .duet] {
+                PopMenuItem.option(LyricsEditorRoleStyle.side(position), selected: line.singer == position) {
+                    session.setDisplayPosition(position, ofLines: [id])
+                }
+            }
+        }
     }
 
     static func syllableItem(_ session: LyricsEditorSession, positions: [LyricsDraft.Position]) -> PopMenuItem {
@@ -210,7 +263,7 @@ struct LyricsEditorRoles: View {
     }
 
     var body: some View {
-        EditorPanel(title: "演唱角色", subtitle: "为歌词行指定演唱者。排在最前的歌手显示在左侧，其他歌手在右侧，组合或多人同唱居中。", width: 900, close: close) {
+        EditorPanel(title: "演唱角色", subtitle: "为歌词行指定演唱者，可连续勾选多位或全选。显示位置单独设置，不随角色变化。", width: 900, close: close) {
             HStack(alignment: .top, spacing: 18) {
                 roleColumn
                     .frame(width: 280)
@@ -472,13 +525,13 @@ private struct LyricsEditorRoleRow: View {
         let lines = session.draft.usage(of: agent.id).lines
         Button(action: select) {
             HStack(spacing: 10) {
-                LyricsEditorRoleAvatar(agent: agent, index: index, size: 28)
+                LyricsEditorRoleAvatar(agent: agent, agents: session.draft.agents, size: 28)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(LyricsEditorSession.name(of: agent))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(theme.onSurface)
                         .lineLimit(1)
-                    Text("\(LyricsEditorRoleStyle.title(of: agent.kind)) · \(LyricsEditorRoleStyle.side(session.draft.singer(for: [agent.id])))")
+                    Text(LyricsEditorRoleStyle.title(of: agent.kind))
                         .font(.system(size: 11))
                         .foregroundStyle(theme.onSurfaceVariant)
                         .contentTransition(.opacity)
@@ -513,12 +566,12 @@ private struct LyricsEditorRoleRow: View {
 
 struct LyricsEditorRoleAvatar: View {
     var agent: LyricAgent
-    var index: Int
+    var agents: [LyricAgent]
     var size: CGFloat
     @Environment(\.theme) private var theme
 
     var body: some View {
-        let color = LyricsEditorRoleStyle.color(index, dark: theme.isDark)
+        let color = LyricsEditorRoleStyle.color(of: agent.id, in: agents, dark: theme.isDark) ?? theme.onSurfaceVariant
         ZStack {
             Circle().fill(color.opacity(0.16))
             switch agent.kind {
@@ -535,7 +588,7 @@ struct LyricsEditorRoleAvatar: View {
         .foregroundStyle(color)
         .frame(width: size, height: size)
         .overlay(Circle().strokeBorder(color.opacity(0.32), lineWidth: 1))
-        .animation(Motion.selection, value: index)
+        .animation(Motion.selection, value: LyricPerformerStyle.colors(of: agents)[agent.id])
         .animation(Motion.selection, value: agent.kind)
         .accessibilityHidden(true)
     }
@@ -559,7 +612,7 @@ private struct LyricsEditorRoleDetail: View {
         let usage = session.draft.usage(of: agent.id)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                LyricsEditorRoleAvatar(agent: agent, index: index, size: 34)
+                LyricsEditorRoleAvatar(agent: agent, agents: session.draft.agents, size: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(LyricsEditorSession.name(of: agent))
                         .font(.system(size: 14, weight: .semibold))
@@ -601,7 +654,12 @@ private struct LyricsEditorRoleDetail: View {
                 }
                 .transition(.opacity.combined(with: .offset(y: -4)))
             }
-            Text("ID \(agent.id) · 导出 TTML 时写作 ttm:agent")
+            row("颜色") { colorChoices }
+            if agent.kind == .group {
+                row("成员") { memberChoices }
+                    .transition(.opacity.combined(with: .offset(y: -4)))
+            }
+            Text("ID \(agent.id) · 导出 TTML 时写作 ttm:agent，颜色和成员写作 ttv:color、ttv:members")
                 .font(.system(size: 11))
                 .foregroundStyle(theme.onSurfaceVariant.opacity(0.8))
                 .textSelection(.enabled)
@@ -623,6 +681,78 @@ private struct LyricsEditorRoleDetail: View {
             apply(.name)
             apply(.alias)
         }
+    }
+
+    private var colorChoices: some View {
+        LyricsFlowLayout(spacing: 6, lineSpacing: 6) {
+            ForEach(LyricColor.performerPalette, id: \.self) { swatch in
+                Button { session.setColor(swatch, ofAgent: agent.id) } label: {
+                    Circle()
+                        .fill(LyricsEditorRoleStyle.color(swatch, dark: theme.isDark))
+                        .frame(width: 16, height: 16)
+                        .padding(3)
+                        .overlay(Circle().strokeBorder(theme.onSurface.opacity(agent.color == swatch ? 0.8 : 0), lineWidth: 1.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(swatch.hex)
+                .accessibilityLabel("颜色 \(swatch.hex)")
+                .accessibilityAddTraits(agent.color == swatch ? [.isSelected] : [])
+            }
+            ColorPicker("自定义颜色", selection: customColor, supportsOpacity: false)
+                .labelsHidden()
+                .frame(height: 22)
+                .help("自定义颜色")
+            Button("自动") { session.setColor(nil, ofAgent: agent.id) }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(agent.color == nil ? theme.onSurface : theme.onSurfaceVariant)
+                .frame(height: 22)
+                .help("使用调色板里还没被占用的颜色。所有角色都设为自动时，播放页不显示演唱者标记")
+        }
+        .animation(Motion.hover, value: agent.color)
+    }
+
+    private var customColor: Binding<Color> {
+        Binding {
+            LyricPerformerStyle.colors(of: session.draft.agents)[agent.id].map { Color(nsColor: LyricsEditorRoleStyle.stored($0)) } ?? .gray
+        } set: { color in
+            if let color = LyricsEditorRoleStyle.lyricColor(color) { session.setColor(color, ofAgent: agent.id) }
+        }
+    }
+
+    private var memberChoices: some View {
+        let candidates = session.draft.agents.filter { $0.kind != .group }
+        return Group {
+            if candidates.isEmpty {
+                Text("先添加歌手，再选择组合成员")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.onSurfaceVariant)
+            } else {
+                LyricsFlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(candidates, id: \.id) { member in
+                        let selected = agent.memberIDs.contains(member.id)
+                        let tint = LyricsEditorRoleStyle.color(of: member.id, in: session.draft.agents, dark: theme.isDark) ?? theme.onSurfaceVariant
+                        Button { session.toggleMember(member.id, ofGroup: agent.id) } label: {
+                            HStack(spacing: 5) {
+                                Circle().fill(tint).frame(width: 6, height: 6)
+                                Text(LyricsEditorSession.name(of: member)).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            }
+                            .foregroundStyle(selected ? tint : theme.onSurfaceVariant)
+                            .padding(.horizontal, 9)
+                            .frame(height: 24)
+                            .background(tint.opacity(selected ? 0.16 : 0), in: Capsule())
+                            .overlay(Capsule().strokeBorder(selected ? tint.opacity(0.4) : theme.onSurface.opacity(0.12), lineWidth: 1))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? [.isSelected] : [])
+                    }
+                }
+                .animation(Motion.hover, value: agent.memberIDs)
+            }
+        }
+        .help("组合演唱的行在播放页按成员的颜色分段显示")
     }
 
     private var actorOptions: [(String?, String)] {
@@ -685,6 +815,7 @@ private struct LyricsEditorRoleLineRow: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
+    @State private var selectingRoles = false
 
     private var alignment: Alignment {
         switch line.singer {
@@ -723,20 +854,21 @@ private struct LyricsEditorRoleLineRow: View {
             HStack(spacing: 0) {
                 IconButton(systemName: "play.fill", size: 24, iconSize: 9, help: "从这一行试听") { play() }
                     .accessibilityLabel("从这一行试听")
-                PopMenu {
-                    LyricsEditorRoleMenu.lineItems(session, line: line.id, manage: nil)
-                } label: { _ in
+                Button { selectingRoles.toggle() } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(theme.onSurface.opacity(0.85))
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true))
+                .popover(isPresented: $selectingRoles, arrowEdge: .trailing) {
+                    LyricsEditorRoleSelection(session: session, lineID: line.id, close: { selectingRoles = false })
+                }
                 .help("选择这一行的演唱者")
                 .accessibilityLabel("选择这一行的演唱者")
             }
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
+            .opacity(hovering || selectingRoles ? 1 : 0)
+            .allowsHitTesting(hovering || selectingRoles)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
@@ -765,7 +897,7 @@ private struct LyricsEditorRoleLineRow: View {
             }
             HStack(spacing: 4) {
                 if line.agentIDs.isEmpty {
-                    Text(line.singer == .primary ? "未分配" : "未分配 · 按\(LyricsEditorSession.legacyRoleNames[line.singer] ?? "")显示")
+                    Text("未分配 · \(LyricsEditorRoleStyle.side(line.singer))")
                         .font(.system(size: 11))
                         .foregroundStyle(theme.onSurfaceVariant.opacity(0.8))
                         .transition(.opacity)
@@ -833,12 +965,11 @@ struct LyricsEditorRolePicker: View {
     var manage: () -> Void
     @Environment(\.theme) private var theme
     @State private var hovering = false
+    @State private var selectingRoles = false
 
     var body: some View {
         let agents = session.draft.agents
-        PopMenu {
-            LyricsEditorRoleMenu.lineItems(session, line: line.id, manage: manage)
-        } label: { open in
+        Button { selectingRoles.toggle() } label: {
             HStack(spacing: 6) {
                 HStack(spacing: -3) {
                     if line.agentIDs.isEmpty {
@@ -865,15 +996,98 @@ struct LyricsEditorRolePicker: View {
             .padding(.leading, 9)
             .padding(.trailing, 9)
             .frame(height: 26)
-            .background(theme.onSurface.opacity(hovering || open ? 0.1 : 0.06), in: Capsule())
+            .background(theme.onSurface.opacity(hovering || selectingRoles ? 0.1 : 0.06), in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .popover(isPresented: $selectingRoles, arrowEdge: .top) {
+            LyricsEditorRoleSelection(session: session, lineID: line.id, manage: {
+                selectingRoles = false
+                manage()
+            }, close: { selectingRoles = false })
+        }
         .frame(maxWidth: 180, alignment: .leading)
         .onHover { hovering = $0 }
         .animation(Motion.hover, value: hovering)
         .animation(Motion.selection, value: line.agentIDs)
         .help("这一行由谁演唱")
         .accessibilityLabel("演唱者：\(LyricsEditorRoleStyle.names(line.agentIDs, in: session) ?? "未分配")")
+    }
+}
+
+struct LyricsEditorRoleSelection: View {
+    let session: LyricsEditorSession
+    var lineID: UUID
+    var manage: (() -> Void)? = nil
+    var close: () -> Void
+    @Environment(\.theme) private var theme
+
+    private var line: LyricsDraft.Line? { session.draft.lines.first { $0.id == lineID } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("演唱者").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button("全选") { session.selectAllAgents(ofLine: lineID) }
+                    .disabled(session.draft.agents.isEmpty || Set(line?.agentIDs ?? []) == Set(session.draft.agents.map(\.id)))
+                Button("清空") { session.setAgents([], ofLines: [lineID]) }
+                    .disabled(line?.agentIDs.isEmpty != false)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundStyle(theme.primary)
+            if session.draft.agents.isEmpty {
+                Text("添加演唱角色后，可在这里选择一位或多位演唱者。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.onSurfaceVariant)
+            } else {
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(session.draft.agents) { agent in
+                            let selected = line?.agentIDs.contains(agent.id) == true
+                            Button { session.toggleAgent(agent.id, ofLine: lineID) } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: selected ? "checkmark.square.fill" : "square")
+                                        .foregroundStyle(selected ? theme.primary : theme.onSurfaceVariant)
+                                    LyricsEditorRoleAvatar(agent: agent, agents: session.draft.agents, size: 22)
+                                    Text(LyricsEditorSession.name(of: agent)).lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(theme.onSurface)
+                                .padding(.horizontal, 6)
+                                .frame(height: 32)
+                                .background(theme.onSurface.opacity(selected ? 0.06 : 0), in: RoundedRectangle(cornerRadius: Radius.button))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(LyricsEditorSession.name(of: agent))
+                            .accessibilityValue(selected ? "已选择" : "未选择")
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(session.draft.agents.count) * 34, 238))
+            }
+            if let line {
+                HStack {
+                    Text("显示位置").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
+                    Spacer(minLength: 4)
+                    SegmentSwitch(selection: Binding { line.singer } set: { session.setDisplayPosition($0, ofLines: [lineID]) },
+                                  options: [(.primary, "左侧"), (.secondary, "右侧"), (.duet, "居中")])
+                        .controlSize(.small)
+                }
+            }
+            HStack {
+                if let manage { Button("管理演唱角色…", action: manage).buttonStyle(.plain) }
+                Spacer()
+                Button("完成", action: close).buttonStyle(.plain)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(theme.primary)
+        }
+        .padding(14)
+        .frame(width: 300)
+        .background(theme.surfaceAlt)
     }
 }

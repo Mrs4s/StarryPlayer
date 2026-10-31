@@ -134,18 +134,8 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
             return lo...max(lo, hi)
         }
 
-        public mutating func setSinger(_ singer: LyricSinger, agents: [LyricAgent]) {
-            guard self.singer != singer else { return }
+        public mutating func setSinger(_ singer: LyricSinger, agents _: [LyricAgent]) {
             self.singer = singer
-            if let agent = agents.first(where: { LyricAgent.singer(for: [$0.id], in: agents) == singer }) {
-                agentIDs = [agent.id]
-            } else if singer == .duet {
-                let members = agents.filter { $0.kind != .group }.prefix(2).map(\.id)
-                agentIDs = members.count == 2 ? members : []
-            } else {
-                agentIDs = []
-            }
-            for index in syllables.indices { syllables[index].agentIDs = [] }
         }
     }
 

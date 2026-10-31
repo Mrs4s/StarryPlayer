@@ -45,12 +45,17 @@ extension LyricsDraft {
         return "v\(number)"
     }
 
+    public func nextPerformerColor() -> LyricColor {
+        let used = Set(agents.compactMap(\.color))
+        let palette = LyricColor.performerPalette
+        return palette.first { !used.contains($0) } ?? palette[agents.count % palette.count]
+    }
+
     @discardableResult
     public mutating func addAgent(kind: LyricAgent.Kind = .person, name: String) -> LyricAgent {
-        var agent = LyricAgent(id: newAgentID(), kind: kind)
+        var agent = LyricAgent(id: newAgentID(), kind: kind, color: nextPerformerColor())
         agent.setName(name)
         agents.append(agent)
-        refreshSingers()
         return agent
     }
 
@@ -59,35 +64,30 @@ extension LyricsDraft {
         var agent = agent
         if agent.actorID == agent.id || !agents.contains(where: { $0.id == agent.actorID }) { agent.actorID = nil }
         agents[index] = agent
-        refreshSingers()
+        agents = LyricAgent.sanitizingMembers(agents)
     }
 
     public mutating func moveAgent(_ id: String, to destination: Int) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         let agent = agents.remove(at: index)
         agents.insert(agent, at: min(max(destination, 0), agents.count))
-        refreshSingers()
     }
 
     public mutating func removeAgent(_ id: String) {
         guard agents.contains(where: { $0.id == id }) else { return }
-        agents.removeAll { $0.id == id }
+        agents = LyricAgent.sanitizingMembers(agents.filter { $0.id != id })
         for index in agents.indices where agents[index].actorID == id { agents[index].actorID = nil }
         for index in lines.indices {
-            let assigned = !lines[index].agentIDs.isEmpty
             lines[index].agentIDs.removeAll { $0 == id }
             for s in lines[index].syllables.indices { lines[index].syllables[s].agentIDs.removeAll { $0 == id } }
-            if assigned, lines[index].agentIDs.isEmpty { lines[index].singer = .primary }
             normalizeInlineAgents(ofLine: index)
         }
-        refreshSingers()
     }
 
     public mutating func setAgents(_ ids: [String], ofLine index: Int) {
         guard lines.indices.contains(index) else { return }
         let ids = LyricAgent.references(ids)
         lines[index].agentIDs = ids
-        lines[index].singer = ids.isEmpty ? .primary : singer(for: ids)
         normalizeInlineAgents(ofLine: index)
     }
 
@@ -129,9 +129,4 @@ extension LyricsDraft {
         }
     }
 
-    private mutating func refreshSingers() {
-        for index in lines.indices where !lines[index].agentIDs.isEmpty {
-            lines[index].singer = singer(for: lines[index].agentIDs)
-        }
-    }
 }

@@ -23,19 +23,19 @@ import Testing
         #expect(renamed.names == [.init("Alicia"), .init("アリス", language: "ja"), .init("A", kind: .alias)])
     }
 
-    @Test func reorderingAndRegroupingMoveLinesBetweenTheSides() {
+    @Test func reorderingAndRegroupingKeepTheAssignedDisplayPositions() {
         var draft = draft()
         let alice = draft.addAgent(name: "Alice").id
         let bob = draft.addAgent(name: "Bob").id
         draft.setAgents([alice], ofLine: 0)
         draft.setAgents([bob], ofLine: 1)
         draft.moveAgent(bob, to: 0)
-        #expect(draft.lines[0].singer == .secondary)
-        #expect(draft.lines[1].singer == .primary)
+        #expect(draft.lines[0].singer == .primary)
+        #expect(draft.lines[1].singer == .secondary)
         var group = draft.agents[0]
         group.kind = .group
         draft.updateAgent(group)
-        #expect(draft.lines[1].singer == .duet)
+        #expect(draft.lines[1].singer == .secondary)
         #expect(draft.lines[0].singer == .primary)
     }
 
@@ -54,7 +54,7 @@ import Testing
 
         draft.setAgents([bob], at: [.init(line: 0, syllable: 0), .init(line: 0, syllable: 1)])
         #expect(draft.lines[0].agentIDs == [bob])
-        #expect(draft.lines[0].singer == .secondary)
+        #expect(draft.lines[0].singer == .primary)
         #expect(draft.lines[0].syllables.allSatisfy { $0.agentIDs.isEmpty })
     }
 
@@ -74,7 +74,7 @@ import Testing
         #expect(draft.agents.map(\.id) == [alice, hero.id])
         #expect(draft.agents[1].actorID == nil)
         #expect(draft.lines.map(\.agentIDs) == [[alice], [], [alice]])
-        #expect(draft.lines.map(\.singer) == [.primary, .primary, .primary])
+        #expect(draft.lines.map(\.singer) == [.primary, .secondary, .duet])
         #expect(draft.lines[0].syllables.allSatisfy { $0.agentIDs.isEmpty })
     }
 

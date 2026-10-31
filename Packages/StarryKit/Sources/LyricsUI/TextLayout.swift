@@ -34,14 +34,27 @@ struct LineTextLayout {
         var fragments: [Fragment]
         var baselineY: CGFloat { origin.y + ascent }
         var startX: CGFloat { fragments.first?.rect.minX ?? 0 }
+
+        mutating func offset(by dx: CGFloat) {
+            for i in fragments.indices {
+                fragments[i].rect.origin.x += dx
+                fragments[i].ink = fragments[i].ink.map { ($0.lowerBound + dx)...($0.upperBound + dx) }
+                for c in fragments[i].clusters.indices {
+                    fragments[i].clusters[c].positions = fragments[i].clusters[c].positions.map { CGPoint(x: $0.x + dx, y: $0.y) }
+                }
+            }
+            width = fragments.map(\.rect.maxX).max() ?? 0
+        }
     }
 
     var rows: [Row]
     var size: CGSize
     var font: NSFont
 
-    static func layout(line: LyricLine, font: NSFont, width: CGFloat, leading: CGFloat?, alignment: NSTextAlignment, perSyllable: Bool) -> LineTextLayout {
-        let (attributed, syllableForOffset) = attributedText(line.syllables, font: font)
+    /// Extra advance after each keyed syllable, included in line wrapping.
+    static func layout(line: LyricLine, font: NSFont, width: CGFloat, leading: CGFloat?, alignment: NSTextAlignment, perSyllable: Bool,
+                       gaps: [Int: CGFloat] = [:]) -> LineTextLayout {
+        let (attributed, syllableForOffset) = attributedText(line.syllables, font: font, gaps: gaps)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byWordWrapping
@@ -62,7 +75,13 @@ struct LineTextLayout {
         var rows: [Row] = []
         var y: CGFloat = 0
         for (rowIndex, ctLine) in ctLines.enumerated() {
-            let row = makeRow(ctLine, font: font, leading: leading, x: origins[rowIndex].x, y: y, syllableForOffset: syllableForOffset, perSyllable: perSyllable)
+            var row = makeRow(ctLine, font: font, leading: leading, x: origins[rowIndex].x, y: y, syllableForOffset: syllableForOffset, perSyllable: perSyllable)
+            // A gap left at the end of a row would hold right-aligned and centred text off its edge.
+            if alignment == .right || alignment == .center, let last = row.fragments.last, let gap = gaps[last.syllable], gap > 0,
+               line.syllables.indices.contains(last.syllable), line.syllables[last.syllable].text.last?.isWhitespace == false {
+                row.fragments[row.fragments.count - 1].rect.size.width = max(1, last.rect.width - gap)
+                row.offset(by: alignment == .right ? gap : gap / 2)
+            }
             rows.append(row)
             y += row.height
         }
@@ -70,13 +89,18 @@ struct LineTextLayout {
     }
 
     /// The syllables' text with `font`, and the syllable index of every UTF-16 unit.
-    static func attributedText(_ syllables: [LyricSyllable], font: NSFont) -> (NSMutableAttributedString, [Int]) {
+    static func attributedText(_ syllables: [LyricSyllable], font: NSFont, gaps: [Int: CGFloat] = [:]) -> (NSMutableAttributedString, [Int]) {
         let text = syllables.map(\.text).joined()
         let attributed = NSMutableAttributedString(string: text, attributes: [.font: font])
         var syllableForOffset: [Int] = []
         syllableForOffset.reserveCapacity(attributed.length)
         for (index, syllable) in syllables.enumerated() {
-            syllableForOffset.append(contentsOf: repeatElement(index, count: syllable.text.utf16.count))
+            let length = syllable.text.utf16.count
+            syllableForOffset.append(contentsOf: repeatElement(index, count: length))
+            if length > 0, let gap = gaps[index], gap > 0 {
+                let last = (text as NSString).rangeOfComposedCharacterSequence(at: syllableForOffset.count - 1)
+                attributed.addAttribute(.kern, value: gap, range: last)
+            }
         }
         return (attributed, syllableForOffset)
     }

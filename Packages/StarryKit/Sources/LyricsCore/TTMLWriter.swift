@@ -17,7 +17,9 @@ public enum TTMLWriter {
             !LyricRubyGroup.groups(in: line.syllables).isEmpty || !LyricRubyGroup.groups(in: line.background?.syllables ?? []).isEmpty
         }
         let sharedRuby = grouped ? #" xmlns:ttx="\#(LyricRubyGroup.namespace)""# : ""
-        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)\#(sharedRuby)>"#
+        let vocalistStyle = agents.usesStyle ? #" xmlns:ttv="\#(LyricAgent.styleNamespace)""# : ""
+        let displayPosition = agents.separatesPosition ? #" xmlns:ttd="\#(LyricSinger.positionNamespace)""# : ""
+        var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)\#(sharedRuby)\#(vocalistStyle)\#(displayPosition)>"#
         out += "<head><metadata>"
         out += agents.declarations
         for entry in metadata ?? document.metadata.sorted(by: { $0.key < $1.key }).map({ ($0.key, $0.value) }) where !entry.value.isEmpty {
@@ -48,8 +50,7 @@ public enum TTMLWriter {
             out += #"<div begin="\#(timestamp(paragraph.map(\.start).min() ?? 0))" end="\#(timestamp(paragraph.map(\.end).max() ?? 0))">"#
             for line in paragraph {
                 key += 1
-                let ids = line.agentIDs.isEmpty ? agents.fallbacks[line.singer].map { [$0] } ?? [] : line.agentIDs
-                out += #"<p begin="\#(timestamp(line.start))" end="\#(timestamp(line.end))"\#(agents.attribute(ids)) itunes:key="L\#(key)">"#
+                out += #"<p begin="\#(timestamp(line.start))" end="\#(timestamp(line.end))"\#(agents.lineAttributes(line)) itunes:key="L\#(key)">"#
                 var groups = 0
                 out += spans(line.words, agents: agents, format: format, groups: &groups)
                 if let background = line.background, !background.words.isEmpty {
@@ -71,6 +72,9 @@ public enum TTMLWriter {
         var entries: [LyricAgent] = []
         var xmlIDs: [String: String] = [:]
         var fallbacks: [LyricSinger: String] = [:]
+        var positions: [(singer: LyricSinger, id: String)] = []
+
+        var separatesPosition: Bool { !positions.isEmpty }
 
         init(document: LyricsDocument, lines: [LyricLine]) {
             var seen: Set<String> = []
@@ -85,13 +89,14 @@ public enum TTMLWriter {
                 if let background = line.background { references += background.agentIDs + background.syllables.flatMap(\.agentIDs) }
             }
             for id in references { include(LyricAgent(id: id)) }
+            let separatesPosition = !entries.isEmpty
             for (singer, preferred) in [(LyricSinger.primary, "v1"), (.secondary, "v2"), (.duet, "v1000")] {
-                if singer == .primary, !document.agents.isEmpty { continue }
-                guard (singer == .primary && document.agents.isEmpty) || lines.contains(where: { $0.agentIDs.isEmpty && $0.singer == singer }) else { continue }
+                if separatesPosition { continue }
+                guard singer == .primary || lines.contains(where: { $0.singer == singer }) else { continue }
                 var id = preferred
                 var suffix = 2
                 while seen.contains(id) { id = "\(preferred)_\(suffix)"; suffix += 1 }
-                include(LyricAgent(id: id, kind: singer == .duet ? .group : .person))
+                include(LyricAgent(id: id, kind: singer == .duet ? .group : singer == .secondary ? .other : .person))
                 fallbacks[singer] = id
             }
             var reserved = Set(entries.map(\.id).filter(Self.isXMLID))
@@ -105,6 +110,18 @@ public enum TTMLWriter {
                     reserved.insert(id)
                     xmlIDs[entry.id] = id
                     next += 1
+                }
+            }
+            if separatesPosition {
+                // AMLL derives positions from paragraph agents; preserve performers in ttd:agents.
+                // A leading person anchors older parsers; `other` also starts right in AMLL 2.
+                for (singer, preferred) in [(LyricSinger.primary, "v1"), (.secondary, "v2"), (.duet, "v1000")] {
+                    guard singer == .primary || lines.contains(where: { $0.singer == singer }) else { continue }
+                    var id = preferred
+                    var suffix = 2
+                    while reserved.contains(id) { id = "\(preferred)_\(suffix)"; suffix += 1 }
+                    reserved.insert(id)
+                    positions.append((singer, id))
                 }
             }
         }
@@ -127,14 +144,36 @@ public enum TTMLWriter {
             }
         }
 
+        var usesStyle: Bool { entries.contains { !style(of: $0).isEmpty } }
+
+        func style(of entry: LyricAgent) -> String {
+            var out = entry.color.map { #" ttv:color="\#($0.hex)""# } ?? ""
+            let members = entry.kind == .group ? LyricAgent.references(entry.memberIDs).compactMap { xmlIDs[$0] } : []
+            if !members.isEmpty { out += #" ttv:members="\#(escape(members.joined(separator: " ")))""# }
+            return out
+        }
+
         func attribute(_ ids: [String]) -> String {
             let ids = LyricAgent.references(ids).compactMap { xmlIDs[$0] }
             return ids.isEmpty ? "" : #" ttm:agent="\#(escape(ids.joined(separator: " ")))""#
         }
 
+        func lineAttributes(_ line: LyricLine) -> String {
+            if let position = positions.first(where: { $0.singer == line.singer }) {
+                let ids = LyricAgent.references(line.agentIDs).compactMap { xmlIDs[$0] }
+                return #" ttm:agent="\#(position.id)" ttd:agents="\#(escape(ids.joined(separator: " ")))""#
+            }
+            let ids = line.agentIDs.isEmpty ? fallbacks[line.singer].map { [$0] } ?? [] : line.agentIDs
+            return attribute(ids)
+        }
+
         var declarations: String {
-            entries.map { entry in
-                var out = #"<ttm:agent type="\#(entry.kind.rawValue)" xml:id="\#(escape(xmlIDs[entry.id]!))""#
+            let display = positions.map { position in
+                let kind: LyricAgent.Kind = position.singer == .duet ? .group : position.singer == .secondary ? .other : .person
+                return #"<ttm:agent type="\#(kind.rawValue)" xml:id="\#(position.id)" ttd:position="\#(position.singer.rawValue)"/>"#
+            }.joined()
+            return display + entries.map { entry in
+                var out = #"<ttm:agent type="\#(entry.kind.rawValue)" xml:id="\#(escape(xmlIDs[entry.id]!))""# + style(of: entry)
                 if entry.names.isEmpty && entry.actorID == nil { return out + "/>" }
                 out += ">"
                 for name in entry.names {
