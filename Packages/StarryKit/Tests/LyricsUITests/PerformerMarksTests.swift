@@ -101,6 +101,80 @@ import Testing
         #expect(name.frame.maxY < ruby.origin.y)
     }
 
+    @Test(arguments: [LyricsSpecs.Preset.windowed, .fullscreen], [LyricSinger.primary, .secondary, .duet])
+    func overlapPreferenceKeepsNamesInPlaceAndHidesOnlyConflictingRuby(preset: LyricsSpecs.Preset, singer: LyricSinger) throws {
+        var specs = LyricsSpecs.preset(preset)
+        specs.hideRubyUnderPerformerNames = true
+        let host = Host(document: rubyDocument(singer: singer), specs: specs)
+        host.setTime(0.5)
+        let voice = try #require(host.line(0)).main
+        let name = try #require(voice.performerNameLayers.first)
+        let bar = try #require(PerformerMarks.bars(text: voice.textLayout, runs: voice.layout.performers, specs: specs).first)
+        #expect(name.frame == originalNameFrame(name, bar: bar, font: voice.textLayout.font))
+        let annotations = voice.rows.filter(\.followsProgress)
+        #expect(annotations.map(\.opacity) == [0, 1])
+        #expect(voice.rows.filter(\.liftsSyllables).allSatisfy { $0.opacity == 1 })
+
+        host.setTime(2.5)
+        #expect(voice.performerNamesOpacity == 0)
+        #expect(annotations.allSatisfy { $0.opacity == 1 })
+        host.setTime(0.5)
+        #expect(voice.performerNamesOpacity == 1)
+        #expect(annotations.map(\.opacity) == [0, 1])
+    }
+
+    @Test func overlapPreferenceTakesEffectImmediatelyAndSurvivesRubyToggles() throws {
+        let host = Host(document: rubyDocument())
+        host.setTime(0.5)
+        let original = try #require(host.line(0)?.main.performerNameLayers.first).frame
+        var specs = LyricsSpecs.windowed
+        specs.hideRubyUnderPerformerNames = true
+        host.view.specs = specs
+        CATransaction.flush()
+        let voice = try #require(host.line(0)).main
+        #expect(voice.performerNameLayers[0].frame.minY > original.minY)
+        #expect(voice.rows.filter(\.followsProgress).map(\.opacity) == [0, 1])
+
+        specs.showRuby = false
+        host.view.specs = specs
+        CATransaction.flush()
+        #expect(voice.rows.allSatisfy { !$0.followsProgress })
+        specs.showRuby = true
+        host.view.specs = specs
+        CATransaction.flush()
+        #expect(voice.rows.filter(\.followsProgress).map(\.opacity) == [0, 1])
+
+        specs.hideRubyUnderPerformerNames = false
+        host.view.specs = specs
+        CATransaction.flush()
+        let restored = try #require(host.line(0)).main
+        #expect(restored.performerNameLayers[0].frame == original)
+        #expect(restored.rows.filter(\.followsProgress).allSatisfy { $0.opacity == 1 })
+    }
+
+    @Test func overlapPreferenceLeavesRubyVisibleWithoutNamesOrWithoutAnOverlap() throws {
+        var specs = LyricsSpecs.windowed
+        specs.hideRubyUnderPerformerNames = true
+        let wrapped = Host(document: rubyDocument(prefix: String(repeating: "ほ", count: 11)), specs: specs)
+        wrapped.setTime(0.5)
+        let wrappedVoice = try #require(wrapped.line(0)).main
+        #expect(wrappedVoice.performerNameLayers.count == 1)
+        #expect(wrappedVoice.rows.filter(\.followsProgress).allSatisfy { $0.opacity == 1 })
+
+        var noNames = specs
+        noNames.performerNamesEnabled = false
+        var noMarks = specs
+        noMarks.performerMarksEnabled = false
+        var noColors = rubyDocument()
+        for index in noColors.agents.indices { noColors.agents[index].color = nil }
+        for host in [Host(document: rubyDocument(), specs: noNames), Host(document: rubyDocument(), specs: noMarks), Host(document: noColors, specs: specs)] {
+            host.setTime(0.5)
+            let voice = try #require(host.line(0)).main
+            #expect(voice.performerNameLayers.isEmpty)
+            #expect(voice.rows.filter(\.followsProgress).map(\.opacity) == [1, 1])
+        }
+    }
+
     @Test func eachNameChecksItsOwnRubyAndTogglingRubyRestoresItsPosition() throws {
         let host = Host(document: rubyDocument(prefix: "ほらほら", handoff: true))
         host.setTime(0.5)
@@ -152,8 +226,8 @@ import Testing
         #expect(withEmphasis.frame == withoutEmphasis.frame)
     }
 
-    @Test(arguments: [CGFloat(0.6), 1, 1.8])
-    func sharedRubyCanLiftAndGrowWithoutReachingTheName(scale: CGFloat) throws {
+    @Test(arguments: [CGFloat(0.6), 1, 1.8], [false, true])
+    func sharedRubyAvoidsNamesDuringLiftAndGrowth(scale: CGFloat, hidesOverlappingRuby: Bool) throws {
         var document = rubyDocument()
         document.lines.removeLast()
         for index in document.lines[0].words.indices {
@@ -171,6 +245,7 @@ import Testing
         var specs = LyricsSpecs.windowed
         specs.scale = scale
         specs.emphasizingScaleRange = 1...1.4
+        specs.hideRubyUnderPerformerNames = hidesOverlappingRuby
         let host = Host(document: document, specs: specs)
         host.setTime(0.8)
         let voice = try #require(host.line(0)).main
@@ -179,7 +254,14 @@ import Testing
         let ruby = try #require(voice.layout.furigana)
         let ink = try #require(PerformerMarks.rubyBounds(text: ruby.text).first).frame
         let rubyFrame = annotation.convert(ink.offsetBy(dx: 0, dy: -ruby.text.rows[0].origin.y), to: voice)
-        #expect(name.frame.maxY + 1 < rubyFrame.minY)
+        if hidesOverlappingRuby {
+            #expect(annotation.opacity == 0)
+            let bar = try #require(PerformerMarks.bars(text: voice.textLayout, runs: voice.layout.performers, specs: specs.scaled()).first)
+            #expect(name.frame == originalNameFrame(name, bar: bar, font: voice.textLayout.font))
+        } else {
+            #expect(annotation.opacity == 1)
+            #expect(name.frame.maxY + 1 < rubyFrame.minY)
+        }
     }
 
     @Test(arguments: [NSTextAlignment.right, .center])

@@ -123,6 +123,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var hoverHighlight = true
         public var performerMarks = true
         public var performerNames = true
+        public var hideRubyUnderPerformerNames = false
         /// 0 uses the preset value.
         public var inactiveOpacity: Double = 0
         public init() {}
@@ -130,7 +131,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         private enum CodingKeys: String, CodingKey {
             case windowedScale, fullscreenScale, autoScale, fontSize, lineSpacing, anchor, alignment, perSyllable, spring, lift, emphasis, glow
             case blurMode, blurRadius, blurMax, showTranslation, showRomanization, showRuby, hoverHighlight, inactiveOpacity
-            case performerMarks, performerNames
+            case performerMarks, performerNames, hideRubyUnderPerformerNames
         }
 
         public init(from decoder: any Decoder) throws {
@@ -157,6 +158,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
             hoverHighlight = try c.decodeIfPresent(Bool.self, forKey: .hoverHighlight) ?? d.hoverHighlight
             performerMarks = try c.decodeIfPresent(Bool.self, forKey: .performerMarks) ?? d.performerMarks
             performerNames = try c.decodeIfPresent(Bool.self, forKey: .performerNames) ?? d.performerNames
+            hideRubyUnderPerformerNames = try c.decodeIfPresent(Bool.self, forKey: .hideRubyUnderPerformerNames) ?? d.hideRubyUnderPerformerNames
             inactiveOpacity = try c.decodeIfPresent(Double.self, forKey: .inactiveOpacity) ?? d.inactiveOpacity
         }
     }

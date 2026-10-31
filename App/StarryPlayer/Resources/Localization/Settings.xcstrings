@@ -945,6 +945,38 @@
         }
       }
     },
+    "hideRubyUnderPerformerNames.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏与演唱者名字重叠的注音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide ruby overlapping performer names"
+          }
+        }
+      }
+    },
+    "hideRubyUnderPerformerNames.detail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持演唱者名字的位置，仅隐藏与名字重叠的注音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep performer names in place and hide only the ruby annotations they overlap."
+          }
+        }
+      }
+    },
     "search.count": {
       "comment": "Number of settings matching the search query.",
       "localizations": {

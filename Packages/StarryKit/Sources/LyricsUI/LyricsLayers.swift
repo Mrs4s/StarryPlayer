@@ -756,6 +756,7 @@ final class VoiceLayer: NoAnimationLayer {
     private let namesLayer = NoAnimationLayer()
     private var names: [(layer: CALayer, start: TimeInterval, end: TimeInterval)] = []
     private var nameLevels: [Float] = []
+    private var rubyUnderPerformerNames: [RowLayer] = []
     private var markTint: NSColor = .white
     var showsPerformerNames = true
 
@@ -1113,7 +1114,7 @@ final class VoiceLayer: NoAnimationLayer {
         return steps
     }
 
-    private func rubyMotionBounds(specs: LyricsSpecs) -> [CGRect] {
+    private func rubyMotionBounds(specs: LyricsSpecs) -> [(layer: RowLayer, frame: CGRect)] {
         guard let furigana = layout.furigana else { return [] }
         let wordOfSyllable = furigana.line.words.indices.flatMap { word in
             repeatElement(word, count: furigana.line.words[word].syllables.count)
@@ -1122,12 +1123,12 @@ final class VoiceLayer: NoAnimationLayer {
         for ink in PerformerMarks.rubyBounds(text: furigana.text) {
             inkByWord[wordOfSyllable[ink.syllable], default: []].append(ink.frame)
         }
-        var result: [CGRect] = []
+        var result: [(layer: RowLayer, frame: CGRect)] = []
         func append(_ annotation: RowLayer, transforms: [CGAffineTransform]) {
             guard let word = annotation.words.first else { return }
             for ink in inkByWord[word.wordIndex] ?? [] {
                 let bounds = transforms.reduce(ink) { $0.union(ink.applying($1)) }
-                result.append(bounds)
+                result.append((annotation, bounds))
             }
         }
         let timed = line.hasSyllableTiming && specs.perSyllableEnabled
@@ -1151,7 +1152,7 @@ final class VoiceLayer: NoAnimationLayer {
                 }
             }
         }
-        return result.sorted { $0.minY > $1.minY }
+        return result.sorted { $0.frame.minY > $1.frame.minY }
     }
 
     private func buildPerformerMarks(specs: LyricsSpecs) {
@@ -1159,6 +1160,7 @@ final class VoiceLayer: NoAnimationLayer {
         namesLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
         names = []
         nameLevels = []
+        rubyUnderPerformerNames = []
         let runs = layout.performers
         guard !runs.isEmpty else { return }
         let em = textLayout.font.pointSize
@@ -1195,8 +1197,14 @@ final class VoiceLayer: NoAnimationLayer {
             layer.contentsGravity = .resize
             var frame = CGRect(x: max(bar.frame.minX, minX), y: bar.frame.minY - em * 0.16 - name.size.height, width: name.size.width, height: name.size.height)
             // Visit lower readings first so clearing one cannot overlap a higher reading.
-            for ruby in rubyBounds where frame.intersects(ruby) {
-                frame.origin.y = ruby.minY - clearance - frame.height
+            for ruby in rubyBounds where frame.intersects(ruby.frame) {
+                if specs.hideRubyUnderPerformerNames {
+                    if !rubyUnderPerformerNames.contains(where: { $0 === ruby.layer }) {
+                        rubyUnderPerformerNames.append(ruby.layer)
+                    }
+                } else {
+                    frame.origin.y = ruby.frame.minY - clearance - frame.height
+                }
             }
             layer.frame = frame
             namesLayer.addSublayer(layer)
@@ -1204,6 +1212,9 @@ final class VoiceLayer: NoAnimationLayer {
             names.append((layer, start(of: bar.run), bar.run + 1 < runs.count ? start(of: bar.run + 1) : .infinity))
         }
         nameLevels = Array(repeating: -1, count: names.count)
+        for ruby in rubyUnderPerformerNames {
+            Self.fade(ruby, to: 1 - namesLayer.opacity, duration: 0, curve: CAMediaTimingFunction(name: .easeInEaseOut))
+        }
     }
 
     private func updatePerformerNames(time t: TimeInterval) {
@@ -1219,6 +1230,9 @@ final class VoiceLayer: NoAnimationLayer {
     func setPerformerMarks(opacity: Float, names: Float, duration: CFTimeInterval, curve: CAMediaTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)) {
         Self.fade(marksLayer, to: opacity, duration: duration, curve: curve)
         Self.fade(namesLayer, to: names, duration: duration, curve: curve)
+        for ruby in rubyUnderPerformerNames {
+            Self.fade(ruby, to: 1 - names, duration: duration, curve: curve)
+        }
     }
 
     var performerBarLayers: [CALayer] { marksLayer.sublayers ?? [] }

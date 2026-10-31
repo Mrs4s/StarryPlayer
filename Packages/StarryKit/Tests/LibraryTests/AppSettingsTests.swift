@@ -72,6 +72,17 @@ struct AppSettingsTests {
         }
     }
 
+    @Test func rubyOverlapPreferenceDefaultsOffAndPersistsIndependentlyOfNames() throws {
+        let saved = try decode(#"{"lyrics":{"performerNames":false,"showRuby":true}}"#)
+        #expect(!saved.lyrics.hideRubyUnderPerformerNames)
+        #expect(!saved.lyrics.performerNames)
+        #expect(saved.lyrics.showRuby)
+
+        var settings = saved
+        settings.lyrics.hideRubyUnderPerformerNames = true
+        #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
+    }
+
     @Test func desktopLyricsRoundTripAndFillGaps() throws {
         var settings = AppSettings()
         settings.desktopLyrics.enabled = true

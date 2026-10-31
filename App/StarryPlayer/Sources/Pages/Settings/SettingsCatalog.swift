@@ -226,6 +226,9 @@ struct SettingsCatalog {
         ]
         if settings.lyrics.performerMarks, let index = lyricEntries.firstIndex(where: { $0.id == "performerMarks" }) {
             lyricEntries.insert(toggle("performerNames", "显示演唱者名字", "在正在唱的行上方标出每段的歌手", \.lyrics.performerNames, keywords: "对唱 合唱 歌手 名字"), at: index + 1)
+            if settings.lyrics.performerNames {
+                lyricEntries.insert(toggle("hideRubyUnderPerformerNames", localizedTitle: LocalizedStringResource("hideRubyUnderPerformerNames.title", defaultValue: "隐藏与演唱者名字重叠的注音", table: "Settings"), detail: LocalizedStringResource("hideRubyUnderPerformerNames.detail", defaultValue: "保持演唱者名字的位置，仅隐藏与名字重叠的注音", table: "Settings"), \.lyrics.hideRubyUnderPerformerNames, keywords: "演唱者 歌手 名字 注音 振假名 假名 拼音 ruby 重叠 遮挡 singer performer name overlap"), at: index + 2)
+            }
         }
         var background: [SettingsEntry] = [
             SettingsEntry("backgroundStyle", "背景", detail: backgroundDetail, keywords: "封面 模糊 渐变 流动") {
