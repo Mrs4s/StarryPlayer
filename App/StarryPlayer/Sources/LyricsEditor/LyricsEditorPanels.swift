@@ -37,6 +37,7 @@ struct EditorPanel<Content: View>: View {
             .scaleEffect(shown ? 1 : 0.96)
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : 10)
+            .padding(.vertical, 20)
         }
         .modifier(WindowCancelShortcut(action: dismiss))
         .onAppear { withAnimation(Motion.searchOpen) { shown = true } }
@@ -87,7 +88,7 @@ struct LyricsEditorShortcuts: View {
         Group(title: "文件", keys: [
             (["⌘I"], "导入歌词"),
             (["⌘O", "⇧⌘S"], "打开 / 保存歌词工程，保留没打点的音节和虚拟轨"),
-            (["⌘E"], "导出 AMLL TTML，导出前会检查"),
+            (["⌘E"], "导出歌词：选格式，先看会丢失哪些内容"),
             (["⌘S"], "应用到这首歌"),
             (["⌘Z", "⇧⌘Z"], "撤销 / 重做"),
             (["?"], "显示快捷键"),

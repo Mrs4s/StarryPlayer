@@ -14,7 +14,7 @@ struct LyricsEditorView: View {
     @State private var clock = LyricsEditorClock()
     @State private var panel: Panel?
     @State private var previewLayout = PreviewLayout.split
-    @State private var pendingAction: PendingAction?
+    @State private var confirmingApply = false
     @State private var appeared = false
     @State private var keyMonitor: Any?
     @State private var findingLyrics = false
@@ -50,14 +50,8 @@ struct LyricsEditorView: View {
     private var showPreview: Bool { previewLayout != .editor }
     private var focusPreview: Bool { previewLayout == .preview }
 
-    private enum PendingAction: Hashable, Identifiable {
-        case export, apply
-        case exportAs(LyricsExportFormat)
-        var id: Self { self }
-    }
-
     enum Panel: Equatable {
-        case importer, metadata, tracks, roles, shortcuts, translation, aiTiming
+        case importer, metadata, tracks, roles, shortcuts, translation, aiTiming, export
         case alignment(UUID)
     }
 
@@ -107,10 +101,10 @@ struct LyricsEditorView: View {
             }
         }
         .animation(Motion.popover, value: audio.status)
-        .confirmationDialog(untimedTitle, isPresented: Binding { pendingAction != nil } set: { if !$0 { pendingAction = nil } }, presenting: pendingAction) { action in
-            Button(action == .export ? "仍然导出" : "仍然应用") { perform(action) }
+        .confirmationDialog(untimedTitle, isPresented: $confirmingApply) {
+            Button("仍然应用") { apply() }
             Button("取消", role: .cancel) {}
-        } message: { _ in
+        } message: {
             Text("没打点的音节会按前后已打点的时间平均分配。")
         }
         .background {
@@ -167,6 +161,8 @@ struct LyricsEditorView: View {
         case .aiTiming:
             LyricsEditorAITiming(session: session, audio: audio, state: aiTiming, close: close)
                 .transition(.opacity).zIndex(3)
+        case .export:
+            LyricsEditorExport(session: session, close: close).transition(.opacity).zIndex(3)
         case .alignment(let id):
             if let line = session.draft.lines.first(where: { $0.id == id }) {
                 LyricsEditorAlignment(session: session, audio: audio, line: line, close: close)
@@ -240,8 +236,8 @@ struct LyricsEditorView: View {
             .frame(maxWidth: 320, alignment: .leading)
             LyricsEditorProgress(timed: session.draft.timedCount, total: session.draft.syllableCount)
             Spacer(minLength: 12)
-            exportMenu
-            PillButton(title: "应用到这首歌", systemName: "checkmark", variant: .filled, height: 30) { request(.apply) }
+            exportButton
+            PillButton(title: "应用到这首歌", systemName: "checkmark", variant: .filled, height: 30, action: requestApply)
                 .disabled(session.draft.isEmpty)
                 .opacity(session.draft.isEmpty ? 0.45 : 1)
                 .help("播放这首歌时就显示编辑好的歌词（⌘S）")
@@ -342,24 +338,11 @@ struct LyricsEditorView: View {
         .help("导入歌词（⌘I）、载入歌曲歌词或打开工程（⌘O）")
     }
 
-    private var exportMenu: some View {
-        PopMenu {
-            PopMenuItem.button("导出 AMLL TTML…", systemImage: "square.and.arrow.up") { request(.export) }
-            PopMenuItem.submenu("导出其他格式", systemImage: "doc.text") {
-                for format in LyricsExportFormat.allCases where format != .ttml {
-                    PopMenuItem.button("\(format.title)…") { request(.exportAs(format)) }
-                }
-            }
-            PopMenuItem.button("拷贝 AMLL TTML", systemImage: "doc.on.doc") { model.copyLyrics(session) }
-            PopMenuItem.divider
-            PopMenuItem.button("保存歌词工程…", systemImage: "square.and.arrow.down.on.square") { saveProject() }
-        } label: {
-            menuLabel("导出", systemImage: "square.and.arrow.up")
-        }
-        .buttonStyle(VariantButtonStyle(variant: .secondary, isPill: true))
-        .disabled(session.draft.isEmpty)
-        .opacity(session.draft.isEmpty ? 0.45 : 1)
-        .help("导出 AMLL TTML（⌘E）、拷贝歌词或保存工程（⇧⌘S）")
+    private var exportButton: some View {
+        PillButton(title: "导出…", systemName: "square.and.arrow.up", variant: .secondary, height: 30, action: showExport)
+            .disabled(session.draft.isEmpty)
+            .opacity(session.draft.isEmpty ? 0.45 : 1)
+            .help("选择格式导出或拷贝歌词，导出前列出会丢失的内容（⌘E）；也可以保存歌词工程（⇧⌘S）")
     }
 
     private var subtitle: String {
@@ -460,33 +443,31 @@ struct LyricsEditorView: View {
         "还有 \(session.draft.syllableCount - session.draft.timedCount) 个音节没有打点"
     }
 
-    private func request(_ action: PendingAction) {
+    private func showExport() {
         guard !session.draft.isEmpty else { return }
-        if case .exportAs(let format) = action, !session.needsTiming(for: format) { perform(action); return }
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        show(.export)
+    }
+
+    private func requestApply() {
+        guard !session.draft.isEmpty else { return }
         if session.draft.timedCount < session.draft.syllableCount {
-            pendingAction = action
+            confirmingApply = true
         } else {
-            perform(action)
+            apply()
         }
     }
 
-    private func perform(_ action: PendingAction) {
-        switch action {
-        case .export:
-            model.exportLyrics(session)
-        case .exportAs(let format):
-            model.exportLyrics(session, format: format)
-        case .apply:
-            guard session.validateForExport() else { return }
-            if model.applyEditedLyrics(session) {
-                if session.draft.hasAuthoringTiming {
-                    session.flash("已应用播放歌词；多拍、休止及未完成时间请另存歌词工程")
-                } else {
-                    session.flash(model.player.current?.id == session.track.id ? "已应用，播放页正在显示编辑好的歌词" : "已应用，播放这首歌时会显示编辑好的歌词")
-                }
+    private func apply() {
+        guard session.validateForExport() else { return }
+        if model.applyEditedLyrics(session) {
+            if session.draft.hasAuthoringTiming {
+                session.flash("已应用播放歌词；多拍、休止及未完成时间请另存歌词工程")
             } else {
-                session.flash("没能应用这份歌词")
+                session.flash(model.player.current?.id == session.track.id ? "已应用，播放页正在显示编辑好的歌词" : "已应用，播放这首歌时会显示编辑好的歌词")
             }
+        } else {
+            session.flash("没能应用这份歌词")
         }
     }
 
@@ -598,8 +579,8 @@ struct LyricsEditorView: View {
             switch key {
             case "a": session.selectAll()
             case "z": flags.contains(.shift) ? session.redo() : session.undo()
-            case "s": flags.contains(.shift) ? saveProject() : request(.apply)
-            case "e": request(.export)
+            case "s": flags.contains(.shift) ? saveProject() : requestApply()
+            case "e": showExport()
             case "i": show(.importer)
             case "o": model.openLyricsProject(into: session)
             default: return false

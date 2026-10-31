@@ -592,23 +592,33 @@ final class LyricsEditorSession {
         }
     }
 
+    private var exportDuration: TimeInterval? { track.duration > 0 ? track.duration : nil }
+
     func ttml() -> String {
-        TTMLWriter.write(document, metadata: exportMetadata, duration: track.duration > 0 ? track.duration : nil)
+        TTMLWriter.write(document, metadata: exportMetadata, duration: exportDuration)
     }
 
-    /// Validate at TTML output boundaries; editing and project files allow incomplete drafts.
     func validateForExport() -> Bool {
-        switch draft.firstExportIssue {
-        case nil:
-            return true
+        guard let issue = draft.firstExportIssue else { return true }
+        reveal(issue)
+        flash("无法导出：" + Self.describe(issue))
+        return false
+    }
+
+    func reveal(_ issue: LyricsDraft.ExportIssue) {
+        switch issue {
         case .timingOverlap(let position):
             select(position)
-            flash("无法导出：第 \(position.line + 1) 行第 \(position.syllable + 1) 个音节早于前一音节的结束时间")
         case .strayBackground(let line):
             if let position = draft.firstPosition(fromLine: line), position.line == line { select(position) }
-            flash("无法导出：第 \(line + 1) 行是背景人声，但它正上方没有可以跟随的主歌词行")
         }
-        return false
+    }
+
+    static func describe(_ issue: LyricsDraft.ExportIssue) -> String {
+        switch issue {
+        case .timingOverlap(let position): "第 \(position.line + 1) 行第 \(position.syllable + 1) 个音节早于前一音节的结束时间"
+        case .strayBackground(let line): "第 \(line + 1) 行是背景人声，但它正上方没有可以跟随的主歌词行"
+        }
     }
 
     func exportTTML() -> String? {
@@ -617,7 +627,11 @@ final class LyricsEditorSession {
 
     func exportLyrics(format: LyricsExportFormat) throws -> LyricsExport.Output? {
         guard format == .txt || validateForExport() else { return nil }
-        return try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: track.duration > 0 ? track.duration : nil)
+        return try writeLyrics(format: format)
+    }
+
+    func writeLyrics(format: LyricsExportFormat) throws -> LyricsExport.Output {
+        try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: exportDuration)
     }
 
     func needsTiming(for format: LyricsExportFormat) -> Bool {
