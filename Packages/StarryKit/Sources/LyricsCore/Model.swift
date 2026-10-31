@@ -29,6 +29,12 @@ public struct LyricsDocument: Sendable, Hashable {
 
     public var hasTranslation: Bool { lines.contains { $0.translation?.isEmpty == false } }
     public var hasRomanization: Bool { lines.contains { $0.romanization?.isEmpty == false } }
+    public var hasJapanese: Bool {
+        lines.contains { line in
+            let readings = line.syllables.flatMap { $0.ruby + $0.groupRuby }.map(\.text).joined()
+            return (line.text + readings).unicodeScalars.contains { CharacterSet.letters.contains($0) && LyricRomanizationAligner.isKana($0) }
+        }
+    }
     public var hasBackgroundVocals: Bool { lines.contains { $0.background != nil } }
     public var hasRuby: Bool { lines.contains { $0.hasRuby } }
     public var hasAuthoringTiming: Bool {

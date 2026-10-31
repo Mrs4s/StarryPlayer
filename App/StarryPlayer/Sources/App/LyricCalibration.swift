@@ -67,12 +67,22 @@ final class LyricOffsetStore {
 enum LyricCalibrationState: Equatable {
     case idle
     case running(key: String)
+    case regenerating(key: String)
 
     var isRunning: Bool { self != .idle }
+    var isRegenerating: Bool {
+        if case .regenerating = self { return true }
+        return false
+    }
+    var key: String? {
+        switch self {
+        case .idle: nil
+        case .running(let key), .regenerating(let key): key
+        }
+    }
 }
 
 enum LyricCalibrationError: Error {
-    /// HLS, a 30 s trial or a source the engine does not play: no file to analyse.
     case unsupportedSource(String)
     case download(Int)
 }
@@ -113,7 +123,6 @@ enum LyricCalibrationAudio {
         }
     }
 
-    /// Runs `calibrator` off the main thread; cancelling the calling task stops it between windows.
     static func calibrate(_ file: File, document: LyricsDocument, model: VocalSeparationModel) async throws -> LyricsCalibration {
         let work = Task.detached(priority: .userInitiated) { () throws -> LyricsCalibration in
             let calibrator = LyricsCalibrator()
@@ -125,6 +134,28 @@ enum LyricCalibrationAudio {
             }
         }
         return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+    }
+
+    static func regenerate(_ file: File, document: LyricsDocument, modelDirectory: URL,
+                           separationModel: VocalSeparationModel, backend: LyricsAIBackend, englishSplit: LyricsAIEnglishSplit,
+                           progress: @escaping @Sendable (LyricsAIProgress) -> Void) async throws -> LyricsAIAlignmentResult {
+        try Task.checkCancellation()
+        _ = try LyricsAIModelBundle.load(from: modelDirectory)
+        let vocals = FileManager.default.temporaryDirectory.appendingPathComponent("starry-ai-lyrics-\(UUID()).caf")
+        defer { try? FileManager.default.removeItem(at: vocals) }
+        progress(.init(0, "正在分离人声…"))
+        try await VocalExtraction.extractVocals(from: file.url, to: vocals, model: separationModel) {
+            progress(.init($0 * 0.25, "正在分离人声…"))
+        }
+        try Task.checkCancellation()
+        var draft = LyricsDraft(document: document)
+        for index in draft.lines.indices where !draft.lines[index].isBackground {
+            draft.lines[index].resplitSyllables()
+        }
+        let worker = LyricsAIAligner()
+        return try await worker.align(draft, vocals: vocals, modelDirectory: modelDirectory, backend: backend, englishSplit: englishSplit) {
+            progress(.init(0.25 + $0.fraction * 0.75, $0.message))
+        }
     }
 
     static func message(for error: Error) -> String {

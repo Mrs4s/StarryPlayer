@@ -85,6 +85,7 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var equalizerMounted = false
     @State private var editingLyricOffset = false
+    @State private var showLyricCalibration = false
     @State private var showMoreMenu = false
     /// The bar's cover in page coordinates when the page last opened or started closing.
     @State private var heroSource: CGRect?
@@ -164,6 +165,9 @@ struct NowPlayingView: View {
             .onChange(of: showMoreMenu) { _, open in
                 if !open { wake() }
             }
+            .onChange(of: showLyricCalibration) { _, open in
+                if !open { wake() }
+            }
             .onChange(of: model.nowPlayingPanel) { _, _ in wake() }
             .onChange(of: player.vocalAttenuationEnabled) { _, on in
                 if on { wake() }
@@ -222,7 +226,7 @@ struct NowPlayingView: View {
             try? await Task.sleep(for: .seconds(3))
             // The settings popover is its own window, so hovering it sends no events here; hiding
             // the chrome would remove its anchor button and close it.
-            guard !Task.isCancelled, idleHides, !scrubbing, !showLyricsSettings, !showLyricsSource, !showAudioInfo, !showVocals, !editingLyricOffset, !showEqualizer, !showMoreMenu, player.showNowPlaying else { return }
+            guard !Task.isCancelled, idleHides, !scrubbing, !showLyricsSettings, !showLyricsSource, !showAudioInfo, !showVocals, !editingLyricOffset, !showLyricCalibration, !showEqualizer, !showMoreMenu, player.showNowPlaying else { return }
             withAnimation(.easeInOut(duration: 0.6)) {
                 chromeVisible = false
             } completion: {
@@ -500,7 +504,7 @@ struct NowPlayingView: View {
             IconButton(systemName: "plus", size: 30, iconSize: 12, tint: tint, help: "歌词延后 0.1 s") { player.setLyricOffset(player.lyricOffset + 0.1) }
             LyricOffsetField(isEditing: $editingLyricOffset, tint: tint)
             IconButton(systemName: "minus", size: 30, iconSize: 12, tint: tint, help: "歌词提前 0.1 s") { player.setLyricOffset(player.lyricOffset - 0.1) }
-            LyricCalibrationButton(size: 30, tint: tint)
+            LyricCalibrationMenu(size: 30, tint: tint, isOpen: $showLyricCalibration)
             Capsule().fill(tint.opacity(0.14)).frame(width: 16, height: 1).padding(.vertical, 3)
             IconButton(systemName: "gearshape", size: 30, iconSize: 13, tint: tint, isActive: showLyricsSettings, help: "歌词与背景设置") { showLyricsSettings.toggle() }
                 .popover(isPresented: $showLyricsSettings, arrowEdge: .leading) {
@@ -633,29 +637,5 @@ enum LyricOffsetText {
 
     private static func hasTenths(_ offset: TimeInterval) -> Bool {
         abs(offset * 10 - (offset * 10).rounded()) < 0.05
-    }
-}
-
-struct LyricCalibrationButton: View {
-    var size: CGFloat = 32
-    var tint: Color
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let player = model.player
-        let running = player.lyricCalibration.isRunning
-        let available = player.lyrics.map { !$0.isEmpty } ?? false
-        Button { player.calibrateLyrics() } label: {
-            Image(systemName: "waveform.badge.magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
-                .symbolEffect(.pulse, isActive: running)
-                .foregroundStyle(tint)
-                .frame(width: size, height: size)
-        }
-        .buttonStyle(VariantButtonStyle(variant: .ghost, isCircle: true, isActive: running))
-        .disabled(!available && !running)
-        .opacity(available || running ? 1 : 0.4)
-        .help(running ? "正在分析人声以校准歌词，点按停止" : "自动校准：分析人声，把歌词对准演唱")
-        .accessibilityLabel("校准歌词时间")
     }
 }

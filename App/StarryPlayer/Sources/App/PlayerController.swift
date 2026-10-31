@@ -57,6 +57,7 @@ final class PlayerController {
     /// this song and these lyrics; set by hand or by calibration, and remembered.
     private(set) var lyricOffset: TimeInterval = 0
     private(set) var lyricCalibration: LyricCalibrationState = .idle
+    private(set) var lyricRegenerationProgress = LyricsAIProgress(0, "")
     private(set) var accentColor: Color?
     private(set) var coverImage: NSImage?
     private(set) var currentAsset: PlayableAsset?
@@ -173,6 +174,8 @@ final class PlayerController {
     @ObservationIgnored private(set) var systemMediaControls: SystemMediaControls?
     @ObservationIgnored var lyricOffsets = LyricOffsetStore(directory: nil)
     private var calibrationTask: Task<Void, Never>?
+    @ObservationIgnored private var calibrationRequest = UUID()
+    private var lyricsBeforeRegeneration: (document: LyricsDocument, origin: LyricsOrigin?, offset: TimeInterval)?
     private var awaitsAddress = false
 
     private static let volumeKey = "starry.volume"
@@ -1021,11 +1024,15 @@ final class PlayerController {
     }
 
     private func setLyrics(_ document: LyricsDocument?, origin: LyricsOrigin?) {
+        if lyrics != document || lyricsOrigin != origin {
+            cancelLyricCalibration()
+            lyricsBeforeRegeneration = nil
+        }
         lyrics = document
         lyricsOrigin = origin
         let key = lyricOffsetKey
         lyricOffset = key.flatMap { lyricOffsets.entry(for: $0)?.offset } ?? 0
-        if case .running(let running) = lyricCalibration, running != key { cancelLyricCalibration() }
+        if let running = lyricCalibration.key, running != key { cancelLyricCalibration() }
     }
 
     private var lyricOffsetKey: String? {
@@ -1072,9 +1079,76 @@ final class PlayerController {
     }
 
     func cancelLyricCalibration() {
+        calibrationRequest = UUID()
         calibrationTask?.cancel()
         calibrationTask = nil
         lyricCalibration = .idle
+    }
+
+    var lyricAnalysisUnavailableReason: String? {
+        guard usingEngine, let asset = currentAsset else { return "当前歌曲无法分析音频" }
+        if asset.isTrial { return "试听片段无法分析整首歌词" }
+        if asset.container == .hls { return "当前流媒体音源不支持歌词分析" }
+        return nil
+    }
+
+    var canRestoreLyricsBeforeRegeneration: Bool { lyricsBeforeRegeneration != nil }
+
+    func regenerateLyrics(modelDirectory: URL, backend: LyricsAIBackend, englishSplit: LyricsAIEnglishSplit) {
+        guard !lyricCalibration.isRunning, let key = lyricOffsetKey, let track = current?.id, let document = lyrics else { return }
+        guard document.hasJapanese else { onMessage?("未检测到日语歌词，无法使用本地模型生成逐字"); return }
+        guard #available(macOS 15, *) else { onMessage?(LyricsAIError.unsupportedSystem.localizedDescription); return }
+        if let reason = lyricAnalysisUnavailableReason { onMessage?(reason); return }
+        guard let asset = currentAsset else { return }
+        let separationModel = engine.vocalModel
+        calibrationRequest = UUID()
+        let request = calibrationRequest
+        lyricCalibration = .regenerating(key: key)
+        lyricRegenerationProgress = .init(0, "正在准备音频…")
+        calibrationTask = Task { [weak self] in
+            do {
+                let file = try await LyricCalibrationAudio.file(for: asset)
+                defer { if file.isTemporary { try? FileManager.default.removeItem(at: file.url) } }
+                try Task.checkCancellation()
+                let result = try await LyricCalibrationAudio.regenerate(file, document: document, modelDirectory: modelDirectory,
+                                                                       separationModel: separationModel, backend: backend, englishSplit: englishSplit) { [weak self] progress in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.calibrationRequest == request, self.lyricCalibration.isRegenerating else { return }
+                        self.lyricRegenerationProgress = progress
+                    }
+                }
+                guard let self, !Task.isCancelled, self.calibrationRequest == request,
+                      self.lyricOffsetKey == key, self.lyrics == document else { return }
+                self.applyRegeneratedLyrics(result, replacing: document, for: track)
+            } catch {
+                guard let self, !Task.isCancelled, self.calibrationRequest == request else { return }
+                self.cancelLyricCalibration()
+                self.onMessage?("逐字歌词生成失败：\(ErrorText.describe(error))")
+            }
+        }
+    }
+
+    @discardableResult
+    func applyRegeneratedLyrics(_ result: LyricsAIAlignmentResult, replacing document: LyricsDocument, for track: TrackRef) -> Bool {
+        guard current?.id == track, lyrics == document else { return false }
+        let original = lyricsBeforeRegeneration ?? (document, lyricsOrigin, lyricOffset)
+        cancelLyricCalibration()
+        lyricsTask?.cancel()
+        lyricsLoading = false
+        setLyrics(result.draft.document(), origin: lyricsOrigin)
+        lyricsBeforeRegeneration = original
+        setLyricOffset(0, calibrated: true)
+        onMessage?("已生成 \(result.alignedLines) 行逐字歌词，请试听核对，可从校准菜单恢复原歌词")
+        return true
+    }
+
+    func restoreLyricsBeforeRegeneration() {
+        guard let original = lyricsBeforeRegeneration else { return }
+        lyricsBeforeRegeneration = nil
+        cancelLyricCalibration()
+        setLyrics(original.document, origin: original.origin)
+        setLyricOffset(original.offset)
+        onMessage?("已恢复生成前的歌词")
     }
 
     private func applyCalibration(_ result: LyricsCalibration) {

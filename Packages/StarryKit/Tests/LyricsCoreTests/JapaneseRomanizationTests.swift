@@ -3,6 +3,14 @@ import Testing
 @testable import LyricsCore
 
 struct JapaneseRomanizationTests {
+    @Test func japaneseDetectionUsesPrimaryLyricsAndReadings() {
+        var line = LyricLine.plain(id: 0, start: 0, end: 3, text: "这一路上走走停停", translation: "君の名前を呼ぶ")
+        line.background = .init(start: 0, end: 3, words: [.init(start: 0, end: 3, text: "きっと")])
+        #expect(!LyricsDocument(format: .lrc, lines: [line]).hasJapanese)
+        line.words = [.init(start: 0, end: 3, text: "東京", syllables: [.init(start: 0, end: 3, text: "東京", ruby: [.init(start: 0, end: 3, text: "とうきょう")])])]
+        #expect(LyricsDocument(format: .ttml, lines: [line]).hasJapanese)
+    }
+
     @Test func readsKanjiCompoundsInJapanese() {
         #expect(JapaneseRomanization.romanize("星空") == "hoshizora")
         #expect(JapaneseRomanization.romanize("東京") == "toukyou")
