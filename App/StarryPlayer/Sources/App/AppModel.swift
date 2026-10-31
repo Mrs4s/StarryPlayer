@@ -622,7 +622,7 @@ final class AppModel {
         let cache = LyricsCache(directory: keepsData ? LyricsCache.defaultDirectory : nil)
         lyricsCache = cache
         rebuildLyricsResolver()
-        lyricPins = LyricSourcePins(directory: keepsData ? DataDirectory() : nil)
+        player.lyricPins = LyricSourcePins(directory: keepsData ? DataDirectory() : nil)
         player.loadLyrics = { [weak self] track in
             guard let self, let lyrics = lyricsResolver else { return AsyncStream { $0.finish() } }
             let options = lyricOptions()
@@ -812,7 +812,7 @@ final class AppModel {
 
     private(set) var lyricsCache: LyricsCache?
     @ObservationIgnored private var lyricsResolver: LyricsResolver?
-    @ObservationIgnored private(set) var lyricPins = LyricSourcePins(directory: nil)
+    var lyricPins: LyricSourcePins { player.lyricPins }
     private var appliedLyricOptions = LyricsResolverOptions()
 
     func lyricCandidateSources(for track: Track) -> [LyricsCandidateSource] {

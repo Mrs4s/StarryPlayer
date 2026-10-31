@@ -173,9 +173,10 @@ final class PlayerController {
     private var seekCount = 0
     @ObservationIgnored private(set) var systemMediaControls: SystemMediaControls?
     @ObservationIgnored var lyricOffsets = LyricOffsetStore(directory: nil)
+    @ObservationIgnored var lyricPins = LyricSourcePins(directory: nil)
     private var calibrationTask: Task<Void, Never>?
     @ObservationIgnored private var calibrationRequest = UUID()
-    private var lyricsBeforeRegeneration: (document: LyricsDocument, origin: LyricsOrigin?, offset: TimeInterval)?
+    private var lyricsBeforeRegeneration: (document: LyricsDocument, origin: LyricsOrigin?, offset: TimeInterval, pin: LyricsPin?)?
     private var awaitsAddress = false
 
     private static let volumeKey = "starry.volume"
@@ -1130,22 +1131,27 @@ final class PlayerController {
 
     @discardableResult
     func applyRegeneratedLyrics(_ result: LyricsAIAlignmentResult, replacing document: LyricsDocument, for track: TrackRef) -> Bool {
-        guard current?.id == track, lyrics == document else { return false }
-        let original = lyricsBeforeRegeneration ?? (document, lyricsOrigin, lyricOffset)
+        guard let current, current.id == track, lyrics == document else { return false }
+        let original = lyricsBeforeRegeneration ?? (document, lyricsOrigin, lyricOffset, lyricPins.pin(for: track))
+        let generated = result.draft.document()
+        let name = current.title.replacingOccurrences(of: "/", with: "／").replacingOccurrences(of: ":", with: "：") + ".ttml"
+        let file = LyricsFile(name: name, text: TTMLWriter.write(generated, duration: current.duration > 0 ? current.duration : nil))
         cancelLyricCalibration()
         lyricsTask?.cancel()
         lyricsLoading = false
-        setLyrics(result.draft.document(), origin: lyricsOrigin)
+        lyricPins.set(.file(file), for: track)
+        setLyrics(generated, origin: .file(file.name))
         lyricsBeforeRegeneration = original
         setLyricOffset(0, calibrated: true)
-        onMessage?("已生成 \(result.alignedLines) 行逐字歌词，请试听核对，可从校准菜单恢复原歌词")
+        onMessage?("已生成并保存 \(result.alignedLines) 行逐字歌词，请试听核对，可从校准菜单恢复原歌词")
         return true
     }
 
     func restoreLyricsBeforeRegeneration() {
-        guard let original = lyricsBeforeRegeneration else { return }
+        guard let current, let original = lyricsBeforeRegeneration else { return }
         lyricsBeforeRegeneration = nil
         cancelLyricCalibration()
+        lyricPins.set(original.pin, for: current.id)
         setLyrics(original.document, origin: original.origin)
         setLyricOffset(original.offset)
         onMessage?("已恢复生成前的歌词")
