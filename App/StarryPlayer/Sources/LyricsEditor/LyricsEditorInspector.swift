@@ -32,14 +32,23 @@ struct LyricsEditorInspector: View {
                     TimeField(value: syllable.end, placeholder: "结束") { set(\.end, $0, at: position) }
                 }
                 .frame(height: 28)
-                if let run = session.sharedRubyRun(at: position) {
-                    let positions = run.map { LyricsDraft.Position(line: position.line, syllable: $0) }
-                    LineTextField(placeholder: "\(run.count) 个音节共享的注音，用 | 分段，如 des|ti|ny",
-                                  value: session.draft.rubyGroup(at: position) == run ? session.draft.editableRuby(at: position) : "",
-                                  id: positions.map { session.draft[$0].id }, focusRequest: session.rubyFocusRequest) { setGroupRuby($0, over: positions) }
-                } else {
-                    LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
+                HStack(spacing: 6) {
+                    if let run = session.sharedRubyRun(at: position) {
+                        let positions = run.map { LyricsDraft.Position(line: position.line, syllable: $0) }
+                        LineTextField(placeholder: "\(run.count) 个音节共享的注音，用 | 分段，如 des|ti|ny",
+                                      value: session.draft.rubyGroup(at: position) == run ? session.draft.editableRuby(at: position) : session.draft.ownRubyText(over: positions),
+                                      id: positions.map { session.draft[$0].id }, focusRequest: session.rubyFocusRequest) { setGroupRuby($0, over: positions) }
+                    } else {
+                        LineTextField(placeholder: "注音，用 | 分段，如 せ|ん", value: LyricsDraft.editableRuby(of: syllable), id: syllable.id, focusRequest: session.rubyFocusRequest) { setRuby($0, at: position) }
+                    }
+                    IconButton(systemName: "scissors", size: 26, iconSize: 12, help: "把假名注音按音拍拆成一段一段，已有的时间按字分配，便于逐段打轴（可撤销）") {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        session.splitRubyIntoMorae([position])
+                    }
+                    .disabled(!session.draft.hasRuby(at: position))
+                    .accessibilityLabel("按假名拆分注音")
                 }
+                if let ruby = session.selectedRuby, ruby.position == position { rubyPieceRow(ruby) }
                 HStack(spacing: 10) {
                     Text("演唱者").font(.system(size: 12)).foregroundStyle(theme.onSurfaceVariant)
                     LyricsEditorRolePicker(session: session, line: line, manage: manageRoles)
@@ -111,8 +120,30 @@ struct LyricsEditorInspector: View {
     private func set(_ key: WritableKeyPath<LyricsDraft.Syllable, TimeInterval?>, _ value: TimeInterval?, at position: LyricsDraft.Position) {
         session.edit { draft in
             guard draft.contains(position) else { return }
+            let original = draft.lines[position.line]
             draft[position][keyPath: key] = value
+            draft.lines[position.line] = draft.lines[position.line].keepingRubyTiming(from: original)
         }
+    }
+
+    private func rubyPieceRow(_ ruby: LyricsEditorSession.RubySelection) -> some View {
+        let line = session.draft.lines[ruby.position.line]
+        let pieces = line.ruby(of: ruby.annotation)
+        let base = line.rubyBase(of: ruby.annotation)
+        let times = base.map { line.rubyTimes(of: ruby.annotation, base: $0) }
+        return HStack(spacing: 8) {
+            Text("注音「\(pieces[ruby.piece].text.trimmingCharacters(in: .whitespaces))」\(ruby.piece + 1)/\(pieces.count)")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.onSurfaceVariant)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            TimeField(value: times?[ruby.piece].start, placeholder: "开始") { session.setRubyTime(.start, to: $0) }
+            Text("–").foregroundStyle(theme.onSurfaceVariant)
+            TimeField(value: times?[ruby.piece].end, placeholder: "结束") { session.setRubyTime(.end, to: $0) }
+        }
+        .frame(height: 28)
+        .disabled(base == nil)
+        .help(base == nil ? "音节还没有结束时间，先打上结束时间再调整注音" : "这一段注音的开始和结束时间，不会越过相邻的注音段和音节两端")
     }
 
     private func setRuby(_ text: String, at position: LyricsDraft.Position) {

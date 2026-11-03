@@ -97,7 +97,7 @@ struct LyricsTimelineAdjustment {
                 line.syllables[k].end = moved(line.syllables[k].end)
             }
         }
-        return line
+        return part == .start || part == .end ? line.keepingRubyTiming(from: original) : line
     }
 
     @MainActor @discardableResult

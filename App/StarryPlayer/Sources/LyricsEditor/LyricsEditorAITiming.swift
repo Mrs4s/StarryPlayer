@@ -19,6 +19,7 @@ struct LyricsEditorAITiming: View {
     @AppStorage(Self.backendKey) private var backend = LyricsAIBackend.neuralEngine
     @AppStorage(Self.englishSplitKey) private var englishSplit = LyricsAIEnglishSplit.automatic
     @State private var resplitSyllables = false
+    @State private var splitsRubyMorae = false
 
     private enum Stage: Hashable { case setup, working, result }
 
@@ -32,7 +33,7 @@ struct LyricsEditorAITiming: View {
 
     private var directory: URL? { modelPath.isEmpty ? nil : URL(fileURLWithPath: modelPath, isDirectory: true) }
     private var configuration: LyricsEditorAITimingState.Configuration? {
-        directory.map { .init(directory: $0, backend: backend, resplitSyllables: resplitSyllables, englishSplit: englishSplit) }
+        directory.map { .init(directory: $0, backend: backend, resplitSyllables: resplitSyllables, englishSplit: englishSplit, splitsRubyMorae: splitsRubyMorae) }
     }
     private var supported: Bool {
         if #available(macOS 15, *) { return true }
@@ -83,6 +84,7 @@ struct LyricsEditorAITiming: View {
         .onChange(of: modelPath) { _, _ in state.validate(directory) }
         .onChange(of: backend) { _, _ in state.invalidate() }
         .onChange(of: resplitSyllables) { _, _ in state.invalidate() }
+        .onChange(of: splitsRubyMorae) { _, _ in state.invalidate() }
         .onChange(of: englishSplit) { _, _ in state.invalidate() }
         .onDisappear { state.cancel() }
     }
@@ -141,6 +143,21 @@ struct LyricsEditorAITiming: View {
                 .disabled(state.isWorking)
                 .opacity(state.isWorking ? 0.5 : 1)
                 .help("默认保留原有切分。开启后重新拆分主歌词；无法对应到新字块的注音会重新推断，结果可预览并按行应用。")
+            }
+            if session.draft.lines.contains(where: { !$0.rubyAnnotations.isEmpty }) {
+                Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
+                settingRow("character.textbox") {
+                    Text("注音逐假名计时")
+                } detail: {
+                    Text("把假名注音按音拍拆开，每个假名分别对齐")
+                } trailing: {
+                    AICheckbox(value: splitsRubyMorae ? .on : .off, label: "注音逐假名计时") {
+                        splitsRubyMorae.toggle()
+                    }
+                    .disabled(state.isWorking)
+                    .opacity(state.isWorking ? 0.5 : 1)
+                    .help("默认保留注音原有的分段。开启后，假名注音按音拍拆开（如 せん → せ|ん），每个假名都有自己的时间；拉丁字母等其他注音保持不变。结果可预览并按行应用。")
+                }
             }
         }
         .aiCard(theme)

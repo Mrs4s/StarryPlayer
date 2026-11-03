@@ -11,6 +11,7 @@ struct LyricsTimelineSurface: NSViewRepresentable {
     let viewport: LyricsTimelineViewport
     var revision: Int
     var caret: LyricsDraft.Position?
+    var rubyPiece: Int?
     var range: ClosedRange<TimeInterval>
     var theme: Theme
     var accent: NSColor
@@ -41,6 +42,30 @@ final class LyricsTimelineView: NSView {
         var label: NSAttributedString
         var reviewNotes: [String]
         var mark = Mark.none
+        var rubyBand: CGFloat = 0
+    }
+    private struct RubyBand {
+        var line: Int
+        var annotation: LyricsDraft.RubyAnnotation
+        var rect: NSRect
+        var pieces: [NSRect]
+        var times: [LyricRuby]
+        var labels: [NSAttributedString]
+        var timed: Bool
+        var editable: Bool
+        var base: ClosedRange<TimeInterval>
+    }
+    private struct RubyDrag {
+        var edit: LyricsTimelineRubyAdjustment
+        var origin: CGFloat
+        var translation: CGFloat = 0
+        var onsets: [TimeInterval]
+        var snapping = true
+        var activeOnsets: [TimeInterval] { snapping ? onsets : [] }
+    }
+    private enum RubyHit {
+        case edge(band: Int, piece: Int, edge: LyricsDraft.RubyEdge)
+        case piece(band: Int, piece: Int)
     }
     private struct Drag {
         var edit: LyricsTimelineAdjustment
@@ -78,7 +103,9 @@ final class LyricsTimelineView: NSView {
     }
     private var configuration: LyricsTimelineSurface?
     private var blocks: [Block] = []
+    private var bands: [RubyBand] = []
     private var drag: Drag?
+    private var rubyDrag: RubyDrag?
     private var placement: Placement?
     private var scrubbing = false
     private var clockToken: UUID?
@@ -122,12 +149,13 @@ final class LyricsTimelineView: NSView {
         if clockChanged { disconnect() }
         if let drag, drag.edit.revision != new.revision { cancelInteraction() }
         if let placement, placement.edit.revision != new.revision { cancelInteraction() }
+        if let rubyDrag, rubyDrag.edit.revision != new.revision { cancelInteraction() }
         configuration = new
         if clockChanged { connect() }
         if old?.revision != new.revision { rebuildTray() }
         if old?.revision != new.revision || old?.caret != new.caret || old?.range != new.range
             || old?.theme != new.theme || old?.onSpectrogram != new.onSpectrogram || old?.accent != new.accent
-            || old?.onsets != new.onsets || old?.aiReviewNotes != new.aiReviewNotes {
+            || old?.onsets != new.onsets || old?.aiReviewNotes != new.aiReviewNotes || old?.rubyPiece != new.rubyPiece {
             rebuildBlocks()
         }
         if old?.revision != new.revision || old?.caret != new.caret { revealTrayTarget() }
@@ -159,7 +187,7 @@ final class LyricsTimelineView: NSView {
         super.layout()
         guard measuredSize != bounds.size else { return }
         measuredSize = bounds.size
-        if drag != nil || scrubbing || placement != nil { cancelInteraction() }
+        if drag != nil || scrubbing || placement != nil || rubyDrag != nil { cancelInteraction() }
         trayOffset = clampedTrayOffset(trayOffset)
         rebuildBlocks()
         revealTrayTarget()
@@ -182,6 +210,7 @@ final class LyricsTimelineView: NSView {
     private func rebuildBlocks() {
         guard let c = configuration, scale > 0 else { return }
         blocks = []
+        bands = []
         hints = []
         lanes = c.session.draft.lanes
         laneHeight = min(74, max(trayTop - 34, 30) / CGFloat(lanes.count))
@@ -193,7 +222,8 @@ final class LyricsTimelineView: NSView {
         let caretLine = (c.session.caret ?? c.session.lastStarted)?.line
         let ranges = c.session.timedRanges
         for index in c.session.draft.lines.indices
-        where index == caretLine || index == drag?.edit.position.line || index == placement?.edit.line || (ranges[index]?.overlaps(c.range) ?? false) {
+        where index == caretLine || index == drag?.edit.position.line || index == placement?.edit.line || index == rubyDrag?.edit.line
+            || (ranges[index]?.overlaps(c.range) ?? false) {
             appendBlocks(ofLine: index)
         }
         rebuildAccessibility()
@@ -202,7 +232,9 @@ final class LyricsTimelineView: NSView {
 
     private func appendBlocks(ofLine index: Int) {
         guard let c = configuration else { return }
-        if let drag, drag.edit.position.line == index {
+        if let rubyDrag, rubyDrag.edit.line == index {
+            appendBlocks(rubyDrag.edit.preview(translation: rubyDrag.translation, onsets: rubyDrag.activeOnsets), index: index)
+        } else if let drag, drag.edit.position.line == index {
             if drag.lifting {
                 let s = drag.edit.position.syllable
                 appendBlocks(drag.edit.original, index: index, marking: drag.edit.part == .line ? drag.edit.original.syllables.indices : s..<(s + 1), as: .leaving)
@@ -233,6 +265,39 @@ final class LyricsTimelineView: NSView {
             blocks.append(Block(position: .init(line: index, syllable: s), syllable: syllable, rect: rect, background: slot.background,
                                 label: label, reviewNotes: c.aiReviewNotes[syllable.id] ?? [], mark: marked.contains(s) ? mark : .none))
         }
+        appendRubyBands(line, index: index, row: row, background: slot.background, interactive: marked.isEmpty || mark == .none)
+    }
+
+    private func appendRubyBands(_ line: LyricsDraft.Line, index: Int, row: (y: CGFloat, height: CGFloat), background: Bool, interactive: Bool) {
+        guard let c = configuration else { return }
+        let compact = row.height < 30
+        let height = compact ? max(5, floor(row.height * 0.28)) : min(15, floor(row.height * 0.36))
+        let font = NSFont.systemFont(ofSize: background ? 9 : 10, weight: .semibold)
+        for annotation in line.rubyAnnotations {
+            guard let start = line.syllables[annotation.syllables.lowerBound].start,
+                  let end = displayEnd(of: annotation.syllables.upperBound, in: line), end > start,
+                  start <= c.range.upperBound, end >= c.range.lowerBound else { continue }
+            let times = line.rubyTimes(of: annotation, base: start...end)
+            guard !times.isEmpty else { continue }
+            let labels = compact ? [] : times.map {
+                NSAttributedString(string: $0.text.trimmingCharacters(in: .whitespaces), attributes: [
+                    .font: font, .foregroundColor: c.onSpectrogram ? NSColor.white : NSColor(c.theme.onSurface)
+                ])
+            }
+            bands.append(RubyBand(line: index, annotation: annotation,
+                                  rect: NSRect(x: x(start), y: row.y, width: max(x(end) - x(start), 8), height: height),
+                                  pieces: times.map { NSRect(x: x($0.start), y: row.y, width: max(x($0.end) - x($0.start), 1), height: height) },
+                                  times: times, labels: labels, timed: LyricsDraft.Ruby.isTimed(line.ruby(of: annotation)),
+                                  editable: interactive && line.rubyBase(of: annotation) != nil, base: start...end))
+            for k in blocks.indices where blocks[k].position.line == index && annotation.syllables.contains(blocks[k].position.syllable) {
+                blocks[k].rubyBand = height
+            }
+        }
+    }
+
+    private func displayEnd(of s: Int, in line: LyricsDraft.Line) -> TimeInterval? {
+        guard let start = line.syllables[s].start else { return nil }
+        return line.syllables[s].end ?? (s + 1 < line.syllables.count ? line.syllables[s + 1].start : nil) ?? start + 0.3
     }
 
     private func laneRow(_ lane: Int, background: Bool) -> (y: CGFloat, height: CGFloat) {
@@ -278,11 +343,12 @@ final class LyricsTimelineView: NSView {
     }
 
     private func refreshLine(_ index: Int) {
-        let oldRects = blocks.filter { $0.position.line == index }.map(\.rect)
+        let oldRects = blocks.filter { $0.position.line == index }.map(\.rect) + bands.filter { $0.line == index }.map(\.rect)
         blocks.removeAll { $0.position.line == index }
+        bands.removeAll { $0.line == index }
         appendBlocks(ofLine: index)
         blocks.sort { $0.position < $1.position }
-        for rect in oldRects + blocks.filter({ $0.position.line == index }).map(\.rect) {
+        for rect in oldRects + blocks.filter({ $0.position.line == index }).map(\.rect) + bands.filter({ $0.line == index }).map(\.rect) {
             setNeedsDisplay(rect.insetBy(dx: -2, dy: -2))
         }
     }
@@ -300,6 +366,16 @@ final class LyricsTimelineView: NSView {
         self.drag = drag
         setTargetLane(target.lane)
         refreshLine(drag.edit.position.line)
+    }
+
+    private func previewRubyDrag(at point: NSPoint, snapping: Bool) {
+        guard var rubyDrag else { return }
+        rubyDrag.translation = point.x - rubyDrag.origin
+        rubyDrag.snapping = snapping
+        self.rubyDrag = rubyDrag
+        refreshLine(rubyDrag.edit.line)
+        let line = rubyDrag.edit.preview(translation: rubyDrag.translation, onsets: rubyDrag.activeOnsets)
+        setGuide(rubyDrag.edit.edgeTime(in: line).map { (x: x($0), time: $0) })
     }
 
     private func updatePlacement(at point: NSPoint, snapping: Bool) {
@@ -360,6 +436,9 @@ final class LyricsTimelineView: NSView {
         for block in blocks where block.rect.insetBy(dx: -2, dy: -2).intersects(dirtyRect) {
             drawBlock(block, caretLine: caretLine)
         }
+        for band in bands where band.rect.insetBy(dx: -2, dy: -2).intersects(dirtyRect) {
+            drawBand(band, caretLine: caretLine)
+        }
         drawGuide(in: dirtyRect)
         if dirtyRect.maxY > trayTop { drawTray(in: dirtyRect) }
     }
@@ -400,10 +479,11 @@ final class LyricsTimelineView: NSView {
         labelRect.clip()
         NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         let size = block.label.size()
-        block.label.draw(at: NSPoint(x: max(labelRect.minX + 1, labelRect.midX - size.width / 2), y: block.rect.midY - size.height / 2))
+        let labelMidY = block.rect.minY + block.rubyBand + (block.rect.height - block.rubyBand) / 2
+        block.label.draw(at: NSPoint(x: max(labelRect.minX + 1, labelRect.midX - size.width / 2), y: labelMidY - size.height / 2))
         NSGraphicsContext.restoreGraphicsState()
         if badge {
-            let rect = NSRect(x: block.rect.maxX - 14, y: block.rect.minY + 4, width: 10, height: 10)
+            let rect = NSRect(x: block.rect.maxX - 14, y: block.rect.minY + block.rubyBand + 4, width: 10, height: 10)
             warning.setFill()
             NSBezierPath(ovalIn: rect).fill()
             let mark = NSAttributedString(string: "!", attributes: [
@@ -412,6 +492,44 @@ final class LyricsTimelineView: NSView {
             ])
             let size = mark.size()
             mark.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        }
+    }
+
+    private func drawBand(_ band: RubyBand, caretLine: Int?) {
+        guard let c = configuration else { return }
+        let alpha: CGFloat = band.line == caretLine || activeLines.contains(band.line) ? 1 : 0.5
+        let ink = c.onSpectrogram ? NSColor.white : NSColor(c.theme.onSurface)
+        let tint = c.onSpectrogram ? NSColor.black.withAlphaComponent(0.4) : NSColor(c.theme.primary).withAlphaComponent(0.12)
+        let strip = band.rect.insetBy(dx: 1, dy: 1)
+        tint.withAlphaComponent(tint.alphaComponent * alpha).setFill()
+        NSBezierPath(roundedRect: strip, xRadius: 4, yRadius: 4).fill()
+        let selected = c.session.selectedRuby.flatMap { $0.position.line == band.line && $0.annotation == band.annotation ? $0.piece : nil }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        strip.clip()
+        for (k, rect) in band.pieces.enumerated() {
+            let fill = k == selected ? c.accent.withAlphaComponent(0.55) : ink.withAlphaComponent(band.timed ? 0.14 : 0.07)
+            fill.withAlphaComponent(fill.alphaComponent * alpha).setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 1), xRadius: 3, yRadius: 3).fill()
+        }
+        let dividers = NSBezierPath()
+        func divide(at x: CGFloat) {
+            dividers.move(to: NSPoint(x: x + 0.5, y: strip.minY + 1))
+            dividers.line(to: NSPoint(x: x + 0.5, y: strip.maxY - 1))
+        }
+        for (k, rect) in band.pieces.enumerated() {
+            if k > 0 { divide(at: rect.minX) }
+            if k + 1 < band.pieces.count, band.pieces[k + 1].minX - rect.maxX > 1 { divide(at: rect.maxX) }
+        }
+        dividers.lineWidth = 1
+        if !band.timed { dividers.setLineDash([2, 2], count: 2, phase: 0) }
+        ink.withAlphaComponent(0.6 * alpha).setStroke()
+        dividers.stroke()
+        NSGraphicsContext.current?.cgContext.setAlpha(alpha)
+        for (k, label) in band.labels.enumerated() {
+            let rect = band.pieces[k], size = label.size()
+            guard size.width + 4 <= rect.width else { continue }
+            label.draw(at: NSPoint(x: rect.midX - size.width / 2, y: strip.midY - size.height / 2))
         }
     }
 
@@ -642,6 +760,87 @@ final class LyricsTimelineView: NSView {
     // MARK: Pointer
 
     private func hit(_ point: NSPoint) -> Block? { blocks.last { $0.rect.contains(point) } }
+
+    private func rubyHit(_ point: NSPoint) -> RubyHit? {
+        guard let index = bands.lastIndex(where: { $0.rect.insetBy(dx: -4, dy: 0).contains(point) }) else { return nil }
+        let band = bands[index]
+        if band.editable {
+            var best: (piece: Int, edge: LyricsDraft.RubyEdge, distance: CGFloat)?
+            for (k, rect) in band.pieces.enumerated() {
+                let reach = min(5, max(2, rect.width / 3))
+                for (edge, x) in [(LyricsDraft.RubyEdge.start, rect.minX), (.end, rect.maxX)] {
+                    let distance = abs(point.x - x)
+                    if distance <= reach, distance < best?.distance ?? .infinity { best = (k, edge, distance) }
+                }
+            }
+            if let best { return .edge(band: index, piece: best.piece, edge: best.edge) }
+        }
+        guard let piece = band.pieces.firstIndex(where: { point.x >= $0.minX && point.x <= $0.maxX }) else { return nil }
+        return .piece(band: index, piece: piece)
+    }
+
+    private func syllableEdge(of band: RubyBand, piece: Int, edge: LyricsDraft.RubyEdge) -> (position: LyricsDraft.Position, part: LyricsTimelineAdjustment.Part)? {
+        switch edge {
+        case .start where piece == 0 && abs(band.times[0].start - band.base.lowerBound) < 0.002:
+            return (.init(line: band.line, syllable: band.annotation.syllables.lowerBound), .start)
+        case .end where piece == band.times.count - 1 && abs(band.times[piece].end - band.base.upperBound) < 0.002:
+            return (.init(line: band.line, syllable: band.annotation.syllables.upperBound), .end)
+        default:
+            return nil
+        }
+    }
+
+    private func syllable(at x: CGFloat, in band: RubyBand) -> LyricsDraft.Position {
+        let s = blocks.last { $0.position.line == band.line && band.annotation.syllables.contains($0.position.syllable) && $0.rect.minX <= x && x <= $0.rect.maxX }?
+            .position.syllable ?? band.annotation.syllables.lowerBound
+        return .init(line: band.line, syllable: s)
+    }
+
+    private func beginDrag(_ edit: LyricsTimelineAdjustment, at point: NSPoint, snapping: Bool) {
+        guard let c = configuration else { return }
+        drag = Drag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: snapping)
+        c.viewport.interactionRange = c.range
+        c.viewport.hold(c.range)
+        c.session.caret = edit.position
+        c.session.rubyPiece = nil
+        needsDisplay = true
+    }
+
+    private func pressRuby(_ target: RubyHit, at point: NSPoint, event: NSEvent) -> Bool {
+        guard let c = configuration else { return false }
+        let snapping = !event.modifierFlags.contains(.option)
+        switch target {
+        case .edge(let index, let piece, let edge):
+            let band = bands[index]
+            if let outer = syllableEdge(of: band, piece: piece, edge: edge) {
+                guard let edit = LyricsTimelineAdjustment(session: c.session, position: outer.position, part: outer.part,
+                                                          range: c.range, width: bounds.width) else { return false }
+                beginDrag(edit, at: point, snapping: snapping)
+                c.session.rubyPiece = piece
+                return true
+            }
+            guard let edit = LyricsTimelineRubyAdjustment(session: c.session, line: band.line, annotation: band.annotation, piece: piece,
+                                                          edge: edge, range: c.range, width: bounds.width) else { return false }
+            rubyDrag = RubyDrag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: snapping)
+            c.viewport.interactionRange = c.range
+            c.viewport.hold(c.range)
+            c.session.selectRuby(piece: piece, at: syllable(at: point.x, in: band))
+            needsDisplay = true
+            return true
+        case .piece(let index, let piece):
+            let band = bands[index]
+            let position = syllable(at: point.x, in: band)
+            if let block = hit(point), block.position.line == band.line,
+               let edit = LyricsTimelineAdjustment(session: c.session, position: block.position, part: .body, range: c.range, width: bounds.width) {
+                beginDrag(edit, at: point, snapping: snapping)
+            } else {
+                c.viewport.hold(c.range)
+            }
+            c.session.selectRuby(piece: piece, at: position)
+            needsDisplay = true
+            return true
+        }
+    }
     private func part(at point: NSPoint, in rect: NSRect) -> LyricsTimelineAdjustment.Part {
         let edge = min(7, rect.width / 3)
         if point.x < rect.minX + edge { return .start }
@@ -663,14 +862,11 @@ final class LyricsTimelineView: NSView {
             placement = Placement(edit: edit, origin: point, snapping: !event.modifierFlags.contains(.option), edges: edges, onsets: hints.map(\.time))
             return
         }
+        if !event.modifierFlags.contains(.command), let ruby = rubyHit(point), pressRuby(ruby, at: point, event: event) { return }
         if let block = hit(point), let edit = LyricsTimelineAdjustment(session: c.session, position: block.position,
                                                                        part: event.modifierFlags.contains(.command) ? .line : part(at: point, in: block.rect),
                                                                        range: c.range, width: bounds.width) {
-            drag = Drag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: !event.modifierFlags.contains(.option))
-            c.viewport.interactionRange = c.range
-            c.viewport.hold(c.range)
-            c.session.caret = block.position
-            needsDisplay = true
+            beginDrag(edit, at: point, snapping: !event.modifierFlags.contains(.option))
         } else if c.canPlay {
             scrubbing = true
             c.viewport.interactionRange = c.range
@@ -683,6 +879,7 @@ final class LyricsTimelineView: NSView {
         let snapping = !event.modifierFlags.contains(.option)
         if placement != nil { updatePlacement(at: point, snapping: snapping) }
         else if drag != nil { previewDrag(at: point, snapping: snapping) }
+        else if rubyDrag != nil { previewRubyDrag(at: point, snapping: snapping) }
         else if scrubbing { scrub(at: point) }
     }
 
@@ -717,6 +914,10 @@ final class LyricsTimelineView: NSView {
                 let lane = drag.edit.part == .line ? laneChange(forLine: drag.edit.position.line, at: point.y).change : .unchanged
                 drag.edit.commit(translation: point.x - drag.origin, onsets: snapping ? drag.onsets : [], lane: lane, in: c.session)
             }
+        } else if let rubyDrag {
+            self.rubyDrag = nil
+            setGuide(nil)
+            rubyDrag.edit.commit(translation: point.x - rubyDrag.origin, onsets: snapping ? rubyDrag.onsets : [], in: c.session)
         } else if scrubbing {
             scrub(at: point)
             scrubbing = false
@@ -732,7 +933,7 @@ final class LyricsTimelineView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        guard let c = configuration, drag == nil, placement == nil, !scrubbing, scale > 0 else { return }
+        guard let c = configuration, drag == nil, placement == nil, rubyDrag == nil, !scrubbing, scale > 0 else { return }
         let precise = event.hasPreciseScrollingDeltas
         if convert(event.locationInWindow, from: nil).y >= trayTop {
             let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
@@ -757,7 +958,7 @@ final class LyricsTimelineView: NSView {
     }
 
     override func magnify(with event: NSEvent) {
-        guard let c = configuration, drag == nil, placement == nil, !scrubbing, scale > 0, event.magnification > -1 else { return }
+        guard let c = configuration, drag == nil, placement == nil, rubyDrag == nil, !scrubbing, scale > 0, event.magnification > -1 else { return }
         c.viewport.zoom(c.range, by: 1 / (1 + event.magnification), around: time(at: convert(event.locationInWindow, from: nil)),
                         duration: LyricsTimelineViewport.duration(of: c.session, audio: c.audio))
     }
@@ -769,9 +970,10 @@ final class LyricsTimelineView: NSView {
 
     override func cancelOperation(_ sender: Any?) { cancelInteraction() }
     private func cancelInteraction() {
-        guard drag != nil || scrubbing || placement != nil else { return }
+        guard drag != nil || scrubbing || placement != nil || rubyDrag != nil else { return }
         drag = nil
         placement = nil
+        rubyDrag = nil
         scrubbing = false
         targetLane = nil
         guide = nil
@@ -802,6 +1004,19 @@ final class LyricsTimelineView: NSView {
                 NSCursor.arrow.set()
                 toolTip = "暂存区：没打点的音节在这里，拖到时间轴上放置；时间轴上的字块拖到这里可以暂时移出，再放回时保留原来的长度"
             }
+        } else if let ruby = rubyHit(point) {
+            let (band, piece, onEdge): (RubyBand, Int, Bool) = switch ruby {
+            case .edge(let index, let piece, _): (bands[index], piece, true)
+            case .piece(let index, let piece): (bands[index], piece, false)
+            }
+            (onEdge ? NSCursor.resizeLeftRight : NSCursor.openHand).set()
+            let time = band.times[piece]
+            var tip = "注音「\(time.text.trimmingCharacters(in: .whitespaces))」\(LyricsEditorFormat.time(time.start, digits: 3)) – \(LyricsEditorFormat.time(time.end, digits: 3))"
+            if !band.timed { tip += "（按字数平分，还没有单独打轴）" }
+            tip += band.editable
+                ? "\n拖动注音之间的分隔线调整边界，按住 Option 跳过吸附；点按选中这一段，可在右下角输入时间"
+                : "\n音节还没有结束时间：先打上结束时间，再调整注音"
+            toolTip = tip
         } else if let block = hit(point) {
             (part(at: point, in: block.rect) == .body ? NSCursor.openHand : NSCursor.resizeLeftRight).set()
             toolTip = "\(LyricsEditorFormat.time(block.syllable.start, digits: 3)) – \(LyricsEditorFormat.time(block.syllable.end, digits: 3))\n⌘ 拖动整行，可上下换轨；拖到下方暂存区移出时间轴"
@@ -824,6 +1039,17 @@ final class LyricsTimelineView: NSView {
                 guard let c = self?.configuration else { return }
                 c.viewport.hold(c.range)
                 c.session.caret = block.position
+            }
+        }
+        for band in bands {
+            for (k, time) in band.times.enumerated() {
+                let position = LyricsDraft.Position(line: band.line, syllable: band.annotation.syllables.lowerBound)
+                accessible.append(LyricsEditorActionElement(host: self, label: "注音「\(time.text.trimmingCharacters(in: .whitespaces))」，\(LyricsEditorFormat.time(time.start, digits: 3)) 至 \(LyricsEditorFormat.time(time.end, digits: 3))",
+                                                            rect: band.pieces[k]) { [weak self] in
+                    guard let c = self?.configuration else { return }
+                    c.viewport.hold(c.range)
+                    c.session.selectRuby(piece: k, at: position)
+                })
             }
         }
         let visible = NSRect(x: Self.trayLeading, y: trayTop, width: max(bounds.width - Self.trayLeading, 0), height: Self.trayHeight)

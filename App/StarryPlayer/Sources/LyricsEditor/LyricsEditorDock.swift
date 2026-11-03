@@ -13,6 +13,7 @@ struct LyricsEditorDock: View {
     @Environment(\.theme) private var theme
     @State private var viewport = LyricsTimelineViewport()
     @AppStorage(LyricsEditorDock.timelineHeightKey) private var timelineHeight = LyricsEditorDock.defaultTimelineHeight
+    @AppStorage(LyricsEditorView.rubyTappingKey) private var tapsRuby = false
     @State private var resizeStart: Double?
     @State private var handleHovered = false
 
@@ -101,14 +102,28 @@ struct LyricsEditorDock: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
+                if hasPiecedRuby {
+                    IconButton(systemName: "character.textbox", size: 30, iconSize: 13, variant: tapsRuby ? .tertiary : .ghost, isActive: tapsRuby,
+                               help: tapsRuby ? "注音逐段打点：开。分成几段的注音逐段打点，第一段就是音节的开始" : "注音逐段打点：关。只按音节打点，注音按字数平分") {
+                        tapsRuby.toggle()
+                    }
+                    .accessibilityLabel("注音逐段打点")
+                    .accessibilityValue(tapsRuby ? "开" : "关")
+                }
                 TimingKey(title: "撤回", key: "⇧⌫", variant: .ghost, help: "撤回上一次打点（⇧⌫）") { session.stepBack() }
-                TimingKey(title: "结束", key: "H", variant: .tertiary, help: "在这里结束刚唱的音节，用于停顿和行尾（H、K 或 ↩）", action: release)
-                TimingKey(title: "打点", key: "F", variant: .filled, help: "开始当前音节，并结束上一个（F、G 或 J）", action: tap)
+                TimingKey(title: "结束", key: "H", variant: .tertiary, help: tapsRuby ? "在这里结束刚唱的音节或注音段，用于停顿和行尾（H、K 或 ↩）" : "在这里结束刚唱的音节，用于停顿和行尾（H、K 或 ↩）", action: release)
+                TimingKey(title: "打点", key: "F", variant: .filled, help: tapsRuby ? "开始当前音节或注音段，并结束上一个（F、G 或 J）" : "开始当前音节，并结束上一个（F、G 或 J）", action: tap)
             }
             .disabled(session.draft.isEmpty)
             .opacity(session.draft.isEmpty ? 0.45 : 1)
         }
         .frame(height: 34)
+    }
+}
+
+extension LyricsEditorDock {
+    fileprivate var hasPiecedRuby: Bool {
+        session.draft.lines.contains { line in line.rubyAnnotations.contains { line.ruby(of: $0).count > 1 } }
     }
 }
 

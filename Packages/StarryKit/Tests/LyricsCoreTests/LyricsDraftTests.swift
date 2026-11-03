@@ -190,7 +190,7 @@ import Testing
         draft.mergeWithNext(at: .init(line: 0, syllable: 0))
         #expect(draft.lines[0].syllables[0].ruby?.map(\.text) == ["く", "る", "よ", "みらい"])
         draft.splitSyllable(at: .init(line: 0, syllable: 0))
-        #expect(draft.lines[0].syllables.allSatisfy { $0.ruby == nil })
+        #expect(draft.lines[0].syllables.map { $0.ruby?.map(\.text) } == [["く"], nil, nil, ["み"], ["らい"]])
     }
 
     @Test func rubyIsEditedAsPiecesSplitByBars() {
@@ -204,8 +204,10 @@ import Testing
         draft.setRuby("せ｜ん|||", at: at)
         #expect(draft[at].ruby == [.init(text: "せ", span: 0...0.3), .init(text: "ん", span: 0.3...1)])
         draft.setRuby("せん", at: at)
-        #expect(draft[at].ruby == [.init(text: "せん")])
+        #expect(draft[at].ruby == [.init(text: "せん", span: 0...1)])
         #expect(LyricsDraft.editableRuby(of: draft[at]) == "せん")
+        draft.setRuby("せ|ん", at: at)
+        #expect(draft[at].ruby == [.init(text: "せ", span: 0...0.5), .init(text: "ん", span: 0.5...1)])
         draft.setRuby(" | ", at: at)
         #expect(draft[at].ruby == nil)
         #expect(LyricsDraft.editableRuby(of: draft[at]) == "")

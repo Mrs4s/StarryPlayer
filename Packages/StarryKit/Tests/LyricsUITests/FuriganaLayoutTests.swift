@@ -85,7 +85,8 @@ import Testing
         #expect(r.furigana.text.rows[0].fragments.allSatisfy { $0.inkMaxX <= 900 })
     }
 
-    private func build(_ l: LyricLine, width: CGFloat = 900) throws -> (LineLayer, LineTextLayout, FuriganaLayout) {
+    private func build(_ l: LyricLine, width: CGFloat = 900, specs custom: LyricsSpecs? = nil) throws -> (LineLayer, LineTextLayout, FuriganaLayout) {
+        let specs = custom ?? self.specs
         let built = try #require(FuriganaLayout.layout(line: l, metrics: metrics(width: width)))
         let layout = VoiceLayout(voice: l, text: built.text, translation: nil, furigana: built.furigana)
         let layer = LineLayer(lineIndex: 0, line: l, main: layout, background: nil, alignment: .left)
@@ -95,7 +96,7 @@ import Testing
     }
 
     @Test(arguments: [CGFloat(900), 140])
-    func rubyHighlightFollowsItsBaseInsteadOfItsOwnTiming(width: CGFloat) throws {
+    func rubyHighlightFollowsItsBaseWhenItsOwnTimingIsUnusable(width: CGFloat) throws {
         var l = line([("揺", ["ゆ"]), ("ら", []), ("め", []), ("く", []), ("囃", ["は", "や", "し"]), ("消", ["き"])], grouped: false)
         for w in l.words.indices {
             for s in l.words[w].syllables.indices {
@@ -112,6 +113,7 @@ import Testing
                 let row = try #require(layer.rows.first { $0.liftsSyllables && $0.syllables.contains { $0.syllableIndex == baseIndex } })
                 let base = try #require(row.syllables.first { $0.syllableIndex == baseIndex })
                 let annotation = try #require(base.ruby)
+                #expect(!annotation.ownsTiming)
                 let baseLayout = try #require(main.rows.first { $0.fragments.contains { $0.syllable == baseIndex } })
                 let baseInk = try #require(ink(baseLayout, baseIndex...baseIndex))
                 let indices = annotation.syllables.map(\.syllableIndex)
@@ -138,6 +140,49 @@ import Testing
                 #expect(annotation.transform.m42 == (time >= base.start ? -specs.syllableLift : 0))
             }
         }
+    }
+
+    private func earlyRuby() -> LyricLine {
+        var l = line([("囃", ["は", "や", "し"]), ("子", [])], grouped: false)
+        for (r, time) in [(0.0, 0.1), (0.1, 0.2), (0.2, 1.0)].enumerated() {
+            l.words[0].syllables[0].ruby[r].start = time.0
+            l.words[0].syllables[0].ruby[r].end = time.1
+        }
+        return l
+    }
+
+    private func rubyRows(_ layer: LineLayer) throws -> (base: RowLayer, ruby: RowLayer) {
+        let row = try #require(layer.rows.first { $0.liftsSyllables && $0.syllables.contains { $0.syllableIndex == 0 } })
+        let base = try #require(row.syllables.first { $0.syllableIndex == 0 })
+        return (row, try #require(base.ruby))
+    }
+
+    @Test func piecedRubyLightsUpAtItsOwnTimes() throws {
+        let (layer, _, furigana) = try build(earlyRuby())
+        let (_, annotation) = try rubyRows(layer)
+        #expect(annotation.ownsTiming)
+        let rubyRow = furigana.text.rows[0]
+        let ya = try #require(ink(rubyRow, 1...1)), reading = try #require(ink(rubyRow, 0...2))
+        layer.updateSyllables(time: 0.2, specs: specs)
+        #expect(abs(annotation.edge - (ya.upperBound - annotation.feather / 2)) < 0.5)
+        layer.updateSyllables(time: 0.05, specs: specs)
+        #expect(annotation.edge < ya.lowerBound)
+        layer.updateSyllables(time: 1, specs: specs)
+        #expect(abs(annotation.edge - reading.upperBound) < 0.5)
+        layer.updateSyllables(time: 0, specs: specs)
+        #expect(abs(annotation.edge - annotation.startEdge) < 0.5)
+    }
+
+    @Test func rubyLightsUpWithItsBaseWhenItsOwnTimingIsSwitchedOff() throws {
+        var specs = self.specs
+        specs.rubyOwnTiming = false
+        let (layer, _, _) = try build(earlyRuby(), specs: specs)
+        let (_, annotation) = try rubyRows(layer)
+        #expect(!annotation.ownsTiming)
+        layer.updateSyllables(time: 0.2, specs: specs)
+        let (ownLayer, _, _) = try build(earlyRuby())
+        ownLayer.updateSyllables(time: 0.2, specs: self.specs)
+        #expect(try rubyRows(ownLayer).ruby.edge > annotation.edge + 5)
     }
 
     private func shared(_ texts: [String], ruby: [String], over run: ClosedRange<Int>) -> LyricLine {

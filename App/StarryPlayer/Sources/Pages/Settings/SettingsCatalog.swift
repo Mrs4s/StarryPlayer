@@ -214,6 +214,9 @@ struct SettingsCatalog {
                 LyricLayerChips()
             },
         ]
+        if settings.lyrics.showRuby {
+            entries.append(toggle("rubyOwnTiming", localizedTitle: LocalizedStringResource("rubyOwnTiming.title", defaultValue: "注音按各段时间亮起", table: "Settings"), detail: LocalizedStringResource("rubyOwnTiming.detail", defaultValue: "分成几段的注音按每段自己的时间逐段亮起；关闭后跟着下方的字一起亮起", table: "Settings"), \.lyrics.rubyOwnTiming, keywords: "注音 振假名 假名 拼音 ruby furigana 时间 逐段 高亮 打轴 timing").nested())
+        }
         if settings.lyrics.performerMarks {
             entries.append(toggle("performerNames", "显示演唱者名字", "在正在唱的行上方标出每段的歌手", \.lyrics.performerNames, keywords: "对唱 合唱 歌手 名字").nested())
             if settings.lyrics.performerNames && settings.lyrics.showRuby {

@@ -268,7 +268,7 @@ struct NowPlayingView: View {
         }
         .opacity(contentIn && chromeVisible ? 1 : 0)
         .background {
-            Color.clear.contentShape(Rectangle()).modifier(WindowDrag())
+            WindowDragArea()
         }
     }
 

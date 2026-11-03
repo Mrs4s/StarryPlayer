@@ -124,6 +124,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         public var performerMarks = true
         public var performerNames = true
         public var hideRubyUnderPerformerNames = false
+        public var rubyOwnTiming = true
         /// 0 uses the preset value.
         public var inactiveOpacity: Double = 0
         public init() {}
@@ -131,7 +132,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         private enum CodingKeys: String, CodingKey {
             case windowedScale, fullscreenScale, autoScale, fontSize, lineSpacing, anchor, alignment, perSyllable, spring, lift, emphasis, glow
             case blurMode, blurRadius, blurMax, showTranslation, showRomanization, showRuby, hoverHighlight, inactiveOpacity
-            case performerMarks, performerNames, hideRubyUnderPerformerNames
+            case performerMarks, performerNames, hideRubyUnderPerformerNames, rubyOwnTiming
         }
 
         public init(from decoder: any Decoder) throws {
@@ -159,6 +160,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
             performerMarks = try c.decodeIfPresent(Bool.self, forKey: .performerMarks) ?? d.performerMarks
             performerNames = try c.decodeIfPresent(Bool.self, forKey: .performerNames) ?? d.performerNames
             hideRubyUnderPerformerNames = try c.decodeIfPresent(Bool.self, forKey: .hideRubyUnderPerformerNames) ?? d.hideRubyUnderPerformerNames
+            rubyOwnTiming = try c.decodeIfPresent(Bool.self, forKey: .rubyOwnTiming) ?? d.rubyOwnTiming
             inactiveOpacity = try c.decodeIfPresent(Double.self, forKey: .inactiveOpacity) ?? d.inactiveOpacity
         }
     }

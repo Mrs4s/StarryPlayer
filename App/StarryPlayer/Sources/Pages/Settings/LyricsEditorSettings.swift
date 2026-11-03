@@ -9,7 +9,7 @@ private enum LyricsEditorPreferences {
     static let keys = [
         LyricsEditorAITiming.backendKey, LyricsEditorAITiming.englishSplitKey,
         LyricsEditorTranslationState.languageKey, LyricsEditorTranslationState.styleKey, LyricsEditorTranslationState.rubyScriptKey,
-        LyricsEditorView.tapLeadKey, LyricsEditorView.autoAlignAfterTimingKey, LyricsEditorTimeline.gainKey,
+        LyricsEditorView.tapLeadKey, LyricsEditorView.autoAlignAfterTimingKey, LyricsEditorView.rubyTappingKey, LyricsEditorTimeline.gainKey,
         LyricsEditorTimeline.onsetHintsKey, LyricsEditorTimeline.onsetSensitivityKey, LyricsEditorTimeline.splitOnsetHintsKey,
     ]
 
@@ -49,6 +49,9 @@ extension SettingsCatalog {
                 },
                 SettingsEntry("lyricsEditorAutoAlign", "打完一行后自动排字", detail: "打点打完一行后，按人声自动排好这一行的逐字时间", keywords: "打点 自动排字 对齐 逐字 校准 歌词编辑器") {
                     StoredSwitch(LyricsEditorView.autoAlignAfterTimingKey)
+                },
+                SettingsEntry("lyricsEditorRubyTapping", "注音逐段打点", detail: "分成几段的注音（如 せ|ん）逐段打点，第一段就是音节的开始；关闭时只按音节打点，注音按字数平分", keywords: "打点 注音 ruby 假名 逐段 振假名 分段 歌词编辑器") {
+                    StoredSwitch(LyricsEditorView.rubyTappingKey)
                 },
                 SettingsEntry("lyricsEditorSpectrogramGain", "频谱亮度", detail: "时间轴频谱的显示亮度，不改变歌词时间", keywords: "频谱 亮度 增益 时间轴 波形 歌词编辑器") {
                     StoredMenu(LyricsEditorTimeline.gainKey, default: Double(Spectrogram.defaultGain), options: LyricsEditorTimeline.gains.map { ($0, LyricsEditorFormat.gain($0)) })

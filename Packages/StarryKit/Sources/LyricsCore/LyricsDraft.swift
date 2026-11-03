@@ -66,7 +66,7 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
             self.span = span
         }
 
-        static func relative(_ ruby: [LyricRuby], start: TimeInterval, end: TimeInterval) -> [Ruby]? {
+        public static func relative(_ ruby: [LyricRuby], start: TimeInterval, end: TimeInterval) -> [Ruby]? {
             guard !ruby.isEmpty else { return nil }
             let length = end - start
             return ruby.map { r in
@@ -75,7 +75,7 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
             }
         }
 
-        static func absolute(_ ruby: [Ruby]?, start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
+        public static func absolute(_ ruby: [Ruby]?, start: TimeInterval, end: TimeInterval) -> [LyricRuby] {
             guard let ruby, !ruby.isEmpty else { return [] }
             let spans = ruby.compactMap(\.span)
             guard spans.count == ruby.count else { return LyricRuby.spread(ruby.map(\.text), start: start, end: end) }
@@ -85,7 +85,7 @@ public struct LyricsDraft: Sendable, Hashable, Codable {
             }
         }
 
-        static func clamped(_ lower: Double, _ upper: Double) -> ClosedRange<Double> {
+        public static func clamped(_ lower: Double, _ upper: Double) -> ClosedRange<Double> {
             let lower = min(max(lower, 0), 1)
             return lower...min(max(upper, lower), 1)
         }
@@ -500,9 +500,8 @@ extension LyricsDraft {
         (syllable.ruby ?? []).map(\.text).joined(separator: "|")
     }
 
-    /// Replaces a syllable's ruby with `text` split at `|` (or `｜`), each piece trimmed; blank
-    /// text removes it. With as many pieces as before, each keeps its timing; otherwise they
-    /// share the syllable by length. Dissolves any shared ruby group.
+    /// `|` and `｜` separate pieces; blank text removes ruby. The same reading keeps character
+    /// timing when resegmented. Dissolves any shared ruby group.
     public mutating func setRuby(_ text: String, at position: Position) {
         let pieces = text.split(whereSeparator: { $0 == "|" || $0 == "｜" })
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -513,13 +512,11 @@ extension LyricsDraft {
             self[position].ruby = nil
             return
         }
-        self[position].ruby = pieces.enumerated().map { k, piece in
-            Ruby(text: piece, span: pieces.count == old.count ? old[k].span : nil)
-        }
+        self[position].ruby = Ruby.resegmented(pieces, from: old)
     }
 
-    /// Splits a syllable into its characters (a word's trailing space stays on the last one),
-    /// sharing its timing evenly. Own ruby is dropped; shared ruby covers the resulting parts.
+    /// Splits into characters, distributing ruby and timing by reading when possible.
+    /// An unaligned reading becomes shared ruby; trailing space stays on the last character.
     public mutating func splitSyllable(at position: Position) {
         let syllable = self[position]
         let body = syllable.text.trimmingCharacters(in: .whitespaces)
@@ -536,8 +533,35 @@ extension LyricsDraft {
             parts[0].groupRuby = syllable.groupRuby
             parts[0].joinsRubyGroup = syllable.joinsRubyGroup
             for k in parts.indices.dropFirst() { parts[k].joinsRubyGroup = true }
+        } else if let own = syllable.ruby, !own.isEmpty {
+            Self.distribute(own, of: syllable, over: &parts)
         }
         lines[position.line].syllables.replaceSubrange(position.syllable...position.syllable, with: parts)
+    }
+
+    private static func distribute(_ own: [Ruby], of syllable: Syllable, over parts: inout [Syllable]) {
+        guard let readings = readingParts(own, over: parts.map { $0.text.trimmingCharacters(in: .whitespaces) }) else {
+            parts[0].groupRuby = own
+            for k in parts.indices.dropFirst() { parts[k].joinsRubyGroup = true }
+            return
+        }
+        let bounds = readings.indices.map { k in
+            (k == 0 ? 0 : readings[k].span.lowerBound)...(k + 1 == readings.count ? 1 : readings[k + 1].span.lowerBound)
+        }
+        if let start = syllable.start, let end = syllable.end, end > start {
+            for k in parts.indices {
+                parts[k].start = start + (end - start) * bounds[k].lowerBound
+                parts[k].end = start + (end - start) * bounds[k].upperBound
+            }
+        }
+        let timed = Ruby.isTimed(own)
+        for (k, reading) in readings.enumerated() where !reading.slices.isEmpty {
+            let lower = bounds[k].lowerBound, length = bounds[k].upperBound - bounds[k].lowerBound
+            parts[k].ruby = reading.slices.map { slice in
+                guard timed, length > 0 else { return Ruby(text: slice.text) }
+                return Ruby(text: slice.text, span: Ruby.clamped((slice.span.lowerBound - lower) / length, (slice.span.upperBound - lower) / length))
+            }
+        }
     }
 
     public mutating func mergeWithNext(at position: Position) {
@@ -571,31 +595,22 @@ extension LyricsDraft {
         normalizeRubyGroups(inLine: position.line)
     }
 
-    /// The ruby of `parts` over their merge, where a part without ruby reads as its own text;
-    /// nil when no part has ruby.
     private static func ruby(merging parts: [Syllable], into merged: Syllable) -> [Ruby]? {
         guard parts.contains(where: { !($0.ruby ?? []).isEmpty }) else { return nil }
-        var result: [Ruby] = []
-        for part in parts {
-            let own: [Ruby]
-            if let ruby = part.ruby, !ruby.isEmpty {
-                own = ruby
-            } else {
-                let text = part.text.trimmingCharacters(in: .whitespaces)
-                own = text.isEmpty ? [] : [Ruby(text: text, span: 0...1)]
-            }
-            guard let start = merged.start, let end = merged.end, end > start, let ps = part.start, let pe = part.end,
-                  own.allSatisfy({ $0.span != nil }) else {
-                result += own.map { Ruby(text: $0.text) }
-                continue
-            }
-            result += own.map { r in
-                let span = r.span!
-                return Ruby(text: r.text, span: Ruby.clamped((ps + (pe - ps) * span.lowerBound - start) / (end - start),
-                                                             (ps + (pe - ps) * span.upperBound - start) / (end - start)))
+        let owns = parts.map { part -> [Ruby] in
+            if let ruby = part.ruby, !ruby.isEmpty { return ruby }
+            let text = part.text.trimmingCharacters(in: .whitespaces)
+            return text.isEmpty ? [] : [Ruby(text: text, span: 0...1)]
+        }
+        guard parts.contains(where: { Ruby.isTimed($0.ruby) }), let start = merged.start, let end = merged.end, end > start,
+              parts.allSatisfy({ $0.start != nil && $0.end != nil }) else {
+            return owns.flatMap { $0.map { Ruby(text: $0.text) } }
+        }
+        return zip(parts, owns).flatMap { part, own in
+            Ruby.absolute(own, start: part.start!, end: max(part.end!, part.start!)).map {
+                Ruby(text: $0.text, span: Ruby.clamped(($0.start - start) / (end - start), ($0.end - start) / (end - start)))
             }
         }
-        return result.contains { $0.span == nil } ? result.map { Ruby(text: $0.text) } : result
     }
 
     public mutating func shift(by delta: TimeInterval) {
@@ -848,7 +863,7 @@ extension LyricsDraft {
     }
 
     /// A trailing space before `|` preserves a reading word break (`eternal |love`).
-    /// Replaces overlapping groups; matching piece counts preserve their relative timing.
+    /// Replaces overlapping groups. The same reading or piece count keeps existing ruby timing.
     public mutating func setGroupRuby(_ text: String, over positions: [Position]) {
         let positions = valid(positions)
         guard positions.count > 1, Self.isRun(positions), let first = positions.first, let last = positions.last else { return }
@@ -856,7 +871,7 @@ extension LyricsDraft {
         let range = first.syllable...last.syllable
         guard !lines[line].syllables[range].contains(where: \.isRest) else { return }
         let pieces = LyricRubyGroup.cleaned(text.split(whereSeparator: { $0 == "|" || $0 == "｜" }).map(String.init))
-        let old = rubyGroup(at: first) == range ? lines[line].syllables[range.lowerBound].groupRuby ?? [] : []
+        let old = rubyGroup(at: first) == range ? lines[line].syllables[range.lowerBound].groupRuby ?? [] : ownRubyAsShared(inLine: line, range: range)
         for group in Self.rubyGroups(in: lines[line].syllables) where group.overlaps(range) {
             dissolveRubyGroup(group, inLine: line)
         }
@@ -865,9 +880,7 @@ extension LyricsDraft {
             lines[line].syllables[index].ruby = nil
             lines[line].syllables[index].joinsRubyGroup = index != range.lowerBound
         }
-        lines[line].syllables[range.lowerBound].groupRuby = pieces.enumerated().map { k, piece in
-            Ruby(text: piece, span: pieces.count == old.count ? old[k].span : nil)
-        }
+        lines[line].syllables[range.lowerBound].groupRuby = Ruby.resegmented(pieces, from: old)
     }
 
     public mutating func clearRuby(at positions: [Position]) {

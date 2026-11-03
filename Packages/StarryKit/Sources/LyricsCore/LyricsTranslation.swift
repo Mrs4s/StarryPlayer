@@ -275,6 +275,10 @@ public enum LyricsTranslation {
                     let base = positions.map { trimmed(draft[$0].text) }.joined()
                     let before = Array(draft.lines[index].syllables[run])
                     guard containsRubyBase(base), text != base, overwrite || !positions.contains(where: { draft.hasRuby(at: $0) }) else { continue }
+                    let current = positions.count > 1
+                        ? (draft.rubyGroup(at: positions[0]) == run ? draft.editableRuby(at: positions[0]) : "")
+                        : (draft.rubyGroup(at: positions[0]) == nil ? LyricsDraft.editableRuby(of: draft[positions[0]]) : "")
+                    if !current.isEmpty, readingKey(current) == readingKey(text) { continue }
                     if positions.count > 1 {
                         draft.setGroupRuby(text, over: positions)
                     } else {
@@ -288,6 +292,10 @@ public enum LyricsTranslation {
             }
         }
         return changes
+    }
+
+    private static func readingKey(_ text: String) -> String {
+        String(text.filter { !$0.isWhitespace && $0 != "|" && $0 != "｜" })
     }
 
     public static func isTranslatable(_ line: LyricsDraft.Line) -> Bool {

@@ -141,6 +141,7 @@ public struct LyricsSpecs: Sendable, Equatable {
     public var performerNamesEnabled = true
     /// Keep names in place and hide only the ruby annotations they overlap while names are visible.
     public var hideRubyUnderPerformerNames = false
+    public var rubyOwnTiming = true
     /// Gap and bar width in ems of the voice's font.
     public var performerGap: CGFloat = 0.45
     public var performerBarWidth: CGFloat = 0.09

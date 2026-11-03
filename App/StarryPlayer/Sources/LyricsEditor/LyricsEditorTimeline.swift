@@ -60,7 +60,7 @@ struct LyricsEditorTimeline: View {
                         .allowsHitTesting(false)
                 }
                 LyricsTimelineSurface(session: session, audio: audio, clock: clock, viewport: viewport,
-                                      revision: session.revision, caret: session.caret, range: range,
+                                      revision: session.revision, caret: session.caret, rubyPiece: session.rubyPiece, range: range,
                                       theme: theme, accent: NSColor(accent), onSpectrogram: onSpectrogram,
                                       canPlay: audio.isReady, onsets: onsets, aiReviewNotes: session.aiReviewNotes)
                 HStack(spacing: 6) {

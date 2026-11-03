@@ -424,6 +424,7 @@ final class RowLayer: NoAnimationLayer {
     /// Syllables lift once they start; romanization rows do not.
     var liftsSyllables = true
     private(set) var followsProgress = false
+    private(set) var ownsTiming = false
     private var progressFollowers: [(row: RowLayer, scale: CGFloat, offset: CGFloat)] = []
     private weak var progressSource: RowLayer?
     private var progressScale: CGFloat = 1
@@ -486,20 +487,21 @@ final class RowLayer: NoAnimationLayer {
         progressLayer.removeAnimation(forKey: "finish")
         edge = s
         progressLayer.position = CGPoint(x: s + feather, y: unsungLayer.frame.minY)
-        for follower in progressFollowers { follower.row.setEdge(s * follower.scale + follower.offset) }
+        for follower in progressFollowers where !follower.row.ownsTiming { follower.row.setEdge(s * follower.scale + follower.offset) }
     }
 
-    func addProgressFollower(_ row: RowLayer, scale: CGFloat, offset: CGFloat) {
+    func addProgressFollower(_ row: RowLayer, scale: CGFloat, offset: CGFloat, ownsTiming: Bool = false) {
         row.followsProgress = true
+        row.ownsTiming = ownsTiming
         row.progressSource = self
         row.progressScale = scale
         row.progressOffset = offset
         progressFollowers.append((row, scale, offset))
-        row.setEdge(edge * scale + offset)
+        if !ownsTiming { row.setEdge(edge * scale + offset) }
     }
 
     func edge(at t: TimeInterval) -> CGFloat {
-        if let progressSource { return clampedEdge(progressSource.edge(at: t) * progressScale + progressOffset) }
+        if let progressSource, !ownsTiming { return clampedEdge(progressSource.edge(at: t) * progressScale + progressOffset) }
         var previous = startEdge
         for step in steps {
             if t < step.start { return previous }
@@ -895,11 +897,15 @@ final class VoiceLayer: NoAnimationLayer {
                     let edgeRange = (lo - rubyFeather)...hi
                     let annotation = RowLayer()
                     annotation.liftsSyllables = false
+                    let baseTimes = layout.voice.syllables.indices.contains(bases.upperBound) ? Array(layout.voice.syllables[bases]) : []
+                    let baseSpan = baseTimes.map(\.start).min().flatMap { lo in baseTimes.map(\.end).max().map { lo...max($0, lo) } }
+                    let ownSteps = specs.rubyOwnTiming && mainRow.isTimed
+                        ? Self.rubySteps(fragments, pieces: lineSyllables, base: baseSpan, feather: rubyFeather, range: edgeRange) : nil
                     annotation.configure(rect: CGRect(x: 0, y: row.origin.y, width: width, height: rowHeight), overflow: overflow,
                                          feather: rubyFeather, tint: rowTint,
-                                         steps: mainRow.steps.map { .init(start: $0.start, end: $0.end, target: min(max($0.target * ratio + offset, edgeRange.lowerBound), edgeRange.upperBound)) },
+                                         steps: ownSteps ?? mainRow.steps.map { .init(start: $0.start, end: $0.end, target: min(max($0.target * ratio + offset, edgeRange.lowerBound), edgeRange.upperBound)) },
                                          timed: mainRow.isTimed, start: lo, words: [word], progressRange: edgeRange)
-                    mainRow.addProgressFollower(annotation, scale: ratio, offset: offset)
+                    mainRow.addProgressFollower(annotation, scale: ratio, offset: offset, ownsTiming: ownSteps != nil)
                     let glyphs = mainRow.syllables.filter { bases.contains($0.syllableIndex) }.flatMap { base in base.glyphLayers.map { (base, $0) } }
                     if !glyphs.isEmpty {
                         let (owner, glyph) = glyphs[glyphs.count / 2]
@@ -1066,6 +1072,36 @@ final class VoiceLayer: NoAnimationLayer {
         CATransaction.commit()
         new.opacity = 0
         LyricsAnimation.animate(new, "opacity", to: Float(1), duration: duration, curve: curve, delay: 0.1, key: "opacity")
+    }
+
+    static func rubySteps(_ fragments: [LineTextLayout.Fragment], pieces: [LyricSyllable], base: ClosedRange<TimeInterval>?,
+                          feather: CGFloat, range: ClosedRange<CGFloat>) -> [RowLayer.Step]? {
+        var order: [Int] = []
+        var inkEnds: [Int: CGFloat] = [:]
+        for fragment in fragments {
+            guard pieces.indices.contains(fragment.syllable), let ink = fragment.ink else { continue }
+            if inkEnds[fragment.syllable] == nil { order.append(fragment.syllable) }
+            inkEnds[fragment.syllable] = max(inkEnds[fragment.syllable] ?? ink.upperBound, ink.upperBound)
+        }
+        guard order.count > 1, let base else { return nil }
+        let tolerance: TimeInterval = 0.05
+        var previousEnd = -TimeInterval.infinity
+        for s in order {
+            let piece = pieces[s]
+            guard piece.start.isFinite, piece.end.isFinite, piece.end - piece.start >= 0.01, piece.start >= previousEnd - 0.005,
+                  piece.start >= base.lowerBound - tolerance, piece.end <= base.upperBound + tolerance else { return nil }
+            previousEnd = piece.end
+        }
+        var steps: [RowLayer.Step] = []
+        var previous = range.lowerBound
+        for (n, s) in order.enumerated() {
+            // Match the text highlight by keeping half the feather outside intermediate pieces.
+            let reach = n == order.count - 1 ? 0 : feather * 0.5
+            let target = min(max(previous, inkEnds[s]! - reach), range.upperBound)
+            steps.append(RowLayer.Step(start: pieces[s].start, end: pieces[s].end, target: target))
+            previous = target
+        }
+        return steps
     }
 
     /// Progress targets of one row. A syllable's end x is its inked max x, or the next word's inked
@@ -1261,7 +1297,7 @@ final class VoiceLayer: NoAnimationLayer {
     func updateSyllables(time t: TimeInterval, specs: LyricsSpecs) {
         updatePerformerNames(time: t)
         if !ignoresProgress {
-            for row in rows where !row.followsProgress { row.setEdge(row.edge(at: t)) }
+            for row in rows where !row.followsProgress || row.ownsTiming { row.setEdge(row.edge(at: t)) }
         }
         guard line.hasSyllableTiming, specs.perSyllableEnabled else { return }
         let liftSpring: LyricsSpecs.Spring? = specs.springEnabled && !snapsNextUpdate ? specs.syllableLiftSpring : nil

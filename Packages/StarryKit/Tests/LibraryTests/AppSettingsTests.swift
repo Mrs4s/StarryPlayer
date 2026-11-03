@@ -19,6 +19,7 @@ struct AppSettingsTests {
             settings.menuBarLyrics.enabled = true
             settings.menuBarLyrics.perSyllable = false
             settings.menuBarLyrics.maxWidth = 220
+            settings.lyrics.rubyOwnTiming = false
             settings.checksForUpdates = false
             #expect(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)) == settings)
         }
@@ -40,6 +41,7 @@ struct AppSettingsTests {
         #expect(partial.menuBarLyrics.enabled)
         #expect(partial.menuBarLyrics.perSyllable)
         #expect(partial.menuBarLyrics.maxWidth == 300)
+        #expect(try decode(#"{"lyrics":{"showRuby":true}}"#).lyrics.rubyOwnTiming)
     }
 
     @Test func backgroundStyleRoundTripsAndUnknownStylesFallBack() throws {

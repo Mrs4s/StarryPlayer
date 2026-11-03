@@ -130,6 +130,20 @@ struct LyricsTranslationTests {
         return try response(rows)
     }
 
+    @Test func overwritingWithTheSameReadingKeepsTimedPieces() throws {
+        var draft = LyricsDraft(lines: [LyricsDraft.Line(syllables: [
+            .init(text: "詮", start: 1, end: 2, ruby: [.init(text: "せ", span: 0...0.3), .init(text: "ん", span: 0.3...1)]),
+            .init(text: "は", start: 2, end: 3),
+        ])])
+        let before = draft
+        let same = try readings(draft, ruby: [["せん", ""]], romanization: [""])
+        #expect(try LyricsTranslation.apply(same, to: &draft, fields: [.ruby], overwrite: true).isEmpty)
+        #expect(draft == before)
+        let changed = try readings(draft, ruby: [["ぜん", ""]], romanization: [""])
+        try LyricsTranslation.apply(changed, to: &draft, fields: [.ruby], overwrite: true)
+        #expect(draft.lines[0].syllables[0].ruby == [.init(text: "ぜん")])
+    }
+
     @Test func promptsForRomanizationAndRubyWithoutTranslating() throws {
         let draft = japanese()
         let prompt = try LyricsTranslation.prompt(for: draft, fields: [.romanization, .ruby], language: "", rubyScript: "片假名")

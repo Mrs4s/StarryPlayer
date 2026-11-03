@@ -1009,6 +1009,38 @@
         }
       }
     },
+    "rubyOwnTiming.title": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注音按各段时间亮起"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light up ruby by its own timing"
+          }
+        }
+      }
+    },
+    "rubyOwnTiming.detail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分成几段的注音按每段自己的时间逐段亮起；关闭后跟着下方的字一起亮起"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruby split into pieces lights up piece by piece at its own times. When off, it lights up with the text below."
+          }
+        }
+      }
+    },
     "search.count": {
       "comment": "Number of settings matching the search query.",
       "localizations": {

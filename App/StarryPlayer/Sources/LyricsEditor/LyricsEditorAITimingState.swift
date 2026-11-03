@@ -10,6 +10,7 @@ final class LyricsEditorAITimingState {
         var backend: LyricsAIBackend
         var resplitSyllables = false
         var englishSplit: LyricsAIEnglishSplit = .automatic
+        var splitsRubyMorae = false
     }
     struct Request: Sendable {
         var draft: LyricsDraft
@@ -128,6 +129,11 @@ final class LyricsEditorAITimingState {
                     for index in input.lines.indices where !input.lines[index].isBackground {
                         input.lines[index].resplitSyllables()
                     }
+                }
+                if configuration.splitsRubyMorae {
+                    input.splitRubyIntoMorae(at: input.lines.indices.flatMap { line in
+                        input.lines[line].syllables.indices.map { LyricsDraft.Position(line: line, syllable: $0) }
+                    })
                 }
                 let result = try await perform(Request(draft: input, audio: audio.file, configuration: configuration)) { [weak self] progress in
                     Task { @MainActor [weak self] in

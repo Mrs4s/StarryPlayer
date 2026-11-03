@@ -158,6 +158,7 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     private var index = 0
     private var theme = Theme.darkBase
     private var caret: Int?
+    private var rubyFocus: LyricsEditorSession.RubyFocus?
     private var selected = IndexSet()
     private var agents: [LyricAgent] = []
     private var dragging = false
@@ -194,11 +195,13 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
     override var acceptsFirstResponder: Bool { true }
 
     func configure(line: LyricsDraft.Line, index: Int, layout: LyricsEditorLineLayout, theme: Theme,
-                   caret: Int?, selected: IndexSet = [], pulse: Int, lastTapped: UUID?, agents: [LyricAgent] = []) {
+                   caret: Int?, selected: IndexSet = [], pulse: Int, lastTapped: UUID?, agents: [LyricAgent] = [],
+                   rubyFocus: LyricsEditorSession.RubyFocus? = nil) {
         let reused = self.line?.id != line.id
         let contentChanged = self.line != line || self.theme != theme || rowLayout?.input != layout.input || self.agents != agents
         let selectionChanged = self.selected != selected
-        let changed = contentChanged || selectionChanged || self.caret != caret || self.index != index
+        let focusChanged = self.rubyFocus != rubyFocus
+        let changed = contentChanged || selectionChanged || focusChanged || self.caret != caret || self.index != index
         if reused {
             finishEditing(cancelled: false)
             hovered = false
@@ -211,23 +214,13 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
         self.caret = caret
         self.selected = selected
         self.agents = agents
+        self.rubyFocus = rubyFocus
+        if contentChanged || focusChanged { rebuildRubyLabels(line, layout: layout) }
         if contentChanged {
             let font = NSFont.systemFont(ofSize: line.isBackground ? 15 : 17, weight: .medium)
             labels = line.syllables.map {
                 NSAttributedString(string: $0.text.trimmingCharacters(in: .whitespaces), attributes: [
                     .font: font, .foregroundColor: NSColor(theme.onSurface).withAlphaComponent($0.isTimed ? 0.95 : 0.5)
-                ])
-            }
-            let rubyFont = LyricsEditorLineLayout.rubyFont(background: line.isBackground)
-            rubyLabels = zip(line.syllables, layout.input.rubies).map { syllable, ruby in
-                ruby.isEmpty ? nil : NSAttributedString(string: ruby, attributes: [
-                    .font: rubyFont, .foregroundColor: NSColor(theme.onSurfaceVariant).withAlphaComponent(syllable.isTimed ? 0.9 : 0.5)
-                ])
-            }
-            rubyGroupLabels = layout.input.rubyGroups.map { group in
-                let timed = line.syllables.indices.contains(group.syllables.lowerBound) && line.syllables[group.syllables.lowerBound].isTimed
-                return NSAttributedString(string: group.text, attributes: [
-                    .font: rubyFont, .foregroundColor: NSColor(theme.onSurfaceVariant).withAlphaComponent(timed ? 0.9 : 0.5)
                 ])
             }
             for sweep in sweeps { sweep.clip.removeFromSuperlayer() }
@@ -270,6 +263,33 @@ final class LyricsEditorRowView: NSView, NSTextFieldDelegate {
             pulseLayer.add(flash, forKey: "tap")
         }
         self.pulse = pulse
+    }
+
+    private func rebuildRubyLabels(_ line: LyricsDraft.Line, layout: LyricsEditorLineLayout) {
+        let font = LyricsEditorLineLayout.rubyFont(background: line.isBackground)
+        let bold = NSFont.systemFont(ofSize: font.pointSize, weight: .bold)
+        let focus = rubyFocus
+        func label(_ pieces: [LyricsDraft.Ruby], head: Int, timed: Bool, trimmed: Bool) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            for (k, piece) in pieces.enumerated() {
+                let text = trimmed && k == pieces.count - 1 ? piece.text.trimmingCharacters(in: .whitespaces) : piece.text
+                let focused = focus?.syllables.lowerBound == head && focus?.piece == k
+                result.append(NSAttributedString(string: text, attributes: [
+                    .font: focused ? bold : font,
+                    .foregroundColor: focused ? NSColor(theme.primary) : NSColor(theme.onSurfaceVariant).withAlphaComponent(timed ? 0.9 : 0.5)
+                ]))
+            }
+            return result
+        }
+        rubyLabels = line.syllables.enumerated().map { s, syllable in
+            guard let ruby = syllable.ruby, !ruby.isEmpty, layout.input.rubies.indices.contains(s), !layout.input.rubies[s].isEmpty else { return nil }
+            return label(ruby, head: s, timed: syllable.isTimed, trimmed: false)
+        }
+        rubyGroupLabels = layout.input.rubyGroups.map { group in
+            let head = group.syllables.lowerBound
+            guard line.syllables.indices.contains(head) else { return NSAttributedString() }
+            return label(line.syllables[head].groupRuby ?? [], head: head, timed: line.syllables[head].isTimed, trimmed: true)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {

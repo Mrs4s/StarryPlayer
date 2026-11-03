@@ -1,8 +1,10 @@
+import AppKit
 import Foundation
 import Library
 import LyricsProviders
 import MusicSources
 import StarryCore
+import SwiftUI
 import Testing
 @testable import StarryPlayer
 
@@ -61,6 +63,58 @@ struct NowPlayingLayoutTests {
         #expect(layout.artworkFrame.minX >= 0)
         #expect(layout.artworkFrame.maxX <= layout.columnWidth)
         #expect(layout.side >= 160)
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct WindowDragTests {
+    private final class DragWindow: NSWindow {
+        var dragEvent: NSEvent?
+
+        override func performDrag(with event: NSEvent) { dragEvent = event }
+    }
+
+    private func dragView(in view: NSView) -> WindowDragView? {
+        if let view = view as? WindowDragView { return view }
+        return view.subviews.lazy.compactMap { dragView(in: $0) }.first
+    }
+
+    @Test func emptyTitleBarForwardsDraggingToItsOwnWindow() throws {
+        let frame = NSRect(x: 0, y: 0, width: 300, height: 52)
+        let window = DragWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: WindowDragArea())
+        host.sizingOptions = []
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let area = try #require(dragView(in: host))
+        let hit = try #require(host.hitTest(NSPoint(x: 150, y: 26)))
+        #expect(hit === area)
+        let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 150, y: 26), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        hit.mouseDown(with: event)
+        #expect(window.dragEvent === event)
+        #expect(area.acceptsFirstMouse(for: event))
+    }
+
+    @Test func titleBarButtonsStayAboveTheDragArea() throws {
+        let frame = NSRect(x: 0, y: 0, width: 300, height: 52)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView:
+            HStack(spacing: 0) {
+                Button("Action") {}.frame(width: 100, height: 52)
+                Spacer(minLength: 0)
+            }
+            .background { WindowDragArea() }
+        )
+        host.sizingOptions = []
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let area = try #require(dragView(in: host))
+        #expect(host.hitTest(NSPoint(x: 50, y: 26)) !== area)
+        #expect(host.hitTest(NSPoint(x: 250, y: 26)) === area)
     }
 }
 

@@ -14,7 +14,7 @@ struct LyricsEditorLineList: View {
 
     var body: some View {
         LyricsEditorLinesHost(session: session, clock: clock, localization: localization, revision: session.revision,
-                              caret: session.caret, selection: session.selection, editingLine: session.editingLine,
+                              caret: session.caret, rubyFocus: session.rubyFocus, selection: session.selection, editingLine: session.editingLine,
                               lastTapped: session.lastTapped, tapSerial: session.tapSerial,
                               canPlay: canPlay, theme: theme, playFrom: playFrom, manageRoles: manageRoles)
             .opacity(appeared ? 1 : 0)
@@ -32,6 +32,7 @@ private struct LyricsEditorLinesHost: NSViewRepresentable {
     let localization: LocalizationStore
     var revision: Int
     var caret: LyricsDraft.Position?
+    var rubyFocus: LyricsEditorSession.RubyFocus?
     var selection: Set<UUID>
     var editingLine: UUID?
     var lastTapped: UUID?
@@ -248,7 +249,8 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                        caret: caret?.line == row ? caret?.syllable : nil,
                        selected: selection.isEmpty ? [] : IndexSet(line.syllables.indices.filter { selection.contains(line.syllables[$0].id) }),
                        pulse: line.syllables.contains(where: { $0.id == session.lastTapped }) ? session.tapSerial : 0,
-                       lastTapped: session.lastTapped, agents: agents)
+                       lastTapped: session.lastTapped, agents: agents,
+                       rubyFocus: session.rubyFocus.flatMap { $0.line == row ? $0 : nil })
         cell.select = { [weak self] syllable in self?.select(id: line.id, syllable: syllable) }
         cell.toggle = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: false) }
         cell.extend = { [weak self] syllable in self?.pick(id: line.id, syllable: syllable, extending: true) }
@@ -377,6 +379,7 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
             .divider,
             .button("清除时间", systemImage: "eraser", disabled: !selected.contains { session.draft[$0].isTimed }) { session.clearTiming() },
             .button("清除注音", systemImage: "xmark.circle", disabled: !selected.contains { session.draft.hasRuby(at: $0) }) { session.clearRuby() },
+            .button("按假名拆分注音", systemImage: "scissors", disabled: !selected.contains { session.draft.hasRuby(at: $0) }) { session.splitRubyIntoMorae() },
             .button("删除", systemImage: "trash", role: .destructive) { session.delete() }.shortcut("⌫"),
             .divider,
             .button("取消选择", systemImage: "xmark") { session.clearSelection() }.shortcut("Esc"),
@@ -403,6 +406,8 @@ final class LyricsEditorListView: NSView, NSTableViewDataSource, NSTableViewDele
                 session.focusRuby()
             },
             .button("清除注音", systemImage: "xmark.circle", disabled: !session.draft.hasRuby(at: position)) { session.clearRuby([position]) },
+            .button("按假名拆分注音", systemImage: "scissors", disabled: !session.draft.hasRuby(at: position)) { session.splitRubyIntoMorae([position]) },
+            .button("拆回各音节注音", systemImage: "rectangle.split.3x1", disabled: session.draft.rubyGroup(at: position) == nil) { session.splitSharedRuby(at: position) },
             LyricsEditorRoleMenu.syllableItem(session, positions: [position]),
             .button("从这里断成新的一行", systemImage: "return", disabled: syllable == 0) { session.moveToNewLine() }.shortcut("⌘↩"),
             .button("移到上一行末尾", systemImage: "arrow.up.to.line", disabled: index == 0) { session.moveToLine(by: -1, [position]) }.shortcut("⌘↑"),

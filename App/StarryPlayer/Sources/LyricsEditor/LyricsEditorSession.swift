@@ -10,8 +10,13 @@ final class LyricsEditorSession {
 
     let track: Track
     private(set) var draft: LyricsDraft
-    var caret: Position?
+    var caret: Position? {
+        didSet { if caret != oldValue { rubyPiece = nil } }
+    }
+    var rubyPiece: Int?
     var tapLead: TimeInterval = 0
+    var tapsRuby = false
+    private(set) var rubyTaps: RubyTaps?
     var editingLine: UUID?
     private(set) var rubyFocusRequest = 0
     private(set) var selection: Set<UUID> = []
@@ -173,6 +178,7 @@ final class LyricsEditorSession {
 
     func replace(with draft: LyricsDraft) {
         historyEpoch += 1
+        rubyTaps = nil
         edit(aiReviewNotes: [:]) { $0 = draft }
         staged = [:]
         caret = draft.firstUntimed ?? draft.firstPosition(fromLine: 0)
@@ -182,6 +188,7 @@ final class LyricsEditorSession {
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
         historyEpoch += 1
+        rubyTaps = nil
         redoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
@@ -194,6 +201,7 @@ final class LyricsEditorSession {
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
         historyEpoch += 1
+        rubyTaps = nil
         undoStack.append(Snapshot(draft: draft, caret: caret, aiReviewNotes: aiReviewNotes, metadata: snapshot.metadata == nil ? nil : metadata))
         draft = snapshot.draft
         caret = snapshot.caret
@@ -249,6 +257,7 @@ final class LyricsEditorSession {
     func select(_ position: Position) {
         guard draft.contains(position) else { return }
         caret = position
+        rubyPiece = nil
         selection = []
         selectionAnchor = draft[position].id
     }
@@ -390,6 +399,62 @@ final class LyricsEditorSession {
 
     func focusRuby() { rubyFocusRequest += 1 }
 
+    // MARK: Ruby timing
+
+    struct RubySelection: Equatable {
+        var position: Position
+        var annotation: LyricsDraft.RubyAnnotation
+        var piece: Int
+    }
+
+    var selectedRuby: RubySelection? {
+        guard let caret, let piece = rubyPiece, draft.contains(caret),
+              let annotation = draft.lines[caret.line].rubyAnnotation(containing: caret.syllable),
+              draft.lines[caret.line].ruby(of: annotation).indices.contains(piece) else { return nil }
+        return RubySelection(position: caret, annotation: annotation, piece: piece)
+    }
+
+    func selectRuby(piece: Int, at position: Position) {
+        guard draft.contains(position) else { return }
+        caret = position
+        selection = []
+        rubyPiece = piece
+    }
+
+    struct RubyFocus: Equatable {
+        var line: Int
+        var syllables: ClosedRange<Int>
+        var piece: Int
+    }
+
+    var rubyFocus: RubyFocus? {
+        if let selected = selectedRuby { return RubyFocus(line: selected.position.line, syllables: selected.annotation.syllables, piece: selected.piece) }
+        return rubyTapUnit.map { RubyFocus(line: $0.head.line, syllables: $0.annotation.syllables, piece: $0.piece) }
+    }
+
+    func setRubyTime(_ edge: LyricsDraft.RubyEdge, to time: TimeInterval?) {
+        guard let time, let ruby = selectedRuby else { return }
+        guard let base = draft.lines[ruby.position.line].rubyBase(of: ruby.annotation) else {
+            return flash("先给音节打上开始和结束时间，再调整注音")
+        }
+        edit { draft in
+            draft.lines[ruby.position.line] = draft.lines[ruby.position.line].movingRubyEdge(edge, ofPiece: ruby.piece, in: ruby.annotation, base: base, to: time)
+        }
+    }
+
+    func splitRubyIntoMorae(_ positions: [Position]? = nil) {
+        let targets = positions ?? editTargets
+        var changed = 0
+        edit { changed = $0.splitRubyIntoMorae(at: targets) }
+        flash(changed == 0 ? "没有可以按假名拆开的注音" : "已把 \(changed) 处注音按假名拆开")
+    }
+
+    func splitSharedRuby(at position: Position) {
+        var split = false
+        edit { split = $0.splitSharedRuby(at: position) }
+        if !split { flash("这段读音拆不到各个音节上") }
+    }
+
     func delete(_ positions: [Position]? = nil) {
         let targets = positions ?? editTargets
         guard !targets.isEmpty else { return }
@@ -493,22 +558,128 @@ final class LyricsEditorSession {
     func tap(at time: TimeInterval, rate: Double = 1) -> UUID? {
         guard let caret, draft.contains(caret) else { return nil }
         let time = max(0, time - tapLead * rate)
-        let previous = draft.position(before: caret).flatMap { previous in
-            Self.sameVoice(draft.lines[previous.line], draft.lines[caret.line]) ? previous : nil
+        let unit = rubyTapUnit
+        if let unit, unit.piece > 0 { return tapRuby(unit, at: time) }
+        let target = unit?.head ?? caret
+        let previous = draft.position(before: target).flatMap { previous in
+            Self.sameVoice(draft.lines[previous.line], draft.lines[target.line]) ? previous : nil
         }
         let wasComplete = previous.map { Self.hasCompleteTiming(draft.lines[$0.line]) } ?? true
+        let run = completedRubyRun(endingAt: previous).flatMap { time > ($0.taps.starts.last ?? .infinity) ? $0 : nil }
+        let fallback = unit.flatMap { draft.lines[$0.head.line].syllableFractions(of: $0.annotation) }
         edit { draft in
-            if let previous, let start = draft[previous].start, start < time, (draft[previous].end ?? .infinity) > time {
+            if let run {
+                let line = run.unit.head.line
+                draft.lines[line] = draft.lines[line].timingRuby(run.unit.annotation, starts: run.taps.starts, ends: run.taps.ends,
+                                                                 end: time, fallback: run.taps.fallback)
+            } else if let previous, let start = draft[previous].start, start < time, (draft[previous].end ?? .infinity) > time {
                 draft[previous].end = time
             }
-            draft[caret].start = time
-            draft[caret].end = nil
+            if let unit {
+                for s in unit.annotation.syllables {
+                    let position = Position(line: unit.head.line, syllable: s)
+                    draft[position].start = s == unit.head.syllable ? time : nil
+                    draft[position].end = nil
+                }
+            } else {
+                draft[target].start = time
+                draft[target].end = nil
+            }
         }
-        lastTapped = draft[caret].id
+        if run != nil || unit != nil { rubyTaps = nil }
+        lastTapped = draft[target].id
         tapSerial += 1
-        self.caret = draft.position(after: caret)
+        if let unit {
+            rubyTaps = RubyTaps(head: draft[unit.head].id, starts: [time], ends: [nil], fallback: fallback)
+            self.caret = unit.head
+            rubyPiece = 1
+        } else {
+            self.caret = draft.position(after: target)
+        }
         guard let previous, !wasComplete, Self.hasCompleteTiming(draft.lines[previous.line]) else { return nil }
         return draft.lines[previous.line].id
+    }
+
+    // MARK: Tapping ruby
+
+    struct RubyTaps: Equatable {
+        var head: UUID
+        var starts: [TimeInterval]
+        /// Nil continues to the next piece's start without a pause.
+        var ends: [TimeInterval?]
+        /// Previous syllable boundaries, normalized to the annotation's span.
+        var fallback: [Double]?
+    }
+
+    struct RubyTapUnit: Equatable {
+        var head: Position
+        var annotation: LyricsDraft.RubyAnnotation
+        /// Next piece index; count means every piece has been tapped.
+        var piece: Int
+        var count: Int
+        var tail: Position { Position(line: head.line, syllable: annotation.syllables.upperBound) }
+    }
+
+    var rubyTapUnit: RubyTapUnit? {
+        guard tapsRuby, let caret, draft.contains(caret),
+              let annotation = draft.lines[caret.line].rubyAnnotation(containing: caret.syllable) else { return nil }
+        let count = draft.lines[caret.line].ruby(of: annotation).count
+        guard count > 1 else { return nil }
+        return RubyTapUnit(head: Position(line: caret.line, syllable: annotation.syllables.lowerBound), annotation: annotation,
+                           piece: min(rubyPiece ?? 0, count - 1), count: count)
+    }
+
+    private var openRubyRun: (unit: RubyTapUnit, taps: RubyTaps)? {
+        guard let taps = rubyTaps, let head = position(of: taps.head),
+              let annotation = draft.lines[head.line].rubyAnnotation(containing: head.syllable),
+              annotation.syllables.lowerBound == head.syllable, taps.starts.count == taps.ends.count else { return nil }
+        let count = draft.lines[head.line].ruby(of: annotation).count
+        guard count > 1, taps.starts.count <= count else { return nil }
+        return (RubyTapUnit(head: head, annotation: annotation, piece: taps.starts.count, count: count), taps)
+    }
+
+    private func completedRubyRun(endingAt position: Position?) -> (unit: RubyTapUnit, taps: RubyTaps)? {
+        guard let position, let run = openRubyRun, run.unit.piece == run.unit.count, run.unit.tail == position else { return nil }
+        return run
+    }
+
+    private func runWaiting(at unit: RubyTapUnit) -> RubyTaps? {
+        guard unit.piece > 0, let run = openRubyRun, run.taps.head == draft[unit.head].id, run.taps.starts.count == unit.piece else { return nil }
+        return run.taps
+    }
+
+    private func tapRuby(_ unit: RubyTapUnit, at time: TimeInterval) -> UUID? {
+        let headID = draft[unit.head].id
+        var taps: RubyTaps
+        var reopened = false
+        if let waiting = runWaiting(at: unit) {
+            taps = waiting
+        } else {
+            let line = draft.lines[unit.head.line]
+            guard let base = line.rubyBase(of: unit.annotation) else {
+                flash("先从这段注音的第一段开始打点")
+                return nil
+            }
+            let times = line.rubyTimes(of: unit.annotation, base: base)
+            taps = RubyTaps(head: headID, starts: times[..<unit.piece].map(\.start),
+                            ends: (0..<unit.piece).map { k in k + 1 < unit.piece && times[k + 1].start - times[k].end > 0.002 ? times[k].end : nil },
+                            fallback: line.syllableFractions(of: unit.annotation))
+            reopened = true
+        }
+        guard time > taps.starts.last ?? -.infinity else { return nil }
+        if reopened { edit { $0[unit.tail].end = nil } }
+        taps.starts.append(time)
+        taps.ends.append(nil)
+        rubyTaps = taps
+        lastTapped = headID
+        tapSerial += 1
+        if unit.piece + 1 < unit.count {
+            caret = unit.head
+            rubyPiece = unit.piece + 1
+        } else {
+            caret = draft.position(after: unit.tail)
+        }
+        return nil
     }
 
     static func sameVoice(_ a: LyricsDraft.Line, _ b: LyricsDraft.Line) -> Bool {
@@ -517,8 +688,26 @@ final class LyricsEditorSession {
 
     @discardableResult
     func release(at time: TimeInterval, rate: Double = 1) -> UUID? {
-        guard let target = lastStarted, let start = draft[target].start else { return nil }
         let time = max(0, time - tapLead * rate)
+        if let unit = rubyTapUnit, var taps = runWaiting(at: unit) {
+            guard time > taps.starts[unit.piece - 1] else { return nil }
+            taps.ends[unit.piece - 1] = time
+            rubyTaps = taps
+            return nil
+        }
+        if let run = completedRubyRun(endingAt: lastStarted) {
+            guard time > run.taps.starts.last ?? .infinity else { return nil }
+            let line = run.unit.head.line
+            let wasComplete = Self.hasCompleteTiming(draft.lines[line])
+            edit { draft in
+                draft.lines[line] = draft.lines[line].timingRuby(run.unit.annotation, starts: run.taps.starts, ends: run.taps.ends,
+                                                                 end: time, fallback: run.taps.fallback)
+            }
+            rubyTaps = nil
+            guard !wasComplete, Self.hasCompleteTiming(draft.lines[line]) else { return nil }
+            return draft.lines[line].id
+        }
+        guard let target = lastStarted, let start = draft[target].start else { return nil }
         guard time > start else { return nil }
         let wasComplete = Self.hasCompleteTiming(draft.lines[target.line])
         edit { $0[target].end = time }
@@ -534,6 +723,26 @@ final class LyricsEditorSession {
     }
 
     func stepBack() {
+        if let unit = rubyTapUnit, let waiting = runWaiting(at: unit) {
+            if unit.piece == 1 {
+                rubyTaps = nil
+                historyEpoch += 1
+                edit { draft in
+                    draft[unit.head].start = nil
+                    draft[unit.head].end = nil
+                }
+                caret = unit.head
+                rubyPiece = nil
+            } else {
+                var taps = waiting
+                taps.starts.removeLast()
+                taps.ends.removeLast()
+                rubyTaps = taps
+                rubyPiece = unit.piece - 1
+            }
+            return
+        }
+        if tapsRuby, let target = lastStarted, stepBackIntoRuby(before: target) { return }
         guard let target = lastStarted else { return }
         historyEpoch += 1
         edit { draft in
@@ -541,6 +750,32 @@ final class LyricsEditorSession {
             draft[target].end = nil
         }
         caret = target
+    }
+
+    private func stepBackIntoRuby(before target: Position) -> Bool {
+        if let run = completedRubyRun(endingAt: target) {
+            var taps = run.taps
+            taps.starts.removeLast()
+            taps.ends.removeLast()
+            rubyTaps = taps
+            caret = run.unit.head
+            rubyPiece = run.unit.count - 1
+            return true
+        }
+        let line = draft.lines[target.line]
+        guard let annotation = line.rubyAnnotation(containing: target.syllable), annotation.syllables.upperBound == target.syllable,
+              let base = line.rubyBase(of: annotation) else { return false }
+        let times = line.rubyTimes(of: annotation, base: base)
+        let count = times.count
+        guard count > 1 else { return false }
+        rubyTaps = RubyTaps(head: line.syllables[annotation.syllables.lowerBound].id, starts: times.dropLast().map(\.start),
+                            ends: (0..<(count - 1)).map { k in k + 2 < count && times[k + 1].start - times[k].end > 0.002 ? times[k].end : nil },
+                            fallback: line.syllableFractions(of: annotation))
+        historyEpoch += 1
+        edit { $0[target].end = nil }
+        caret = Position(line: target.line, syllable: annotation.syllables.lowerBound)
+        rubyPiece = count - 1
+        return true
     }
 
     func moveCaret(by step: Int) {

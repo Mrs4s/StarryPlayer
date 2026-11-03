@@ -7,6 +7,7 @@ struct LyricsEditorView: View {
     static let defaultContentSize = NSSize(width: 1440, height: 960)
     static let autoAlignAfterTimingKey = "starry.lyricsEditor.autoAlignAfterTiming"
     static let tapLeadKey = "starry.lyricsEditor.tapLead"
+    static let rubyTappingKey = "starry.lyricsEditor.tapsRuby"
     static let tapLeads: [TimeInterval] = [0, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2]
 
     let session: LyricsEditorSession
@@ -26,6 +27,7 @@ struct LyricsEditorView: View {
     @State private var aiTiming = LyricsEditorAITimingState()
     @AppStorage(Self.autoAlignAfterTimingKey) private var autoAlignAfterTiming = false
     @AppStorage(Self.tapLeadKey) private var tapLead = 0.0
+    @AppStorage(Self.rubyTappingKey) private var tapsRuby = false
     @AppStorage(LyricsEditorTimeline.splitOnsetHintsKey) private var splitOnsetHints = false
     @AppStorage(LyricsEditorTimeline.hintVoiceKey) private var hintVoice = LyricsEditorAudio.HintVoice.all
     @AppStorage(LyricsEditorTimeline.gainKey) private var spectrogramGain = 3.0
@@ -122,11 +124,13 @@ struct LyricsEditorView: View {
         }
         .onAppear {
             session.tapLead = tapLead
+            session.tapsRuby = tapsRuby
             installKeys()
             if session.draft.isEmpty { panel = .importer }
             withAnimation(Motion.reveal) { appeared = true }
         }
         .onChange(of: tapLead) { _, lead in session.tapLead = lead }
+        .onChange(of: tapsRuby) { _, enabled in session.tapsRuby = enabled }
         .onChange(of: autoAlignAfterTiming) { _, enabled in
             if enabled, audio.isPrecise { audio.prepareVocals() }
             else { autoAlignment.cancelAll() }
@@ -390,6 +394,7 @@ struct LyricsEditorView: View {
                     autoAlignAfterTiming.toggle()
                     if !autoAlignAfterTiming { autoAlignment.cancelAll() }
                 }
+                PopMenuItem.option("注音逐段打点", selected: tapsRuby) { tapsRuby.toggle() }
                 PopMenuItem.submenu("打点补偿", systemImage: "timer", detail: LyricsEditorFormat.lead(tapLead)) {
                     for lead in Self.tapLeads {
                         PopMenuItem.option(LyricsEditorFormat.lead(lead), selected: abs(tapLead - lead) < 0.001) { tapLead = lead }
