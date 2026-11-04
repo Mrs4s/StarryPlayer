@@ -27,22 +27,25 @@ public enum LyricsExport {
     }
 
     /// Losses describe authored timing, excluding times inferred for preview.
-    public static func write(_ draft: LyricsDraft, format: LyricsExportFormat, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil) throws -> Output {
+    public static func write(_ draft: LyricsDraft, format: LyricsExportFormat, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil,
+                             repositoryCompatible: Bool = false) throws -> Output {
         if format == .rl {
             // Unfinished beats can extend beyond the inferred playback end.
             return Output(text: try KaraokeExport.rl(draft), losses: KaraokeExport.losses(draft.document(), format: .rl, metadata: metadata))
         }
-        var output = try write(draft.document(), format: format, metadata: metadata, duration: duration)
+        var output = try write(draft.document(), format: format, metadata: metadata, duration: duration, repositoryCompatible: repositoryCompatible)
         if draft.hasAuthoringTiming, !output.losses.contains(.editingState) { output.losses.append(.editingState) }
         if draft.timedCount == 0 { output.losses.removeAll { $0 == .syllableTiming } }
         if !draft.lines.contains(where: { $0.timedRange != nil }) { output.losses.removeAll { $0 == .timing } }
         return output
     }
 
-    public static func write(_ document: LyricsDocument, format: LyricsExportFormat, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil) throws -> Output {
+    public static func write(_ document: LyricsDocument, format: LyricsExportFormat, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil,
+                             repositoryCompatible: Bool = false) throws -> Output {
         let editingState = document.hasAuthoringTiming
         if format == .ttml || format == .ttml2 {
-            return Output(text: TTMLWriter.write(document, metadata: metadata, duration: duration, format: format == .ttml2 ? .ttml2 : .amll),
+            return Output(text: TTMLWriter.write(document, metadata: metadata, duration: duration, format: format == .ttml2 ? .ttml2 : .amll,
+                                                repositoryCompatible: repositoryCompatible),
                           losses: editingState ? [.editingState] : [])
         }
         if [.ass, .nicokara, .nicokaraRuby, .rl, .kasugamuki, .krl].contains(format) { return try KaraokeExport.write(document, format: format, metadata: metadata) }

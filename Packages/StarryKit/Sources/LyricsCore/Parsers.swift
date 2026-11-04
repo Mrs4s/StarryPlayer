@@ -176,6 +176,10 @@ public enum TTMLParser: LyricsParser {
     public static let format: LyricsDocument.Format = .ttml
 
     public static func parse(_ text: String) throws -> LyricsDocument {
+        try parse(text, alignRomanization: true)
+    }
+
+    static func parse(_ text: String, alignRomanization: Bool) throws -> LyricsDocument {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw LyricsParseError.empty }
         guard let data = trimmed.data(using: .utf8) else { throw LyricsParseError.malformed("encoding") }
@@ -194,7 +198,8 @@ public enum TTMLParser: LyricsParser {
             lines[i].singer = delegate.displayPositions[i] ?? LyricAgent.singer(for: lines[i].agentIDs, in: agents)
         }
         var document = LyricsDocument(format: .ttml, lines: lines, metadata: delegate.metadata, agents: agents)
-        LyricRomanizationAligner.alignMissing(in: &document)
+        TTMLRepositoryCompatibility.restore(in: &document, lineKeys: delegate.lineKeys, hasNativeExtensions: delegate.hasNativeExtensions)
+        if alignRomanization { LyricRomanizationAligner.alignMissing(in: &document) }
         return document
     }
 
@@ -220,6 +225,8 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
     var agents: [LyricAgent] = []
     var displayAgents: [String: LyricSinger] = [:]
     var displayPositions: [Int: LyricSinger] = [:]
+    var lineKeys: [String?] = []
+    var hasNativeExtensions = false
     private var inHead = false
     private var currentAgent: Int?
     private var agentName: LyricAgent.Name?
@@ -298,6 +305,9 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
             case .some(LyricAgent.styleNamespace): attributes[Self.vocalistStyle + parts[1]] = value
             case .some(LyricSinger.positionNamespace): attributes[Self.displayPosition + parts[1]] = value
             default: break
+            }
+            if [LyricRubyGroup.namespace, LyricAgent.styleNamespace, LyricSinger.positionNamespace].contains(namespaces[String(parts[0])] ?? "") {
+                hasNativeExtensions = true
             }
         }
         let inheritedAgents = agentStack.last ?? []
@@ -745,6 +755,7 @@ private final class TTMLDelegate: NSObject, XMLParserDelegate {
         let romanizationWords = transliterationWords(transliteration?.main)
         let romanizationText = romanization ?? romanizationWords.map { $0.map(\.text).joined().trimmingCharacters(in: .whitespaces) }
         displayPositions[lines.count] = lineDisplayPosition
+        lineKeys.append(lineKey)
         lines.append(LyricLine(id: lines.count, start: start, end: end, words: words, translation: translation, romanization: romanizationText, romanizationWords: romanizationWords, singer: lineSinger, background: background, primaryStart: background == nil ? start : primaryStart, primaryEnd: background == nil ? end : primaryEnd, isParagraphStart: paragraphPending, agentIDs: lineAgentIDs))
         paragraphPending = false
     }

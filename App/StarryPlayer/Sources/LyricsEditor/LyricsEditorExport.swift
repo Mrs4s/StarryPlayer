@@ -171,7 +171,7 @@ struct LyricsExportReport {
     private(set) var untimedSyllables = 0
     private var timingFormats: Set<LyricsExportFormat> = []
 
-    @MainActor init(session: LyricsEditorSession) {
+    @MainActor init(session: LyricsEditorSession, repositoryCompatible: Bool = false) {
         let draft = session.draft
         issue = draft.firstExportIssue
         untimedSyllables = draft.syllableCount - draft.timedCount
@@ -179,7 +179,7 @@ struct LyricsExportReport {
         for format in LyricsExportFormat.allCases {
             if session.needsTiming(for: format) { timingFormats.insert(format) }
             do {
-                let output = try session.writeLyrics(format: format)
+                let output = try session.writeLyrics(format: format, repositoryCompatible: repositoryCompatible)
                 let statuses = Self.statuses(for: output.losses)
                 present.formUnion(statuses.keys)
                 entries[format] = Entry(output: output, statuses: statuses)
@@ -256,6 +256,7 @@ struct LyricsExportReport {
 
 struct LyricsEditorExport: View {
     private static let choiceKey = "starry.lyricsEditor.exportChoice"
+    private static let repositoryCompatibleKey = "starry.lyricsEditor.exportAMLLRepositoryCompatible"
     private static let edgeFade: CGFloat = 10
 
     let session: LyricsEditorSession
@@ -264,6 +265,7 @@ struct LyricsEditorExport: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var choice: LyricsExportChoice
+    @State private var repositoryCompatible: Bool
     @State private var report: LyricsExportReport?
     @State private var step = 1
     @State private var appeared = false
@@ -277,6 +279,7 @@ struct LyricsEditorExport: View {
         self.close = close
         let stored = UserDefaults.standard.string(forKey: Self.choiceKey).flatMap(LyricsExportChoice.init(storageValue:))
         _choice = State(initialValue: stored ?? .format(.ttml))
+        _repositoryCompatible = State(initialValue: UserDefaults.standard.bool(forKey: Self.repositoryCompatibleKey))
     }
 
     private var entry: LyricsExportReport.Entry? {
@@ -312,12 +315,17 @@ struct LyricsEditorExport: View {
             }
         }
         .onAppear {
-            report = LyricsExportReport(session: session)
+            report = LyricsExportReport(session: session, repositoryCompatible: repositoryCompatible)
             installKeys()
             withAnimation(reduceMotion ? Motion.hover : Motion.reveal) { appeared = true }
         }
         .onChange(of: session.revision) { _, _ in
-            withAnimation(Motion.hover) { report = LyricsExportReport(session: session) }
+            withAnimation(Motion.hover) { report = LyricsExportReport(session: session, repositoryCompatible: repositoryCompatible) }
+        }
+        .onChange(of: repositoryCompatible) { _, _ in
+            report = LyricsExportReport(session: session, repositoryCompatible: repositoryCompatible)
+            copyReset?.cancel()
+            copied = false
         }
         .onDisappear {
             removeKeys()
@@ -377,6 +385,18 @@ struct LyricsEditorExport: View {
                     .id(choice)
                     .transition(.asymmetric(insertion: reduceMotion ? .opacity : .opacity.combined(with: .offset(y: CGFloat(step) * 8)),
                                             removal: .opacity))
+            }
+            if choice == .format(.ttml) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("扩展属性兼容 AMLL 仓库投稿", isOn: $repositoryCompatible)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(theme.onSurface)
+                    Text("保留共享注音、角色颜色和演唱者分配，投稿处理后可由 Starry Player 恢复。")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(theme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             notice
             contentSection
@@ -603,6 +623,7 @@ struct LyricsEditorExport: View {
 
     private func remember() {
         UserDefaults.standard.set(choice.storageValue, forKey: Self.choiceKey)
+        if choice == .format(.ttml) { UserDefaults.standard.set(repositoryCompatible, forKey: Self.repositoryCompatibleKey) }
     }
 
     private func commit() {

@@ -865,8 +865,8 @@ final class LyricsEditorSession {
         return try writeLyrics(format: format)
     }
 
-    func writeLyrics(format: LyricsExportFormat) throws -> LyricsExport.Output {
-        try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: exportDuration)
+    func writeLyrics(format: LyricsExportFormat, repositoryCompatible: Bool = false) throws -> LyricsExport.Output {
+        try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: exportDuration, repositoryCompatible: repositoryCompatible)
     }
 
     func needsTiming(for format: LyricsExportFormat) -> Bool {

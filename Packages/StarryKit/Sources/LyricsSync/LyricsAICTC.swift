@@ -37,6 +37,7 @@ enum LyricsAICTC {
     }
 
     static func decode(_ evidence: Evidence, tokens: [Token], maximumCells: Int = 160_000_000,
+                       terminalPenalty: Double? = nil,
                        progress: @Sendable (Double) -> Void = { _ in }) throws -> Alignment {
         let frames = evidence.frames, states = tokens.count * 2 + 1
         let (cells, overflow) = frames.multipliedReportingOverflow(by: states)
@@ -53,6 +54,18 @@ enum LyricsAICTC {
         }
         let repeats = zip(tokens, tokens.dropFirst()).filter { $0.label == $1.label }.count
         guard frames >= tokens.count + repeats else { throw LyricsAIError.alignment("音频长度不足以容纳这些歌词") }
+        if let terminalPenalty, !terminalPenalty.isFinite || terminalPenalty < 0 {
+            throw LyricsAIError.alignment("尾段对齐参数无效")
+        }
+        let terminal = terminalPenalty.map { penalty in
+            (0..<frames).map { frame -> Float in
+                if penalty == 0 { return 0 }
+                let blank = min(Double(evidence.logProbabilities[frame * evidence.width + evidence.blank]), 0)
+                let alternative = log(-expm1(blank)) - penalty
+                let top = max(blank, alternative)
+                return Float(min(0, top + log1p(exp(min(blank, alternative) - top))))
+            }
+        }
         var labels = [Int](repeating: evidence.blank, count: states)
         for i in tokens.indices { labels[2 * i + 1] = tokens[i].label }
         var previous = [Float](repeating: -.infinity, count: states)
@@ -67,6 +80,7 @@ enum LyricsAICTC {
                     progress(Double(frame) / Double(frames) * 0.75)
                 }
                 let row = frame * evidence.width, backRow = frame * states
+                let terminalScore = terminal?[frame] ?? evidence.logProbabilities[row + evidence.blank]
                 for state in 0..<states {
                     var best = previous[state]
                     var step: UInt8 = 0
@@ -74,7 +88,8 @@ enum LyricsAICTC {
                     if state >= 2, state % 2 == 1, labels[state] != labels[state - 2], previous[state - 2] > best {
                         best = previous[state - 2]; step = 2
                     }
-                    var value = best + evidence.logProbabilities[row + labels[state]]
+                    let emission = state == states - 1 ? terminalScore : evidence.logProbabilities[row + labels[state]]
+                    var value = best + emission
                     if evidence.silent[frame], state % 2 == 0, state > 0, state < states - 1,
                        !tokens[state / 2 - 1].endsLine { value -= 0.1 }
                     current[state] = value

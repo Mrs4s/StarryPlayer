@@ -9,7 +9,7 @@ public enum TTMLWriter {
     /// the document's own, sorted by key. `duration` is the song's length for `<body dur>`.
     /// Ruby defaults to AMLL's representation; `.ttml2` uses the TTML2 base/text content model.
     public static func write(_ document: LyricsDocument, metadata: [(key: String, value: String)]? = nil, duration: TimeInterval? = nil,
-                             translationLanguage: String? = nil, format: Format = .amll) -> String {
+                             translationLanguage: String? = nil, format: Format = .amll, repositoryCompatible: Bool = false) -> String {
         let lines = document.lines.filter { !$0.words.isEmpty }
         let agents = Agents(document: document, lines: lines)
         let styling = document.hasRuby ? #" xmlns:tts="http://www.w3.org/ns/ttml#styling""# : ""
@@ -22,7 +22,8 @@ public enum TTMLWriter {
         var out = #"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\#(styling)\#(sharedRuby)\#(vocalistStyle)\#(displayPosition)>"#
         out += "<head><metadata>"
         out += agents.declarations
-        for entry in metadata ?? document.metadata.sorted(by: { $0.key < $1.key }).map({ ($0.key, $0.value) }) where !entry.value.isEmpty {
+        for entry in metadata ?? document.metadata.sorted(by: { $0.key < $1.key }).map({ ($0.key, $0.value) })
+            where !entry.value.isEmpty && entry.key != TTMLRepositoryCompatibility.metadataKey {
             out += #"<amll:meta key="\#(escape(entry.key))" value="\#(escape(entry.value))"/>"#
         }
         if lines.contains(where: { $0.romanizationWords != nil || $0.background?.romanizationWords != nil }) {
@@ -65,6 +66,10 @@ public enum TTMLWriter {
             out += "</div>"
         }
         out += "</body></tt>"
+        if format == .amll, repositoryCompatible, let value = TTMLRepositoryCompatibility.encode(out),
+           let end = out.range(of: "</metadata></head>") {
+            out.insert(contentsOf: #"<amll:meta key="\#(TTMLRepositoryCompatibility.metadataKey)" value="\#(value)"/>"#, at: end.lowerBound)
+        }
         return out
     }
 

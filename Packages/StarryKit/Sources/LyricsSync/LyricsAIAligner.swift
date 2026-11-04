@@ -89,17 +89,23 @@ public actor LyricsAIAligner {
         }
         progress(.init(0.85, "定位歌词时间…"))
         var alignment = try LyricsAICTC.decode(evidence, tokens: plan.tokens) { fraction in
-            progress(.init(0.85 + fraction * 0.08, "定位歌词时间…"))
+            progress(.init(0.85 + fraction * 0.06, "定位歌词时间…"))
         }
-        progress(.init(0.94, "核对歌词读音…"))
+        progress(.init(0.92, "核对歌词读音…"))
         let readings = try LyricsAIReadingSelector.select(draft: draft, plan: plan, spans: alignment.spans, evidence: evidence,
                                                           vocabulary: bundle.vocabulary, english: bundle.englishReadings)
         if readings.resolvedCount > 0 {
             plan = readings.plan
             alignment = try LyricsAICTC.decode(evidence, tokens: plan.tokens) { fraction in
-                progress(.init(0.95 + fraction * 0.04, "定位歌词时间…"))
+                progress(.init(0.93 + fraction * 0.025, "定位歌词时间…"))
             }
         }
+        progress(.init(0.96, "核对末段歌词时间…"))
+        let recovery = try LyricsAITailRecovery.recover(alignment, evidence: evidence, plan: plan, draft: draft) { fraction in
+            progress(.init(0.96 + fraction * 0.03, "重新定位末段歌词…"))
+        }
+        alignment = recovery.alignment
+        progress(.init(0.99, "细化歌词边界…"))
         let displayBoundaries = Set(plan.units.flatMap { [$0.tokens.lowerBound] + $0.ruby.map(\.lowerBound) + $0.groupRuby.map(\.lowerBound) })
         let refinement = try LyricsAIRepeatedVowels.refinement(alignment.spans, evidence: evidence, tokens: plan.tokens,
                                                                rawSpans: alignment.raw, displayBoundaries: displayBoundaries, vocals: vocals)
@@ -112,6 +118,7 @@ public actor LyricsAIAligner {
         }
         var issues = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence,
                                                 rawSpans: alignment.raw, spans: spans, sharedSounds: refinement.sharedSounds)
+        issues += recovery.reviewIssues
         issues += readings.decisions.filter(\.uncertain).map {
             let reading = $0.reading.contains("\u{E000}") ? "未确定" : $0.reading
             let ids = draft.lines[$0.line].syllables[$0.syllables].map(\.id)
