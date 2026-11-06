@@ -7,6 +7,12 @@ enum LyricsTimelineLane: Equatable {
     case track(UUID?)
 }
 
+struct LyricsTimelinePreview {
+    var line: LyricsDraft.Line
+    /// The actual target, absent when a timing limit prevents the snap.
+    var snappedTime: TimeInterval? = nil
+}
+
 /// A drag edits one local line. The shared draft and its preview caches change only on
 /// mouse-up; a stale drag can never overwrite a keyboard edit, undo, or imported document.
 struct LyricsTimelineAdjustment {
@@ -40,16 +46,20 @@ struct LyricsTimelineAdjustment {
     }
 
     func preview(translation: Double, onsets: [TimeInterval] = [], lane: LyricsTimelineLane = .unchanged) -> LyricsDraft.Line {
-        var line = retimed(translation: translation, onsets: onsets)
-        if part == .line, case .track(let track) = lane { line.track = track }
-        return line
+        previewWithSnap(translation: translation, onsets: onsets, lane: lane).line
     }
 
-    private func retimed(translation: Double, onsets: [TimeInterval]) -> LyricsDraft.Line {
-        guard translation.isFinite, translation != 0 else { return original }
+    func previewWithSnap(translation: Double, onsets: [TimeInterval] = [], lane: LyricsTimelineLane = .unchanged) -> LyricsTimelinePreview {
+        var result = retimed(translation: translation, onsets: onsets)
+        if part == .line, case .track(let track) = lane { result.line.track = track }
+        return result
+    }
+
+    private func retimed(translation: Double, onsets: [TimeInterval]) -> LyricsTimelinePreview {
+        guard translation.isFinite else { return LyricsTimelinePreview(line: original) }
         let s = position.syllable
         let syllable = original.syllables[s]
-        guard let start = syllable.start else { return original }
+        guard let start = syllable.start else { return LyricsTimelinePreview(line: original) }
         let previous = s > 0 ? original.syllables[s - 1] : nil
         let next = s + 1 < original.syllables.count ? original.syllables[s + 1] : nil
         let end = syllable.end ?? next?.start ?? start + 0.3
@@ -65,30 +75,54 @@ struct LyricsTimelineAdjustment {
         }
         let linkedPrevious = previous?.end.map { abs($0 - start) < 0.002 } ?? false
         let linkedNext = next?.start.map { abs($0 - end) < 0.002 } ?? false
+        // Passing back through the mouse-down point preserves both the original timing
+        // and any alignment already held there, without snapping a click to nearby hints.
+        if translation == 0 {
+            let target: TimeInterval?
+            switch part {
+            case .start: target = onsets.contains(start) ? start : nil
+            case .end: target = onsets.contains(end) ? end : nil
+            case .body: target = previous?.end == start ? previous?.end : next?.start == end ? next?.start : nil
+            case .line:
+                let first = original.timedRange?.lowerBound ?? start
+                target = onsets.contains(first) ? first : nil
+            }
+            return LyricsTimelinePreview(line: original, snappedTime: target)
+        }
         var line = original
+        var snappedTime: TimeInterval?
         switch part {
         case .start:
             let floor = previous?.start.map { $0 + minimum } ?? 0
-            let moved = Self.stick(suggest(snap(start + delta)), to: linkedPrevious ? [] : [previous?.end], reach: reach)
+            let edges = linkedPrevious ? [] : [previous?.end]
+            let moved = Self.stick(suggest(snap(start + delta)), to: edges, reach: reach)
             let value = min(max(moved, linkedPrevious ? floor : 0), end - minimum)
+            if value == moved, edges.contains(value) || onsets.contains(value) { snappedTime = value }
             line.syllables[s].start = value
             if linkedPrevious { line.syllables[s - 1].end = value }
         case .end:
             let ceiling = next?.end.map { $0 - minimum } ?? .infinity
-            let moved = Self.stick(suggest(snap(end + delta)), to: linkedNext ? [] : [next?.start], reach: reach)
+            let edges = linkedNext ? [] : [next?.start]
+            let moved = Self.stick(suggest(snap(end + delta)), to: edges, reach: reach)
             let value = max(min(moved, linkedNext ? ceiling : .infinity), start + minimum)
+            if value == moved, edges.contains(value) || onsets.contains(value) { snappedTime = value }
             line.syllables[s].end = value
             if linkedNext { line.syllables[s + 1].start = value }
         case .body:
             let edges = [previous?.end.map { $0 - start }, next?.start.map { $0 - end }]
-            let shift = max(Self.stick(snap(delta), to: edges, reach: reach), -start)
-            guard shift != 0 else { return original }
+            let moved = Self.stick(snap(delta), to: edges, reach: reach)
+            let shift = max(moved, -start)
+            if shift == moved, let index = edges.firstIndex(of: shift) { snappedTime = [previous?.end, next?.start][index] }
+            guard shift != 0 else { return LyricsTimelinePreview(line: original, snappedTime: snappedTime) }
             line.syllables[s].start = start + shift
             line.syllables[s].end = end + shift
         case .line:
             let first = original.timedRange?.lowerBound ?? start
-            let shift = max(Self.stick(snap(delta), to: onsets.map { Optional($0 - first) }, reach: onsetReach), -first)
-            guard shift != 0 else { return original }
+            let offsets = onsets.map { $0 - first }
+            let suggested = Self.stick(snap(delta), to: offsets.map(Optional.some), reach: onsetReach)
+            let shift = max(suggested, -first)
+            if shift == suggested, let index = offsets.firstIndex(of: shift) { snappedTime = onsets[index] }
+            guard shift != 0 else { return LyricsTimelinePreview(line: original, snappedTime: snappedTime) }
             let moved = { (time: TimeInterval?) in time.map { $0 + shift } }
             line.start = moved(line.start)
             line.end = moved(line.end)
@@ -97,7 +131,8 @@ struct LyricsTimelineAdjustment {
                 line.syllables[k].end = moved(line.syllables[k].end)
             }
         }
-        return part == .start || part == .end ? line.keepingRubyTiming(from: original) : line
+        return LyricsTimelinePreview(line: part == .start || part == .end ? line.keepingRubyTiming(from: original) : line,
+                                     snappedTime: snappedTime)
     }
 
     @MainActor @discardableResult

@@ -40,8 +40,17 @@ struct LyricsTimelineRubyAdjustment {
     }
 
     func preview(translation: Double, onsets: [TimeInterval] = []) -> LyricsDraft.Line {
-        guard translation.isFinite, translation != 0 else { return original }
-        return original.movingRubyEdge(edge, ofPiece: piece, in: annotation, base: base, to: time(translation: translation, onsets: onsets))
+        previewWithSnap(translation: translation, onsets: onsets).line
+    }
+
+    func previewWithSnap(translation: Double, onsets: [TimeInterval] = []) -> LyricsTimelinePreview {
+        guard translation.isFinite else { return LyricsTimelinePreview(line: original) }
+        let time = translation == 0 ? origin : time(translation: translation, onsets: onsets)
+        let line = translation == 0 ? original : original.movingRubyEdge(edge, ofPiece: piece, in: annotation, base: base, to: time)
+        let boundaries = original.syllables[annotation.syllables].flatMap { [$0.start, $0.end] }
+        let aligned = edgeTime(in: line).map { abs($0 - time) < 1e-9 } ?? false
+        let snappedTime = aligned && (boundaries.contains(time) || onsets.contains(time)) ? time : nil
+        return LyricsTimelinePreview(line: line, snappedTime: snappedTime)
     }
 
     func edgeTime(in line: LyricsDraft.Line) -> TimeInterval? {

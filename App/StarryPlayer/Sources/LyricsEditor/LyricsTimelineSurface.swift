@@ -28,6 +28,9 @@ struct LyricsTimelineSurface: NSViewRepresentable {
 }
 
 final class LyricsTimelineView: NSView {
+    var alignmentFeedback: () -> Void = {
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
     static let trayHeight: CGFloat = 34
     private static let trayLeading: CGFloat = 56
     private static let trayFont = NSFont.systemFont(ofSize: 12, weight: .medium)
@@ -125,6 +128,7 @@ final class LyricsTimelineView: NSView {
     private var trayWidth: CGFloat = 0
     private var trayOffset: CGFloat = 0
     private var textWidths: [String: CGFloat] = [:]
+    private var snappedTime: TimeInterval?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -366,6 +370,7 @@ final class LyricsTimelineView: NSView {
         self.drag = drag
         setTargetLane(target.lane)
         refreshLine(drag.edit.position.line)
+        updateSnapFeedback(lifting ? nil : drag.edit.previewWithSnap(translation: drag.translation, onsets: drag.activeOnsets).snappedTime)
     }
 
     private func previewRubyDrag(at point: NSPoint, snapping: Bool) {
@@ -374,8 +379,9 @@ final class LyricsTimelineView: NSView {
         rubyDrag.snapping = snapping
         self.rubyDrag = rubyDrag
         refreshLine(rubyDrag.edit.line)
-        let line = rubyDrag.edit.preview(translation: rubyDrag.translation, onsets: rubyDrag.activeOnsets)
-        setGuide(rubyDrag.edit.edgeTime(in: line).map { (x: x($0), time: $0) })
+        let preview = rubyDrag.edit.previewWithSnap(translation: rubyDrag.translation, onsets: rubyDrag.activeOnsets)
+        setGuide(rubyDrag.edit.edgeTime(in: preview.line).map { (x: x($0), time: $0) })
+        updateSnapFeedback(preview.snappedTime)
     }
 
     private func updatePlacement(at point: NSPoint, snapping: Bool) {
@@ -397,6 +403,14 @@ final class LyricsTimelineView: NSView {
         setTargetLane(target.lane)
         refreshLine(placement.edit.line)
         setGuide(blocks.first { $0.mark == .placing }.map { (x: $0.rect.minX, time: $0.syllable.start ?? 0) })
+        updateSnapFeedback(placement.time.flatMap {
+            placement.edit.previewWithSnap(at: $0, edges: placement.activeEdges, onsets: placement.activeOnsets).snappedTime
+        })
+    }
+
+    private func updateSnapFeedback(_ time: TimeInterval?) {
+        if let time, time != snappedTime { alignmentFeedback() }
+        snappedTime = time
     }
 
     private func laneChange(forLine index: Int, at y: CGFloat) -> (change: LyricsTimelineLane, lane: Int?) {
@@ -798,7 +812,9 @@ final class LyricsTimelineView: NSView {
 
     private func beginDrag(_ edit: LyricsTimelineAdjustment, at point: NSPoint, snapping: Bool) {
         guard let c = configuration else { return }
-        drag = Drag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: snapping)
+        let onsets = hints.map(\.time)
+        drag = Drag(edit: edit, origin: point.x, onsets: onsets, snapping: snapping)
+        snappedTime = edit.previewWithSnap(translation: 0, onsets: snapping ? onsets : []).snappedTime
         c.viewport.interactionRange = c.range
         c.viewport.hold(c.range)
         c.session.caret = edit.position
@@ -821,7 +837,9 @@ final class LyricsTimelineView: NSView {
             }
             guard let edit = LyricsTimelineRubyAdjustment(session: c.session, line: band.line, annotation: band.annotation, piece: piece,
                                                           edge: edge, range: c.range, width: bounds.width) else { return false }
-            rubyDrag = RubyDrag(edit: edit, origin: point.x, onsets: hints.map(\.time), snapping: snapping)
+            let onsets = hints.map(\.time)
+            rubyDrag = RubyDrag(edit: edit, origin: point.x, onsets: onsets, snapping: snapping)
+            snappedTime = edit.previewWithSnap(translation: 0, onsets: snapping ? onsets : []).snappedTime
             c.viewport.interactionRange = c.range
             c.viewport.hold(c.range)
             c.session.selectRuby(piece: piece, at: syllable(at: point.x, in: band))
@@ -850,6 +868,7 @@ final class LyricsTimelineView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let c = configuration else { return }
+        snappedTime = nil
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         if point.y >= trayTop {
@@ -923,6 +942,7 @@ final class LyricsTimelineView: NSView {
             scrubbing = false
             c.clock.finishScrubbing { c.audio.seek(to: $0) }
         }
+        snappedTime = nil
         c.viewport.interactionRange = nil
         rebuildBlocks()
     }
@@ -970,6 +990,7 @@ final class LyricsTimelineView: NSView {
 
     override func cancelOperation(_ sender: Any?) { cancelInteraction() }
     private func cancelInteraction() {
+        snappedTime = nil
         guard drag != nil || scrubbing || placement != nil || rubyDrag != nil else { return }
         drag = nil
         placement = nil

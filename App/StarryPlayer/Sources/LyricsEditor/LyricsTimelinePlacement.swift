@@ -54,12 +54,18 @@ struct LyricsTimelinePlacement {
 
     func preview(at time: TimeInterval, edges: [TimeInterval] = [], onsets: [TimeInterval] = [],
                  lane: LyricsTimelineLane = .unchanged) -> LyricsDraft.Line {
-        guard time.isFinite else { return original }
+        previewWithSnap(at: time, edges: edges, onsets: onsets, lane: lane).line
+    }
+
+    func previewWithSnap(at time: TimeInterval, edges: [TimeInterval] = [], onsets: [TimeInterval] = [],
+                         lane: LyricsTimelineLane = .unchanged) -> LyricsTimelinePreview {
+        guard time.isFinite else { return LyricsTimelinePreview(line: original) }
         let reach = LyricsTimelineAdjustment.stickiness * secondsPerPoint
         let suggested = LyricsTimelineAdjustment.stick(Self.snap(time), to: onsets.map(Optional.some), reach: min(reach, 0.05))
         let stuck = LyricsTimelineAdjustment.stick(suggested, to: edges.map(Optional.some) + [original.start], reach: reach)
         let count = Double(run.count)
         let start = max(min(stuck, ceiling - count * Self.minimum), floor, 0)
+        let snappedTime = start == stuck && (edges.contains(stuck) || original.start == stuck || onsets.contains(stuck)) ? stuck : nil
         let span = pieces.dropFirst().reduce(0) { $0 + $1.lead } + pieces.reduce(0) { $0 + $1.length }
         var room = ceiling - start
         if !remembered, let next, next - start >= count * 0.1 { room = min(room, next - start) }
@@ -78,7 +84,7 @@ struct LyricsTimelinePlacement {
             line.end = nil
         }
         if case .track(let track) = lane { line.track = track }
-        return line
+        return LyricsTimelinePreview(line: line, snappedTime: snappedTime)
     }
 
     @MainActor @discardableResult
