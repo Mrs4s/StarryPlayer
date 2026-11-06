@@ -13,7 +13,23 @@ import Testing
         for i in 57...63 { activity.valid[i] = false }
         let result = VocalOnsetDetector.candidates(in: activity, frameDuration: 0.01, centerOffset: 0.02, duration: 1)
         #expect(result.count == 1)
-        #expect(abs((result.first?.time ?? 0) - 0.26) < 0.001)
+        // Smoothed peak at frame 25 (0.26 s); its rise reaches 70 % at frame 24.4.
+        #expect(abs((result.first?.time ?? 0) - 0.254) < 0.001)
+    }
+
+    @Test func hintsMarkTheRiseOfAnAttackRatherThanItsSmoothedPeak() {
+        var activity = VocalActivity(frameCount: 100)
+        activity.energy = .init(repeating: 10, count: 100)
+        activity.valid = .init(repeating: true, count: 100)
+        for (frame, value) in [(47, 0.2), (48, 0.6), (49, 1.0), (50, 0.8), (51, 0.3)] as [(Int, Float)] {
+            activity.flux[frame] = value
+        }
+        let result = VocalOnsetDetector.candidates(in: activity, frameDuration: 0.01, centerOffset: 0.02, duration: 1)
+        #expect(result.count == 1)
+        // The smoothed envelope peaks at frame 49, which would be 0.50 s. The rise passes
+        // 70 % of that peak just before frame 48.
+        let time = result.first?.time ?? 0
+        #expect(abs(time - 0.4899) < 0.001, "\(result)")
     }
 
     @Test func spectralShapeCanReinforceAQuietBoundaryWithoutAnEnergyGap() {

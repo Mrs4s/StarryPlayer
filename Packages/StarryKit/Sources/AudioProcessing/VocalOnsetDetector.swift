@@ -13,7 +13,8 @@ public struct VocalOnset: Sendable, Equatable {
 }
 
 /// Onset hints using vibrato suppression (Böck & Widmer, DAFx 2013), median/MAD
-/// peak picking, and independent consonant and spectral-envelope cues.
+/// peak picking, and independent consonant and spectral-envelope cues. Each hint is
+/// timed at the rising edge of its attack rather than at the smoothed peak.
 public enum VocalOnsetDetector {
     public struct Analysis: Sendable {
         public var onsets: [VocalOnset]
@@ -86,6 +87,7 @@ public enum VocalOnsetDetector {
             for var fricative in fricatives {
                 if Task.isCancelled { return [] }
                 fricative.frame = fricativeStart(fricative.frame, in: activity, frameDuration: frameDuration)
+                fricative.position = Double(fricative.frame)
                 let firstVowel = peaks.lazy.filter {
                     Double($0.frame - fricative.frame) * frameDuration > 0.03
                         && followsFricative($0.frame, start: fricative.frame, in: activity, frameDuration: frameDuration)
@@ -108,7 +110,7 @@ public enum VocalOnsetDetector {
         for peak in peaks.sorted(by: { $0.strength == $1.strength ? $0.frame < $1.frame : $0.strength > $1.strength }) {
             // Flux compares frames two hops apart: its event lies one hop before
             // the current window centre.
-            let time = Double(peak.frame - 1) * frameDuration + centerOffset
+            let time = (peak.position - 1) * frameDuration + centerOffset
             guard time >= 0, time <= duration else { continue }
             if !kept.contains(where: { abs($0.time - time) < 0.08 }) {
                 kept.append(VocalOnset(time: time, strength: peak.strength))
@@ -120,6 +122,8 @@ public enum VocalOnsetDetector {
     private struct Peak {
         var frame: Int
         var strength: Float
+        /// Fractional frame the hint is timed at; consonant starts keep their own frame.
+        var position: Double
     }
 
     private static func combinedFlux(in activity: VocalActivity) -> [Float]? {
@@ -170,9 +174,22 @@ public enum VocalOnsetDetector {
             let contrast = (peak - baseline) / max(0.035, 3 * deviations[deviations.count / 2])
             guard contrast >= 1 else { continue }
             let salience = contrast * salienceScale
-            peaks.append(Peak(frame: i, strength: salience / (1 + salience)))
+            peaks.append(Peak(frame: i, strength: salience / (1 + salience),
+                              position: risingEdge(of: i, in: envelope, baseline: baseline)))
         }
         return peaks
+    }
+
+    /// The smoothed flux peaks once most of an attack has passed: against hand-timed lyrics
+    /// that peak lies a median 13 ms late. Interpolate where the rise reaches 70 % of its
+    /// height above the local baseline, searching at most five frames back.
+    private static func risingEdge(of frame: Int, in envelope: [Float], baseline: Float) -> Double {
+        let level = baseline + 0.7 * (envelope[frame] - baseline)
+        let limit = max(1, frame - 5)
+        var edge = frame
+        while edge > limit, envelope[edge - 1] > level { edge -= 1 }
+        guard edge > limit, envelope[edge] > envelope[edge - 1] else { return Double(edge) }
+        return Double(edge - 1) + Double((level - envelope[edge - 1]) / (envelope[edge] - envelope[edge - 1]))
     }
 
     private static func isFricativeAttack(_ frame: Int, in activity: VocalActivity, frameDuration: TimeInterval) -> Bool {
