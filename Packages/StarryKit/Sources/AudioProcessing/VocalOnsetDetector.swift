@@ -180,9 +180,9 @@ public enum VocalOnsetDetector {
         return peaks
     }
 
-    /// The smoothed flux peaks once most of an attack has passed: against hand-timed lyrics
-    /// that peak lies a median 13 ms late. Interpolate where the rise reaches 70 % of its
-    /// height above the local baseline, searching at most five frames back.
+    /// The smoothed flux peaks once most of an attack has passed, a median 13 ms after the
+    /// syllable starts of reviewed AI-timed lyrics. Interpolate where the rise reaches 70 % of
+    /// its height above the local baseline, searching at most five frames back.
     private static func risingEdge(of frame: Int, in envelope: [Float], baseline: Float) -> Double {
         let level = baseline + 0.7 * (envelope[frame] - baseline)
         let limit = max(1, frame - 5)
