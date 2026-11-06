@@ -15,9 +15,10 @@ public struct VocalSeparationModel: Sendable, Equatable {
     public var source: Source
     public var output: Output
     public var name: String
-    /// Channel count the network takes (directory models). The AU resamples on its own, so the
-    /// sample rate is informational.
+    /// Channel count the network takes (directory models).
     public var channels: Int?
+    /// Rate the network was trained at (directory models). The AU accepts other rates, but
+    /// separates them noticeably worse; offline extraction converts to this rate.
     public var sampleRate: Double?
     /// What the network leaves of the voice, which shapes the level curve; nil when unmeasured.
     public var residual: VocalResidual?
@@ -46,6 +47,12 @@ public struct VocalSeparationModel: Sendable, Equatable {
     public func accepts(channelCount: Int) -> Bool {
         if let channels { return channels == channelCount }
         return (1...2).contains(channelCount)
+    }
+
+    /// The rate to run the network at for audio at `sampleRate`: its declared training rate.
+    public func processingRate(for sampleRate: Double) -> Double {
+        guard let declared = self.sampleRate, declared.isFinite, declared >= 8000 else { return sampleRate }
+        return declared
     }
 }
 
