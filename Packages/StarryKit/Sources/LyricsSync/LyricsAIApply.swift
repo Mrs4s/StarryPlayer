@@ -2,6 +2,28 @@ import Foundation
 import LyricsCore
 
 extension LyricsAIAligner {
+    /// Pauses shorter than this between two blocks of one line are closed.
+    nonisolated static let shortGap: TimeInterval = 0.1
+
+    /// Holds each block until the next block of the same line starts when the pause between them is
+    /// shorter than `limit`; people time sung lyrics this way. Explicit rests keep their pause.
+    nonisolated static func closingShortGaps(_ spans: [LyricsAICTC.Span], plan: LyricsAIPronunciation, draft: LyricsDraft,
+                                             below limit: TimeInterval = shortGap) -> [LyricsAICTC.Span] {
+        guard spans.count == plan.tokens.count else { return spans }
+        var result = spans
+        var previous: LyricsAIPronunciation.Unit?
+        for unit in plan.units where !unit.tokens.isEmpty {
+            defer { previous = unit }
+            guard let left = previous, left.line == unit.line, left.syllable < unit.syllable,
+                  draft.lines.indices.contains(unit.line), unit.syllable < draft.lines[unit.line].syllables.count,
+                  !draft.lines[unit.line].syllables[(left.syllable + 1)..<unit.syllable].contains(where: \.isRest) else { continue }
+            let end = left.tokens.upperBound - 1, start = unit.tokens.lowerBound
+            let gap = result[start].start - result[end].end
+            if gap > 1e-9, gap < limit - 1e-9 { result[end].end = result[start].start }
+        }
+        return result
+    }
+
     nonisolated static func apply(_ spans: [LyricsAICTC.Span], plan: LyricsAIPronunciation,
                                   to source: LyricsDraft, englishSplit: LyricsAIEnglishSplit = .automatic,
                                   reviewIssues: [LyricsAIReviewIssue] = []) throws -> LyricsAIAlignmentResult {

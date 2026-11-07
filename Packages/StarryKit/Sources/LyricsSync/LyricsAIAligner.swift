@@ -125,7 +125,8 @@ public actor LyricsAIAligner {
             return LyricsAIReviewIssue(syllableIDs: ids, kind: .uncertainReading,
                                        message: "第 \($0.line + 1) 行「\($0.text)」：多读音待核对，当前读音为\(reading)")
         }
-        var result = try Self.apply(spans, plan: plan, to: draft, englishSplit: englishSplit, reviewIssues: issues)
+        var result = try Self.apply(Self.closingShortGaps(spans, plan: plan, draft: draft), plan: plan, to: draft,
+                                    englishSplit: englishSplit, reviewIssues: issues)
         result.resolvedReadings = readings.resolvedCount
         progress(.init(1, "打轴完成，请预览并试听"))
         return result

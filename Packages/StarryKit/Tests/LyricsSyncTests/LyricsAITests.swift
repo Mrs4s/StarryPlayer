@@ -117,6 +117,35 @@ import Testing
         #expect(result.draft.lines[0].syllables[0].ruby?.allSatisfy { $0.span != nil } == true)
     }
 
+    @Test func shortPausesInsideALineCloseWhileRestsLineBreaksAndLongerPausesStay() throws {
+        let draft = LyricsDraft(lines: [
+            .init(syllables: [.init(text: "あ"), .init(text: "、"), .init(text: "い"), .init(text: "▨", isRest: true),
+                              .init(text: "う"), .init(text: "え")]),
+            .init(syllables: [.init(text: "お")])
+        ])
+        let plan = LyricsAIPronunciation(
+            tokens: [.init(label: 1, sustainClass: 1), .init(label: 2, sustainClass: 2), .init(label: 1, sustainClass: 3),
+                     .init(label: 2, sustainClass: 4, endsLine: true), .init(label: 1, sustainClass: 5, endsLine: true)],
+            units: [.init(line: 0, syllable: 0, tokens: 0..<1, ruby: [], approximate: false),
+                    .init(line: 0, syllable: 1, tokens: 1..<1, ruby: [], approximate: false),
+                    .init(line: 0, syllable: 2, tokens: 1..<2, ruby: [], approximate: false),
+                    .init(line: 0, syllable: 3, tokens: 2..<2, ruby: [], approximate: false),
+                    .init(line: 0, syllable: 4, tokens: 2..<3, ruby: [], approximate: false),
+                    .init(line: 0, syllable: 5, tokens: 3..<4, ruby: [], approximate: false),
+                    .init(line: 1, syllable: 0, tokens: 4..<5, ruby: [], approximate: false)],
+            lines: [0, 1], estimatedCount: 0, backgroundCount: 0)
+        // あ→い 60 ms across punctuation; い→う 60 ms across a rest; う→え 100 ms; え→お a line break.
+        let spans: [LyricsAICTC.Span] = [.init(start: 0, end: 0.2), .init(start: 0.26, end: 0.4), .init(start: 0.46, end: 0.6),
+                                         .init(start: 0.7, end: 0.9), .init(start: 0.94, end: 1.2)]
+        let closed = LyricsAIAligner.closingShortGaps(spans, plan: plan, draft: draft)
+        #expect(closed == [.init(start: 0, end: 0.26), .init(start: 0.26, end: 0.4), .init(start: 0.46, end: 0.6),
+                           .init(start: 0.7, end: 0.9), .init(start: 0.94, end: 1.2)])
+        let syllables = try LyricsAIAligner.apply(closed, plan: plan, to: draft).draft.lines[0].syllables
+        #expect(syllables[1].end == syllables[2].start)
+        #expect(syllables[0].end! > 0.25 && syllables[0].end! <= syllables[1].start!)
+        #expect(syllables[4].start == 0.46)
+    }
+
     @Test func englishUsesTheExternalDictionaryAndUnknownOnlyLyricsDoNotGetInventedTimes() throws {
         let line = LyricsDraft(lines: [.init(syllables: [.init(text: "Hello")])])
         let plan = try LyricsAIPronunciation.make(draft: line, vocabulary: ["は": 67, "ろ": 97, "ー": 103], english: ["hello": "ハロー"])
