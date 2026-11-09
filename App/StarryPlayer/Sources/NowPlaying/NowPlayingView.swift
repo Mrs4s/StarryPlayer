@@ -38,8 +38,6 @@ struct NowPlayingLayout {
         CGRect(x: ((columnWidth - side) / 2).rounded(), y: groupTop, width: side, height: side)
     }
 
-    var artworkRadius: CGFloat { max(10, side * 0.032) }
-
     var panelGutter: CGFloat { 24 * scale }
 
     var panelContentWidth: CGFloat { min(size.width - columnWidth - 56 * scale, 720 * scale) }
@@ -343,16 +341,16 @@ struct NowPlayingView: View {
         let barScale = source.map { $0.width * (player.isPlaying ? 1 : 0.88) / target.width } ?? 0.86
         let away = CGSize(width: source.map { $0.midX - target.midX } ?? 0, height: source.map { $0.midY - target.midY } ?? 60)
         let flying = !heroIn && !reduceMotion
-        let scale = flying ? barScale : (player.isPlaying || reduceMotion ? 1 : 0.9)
-        let radius = flying ? barRadius / barScale : layout.artworkRadius
-        return ArtworkView(artwork: player.current?.artwork, radius: 0, pixelSize: 800, fallback: player.coverImage)
+        // Compensate for the cover's paused scale during the flight from the player bar.
+        let pausedScale = reduceMotion ? 1 : CoverStyle.pausedScale
+        let restScale = player.isPlaying ? 1 : pausedScale
+        let radius = flying ? barRadius / barScale : CoverStyle.radius
+        let tilts = model.settings.settings.motionLevel.tiltsCover && !reduceMotion
+        return NowPlayingCover(artwork: player.current?.artwork, fallback: player.coverImage, radius: radius, playing: player.isPlaying, pausedScale: pausedScale, raised: heroIn, tilts: tilts)
             .frame(width: layout.side, height: layout.side)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .shadow(color: .black.opacity(heroIn ? (player.isPlaying ? 0.42 : 0.28) : 0), radius: 34 * layout.scale, y: 16 * layout.scale)
-            .scaleEffect(scale)
+            .scaleEffect(flying ? barScale / restScale : 1)
             .offset(flying ? away : .zero)
             .opacity(heroIn || source != nil ? 1 : 0)
-            .animation(.spring(response: 0.5, dampingFraction: 0.68), value: player.isPlaying)
     }
 
     private var panels: [NowPlayingPanel] {

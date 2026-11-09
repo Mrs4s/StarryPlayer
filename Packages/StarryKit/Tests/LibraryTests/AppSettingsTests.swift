@@ -13,6 +13,7 @@ struct AppSettingsTests {
             var settings = AppSettings()
             settings.sidebarMode = mode
             settings.playerBarStyle = .glass
+            settings.motionLevel = .minimal
             settings.showAdvancedSettings = true
             settings.restorePlayback = false
             settings.outputDevice = .init(uid: "AppleUSBAudioEngine:1", name: "USB DAC")
@@ -30,6 +31,7 @@ struct AppSettingsTests {
         #expect(saved.sidebarCollapsed)
         #expect(saved.playerBarStyle == .systemDefault)
         #expect(saved.sidebarMode == .floating)
+        #expect(saved.motionLevel == .fancy)
         #expect(saved.showAdvancedSettings == false)
         #expect(saved.restorePlayback)
         #expect(saved.outputDevice == nil)
@@ -157,9 +159,10 @@ struct AppSettingsTests {
     }
 
     @Test func unreadableValuesFallBackOneByOne() throws {
-        let saved = try decode(#"{"playerBarStyle": "neon", "sidebarMode": "drawer", "outputDevice": {"uid": 3}, "menuBarLyrics": 3, "sidebarCollapsed": true}"#)
+        let saved = try decode(#"{"playerBarStyle": "neon", "sidebarMode": "drawer", "motionLevel": "wild", "outputDevice": {"uid": 3}, "menuBarLyrics": 3, "sidebarCollapsed": true}"#)
         #expect(saved.playerBarStyle == .systemDefault)
         #expect(saved.sidebarMode == .floating)
+        #expect(saved.motionLevel == .fancy)
         #expect(saved.outputDevice == nil)
         #expect(saved.menuBarLyrics.enabled == false)
         #expect(saved.sidebarCollapsed)

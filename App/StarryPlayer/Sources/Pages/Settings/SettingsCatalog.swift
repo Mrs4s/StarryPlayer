@@ -205,7 +205,16 @@ struct SettingsCatalog {
     }
 
     private var nowPlaying: [SettingsGroup] {
-        [lyricContent, lyricLayout, lyricMotion, background, backgroundDetails, nowPlayingReset]
+        [lyricContent, lyricLayout, lyricMotion, cover, background, backgroundDetails, nowPlayingReset]
+    }
+
+    private var cover: SettingsGroup {
+        let detail = settings.motionLevel.tiltsCover ? "指针在封面上移动时，封面跟着轻轻倾斜，表面泛起柔和的高光" : "封面保持静止，不随指针倾斜"
+        return SettingsGroup("cover", title: "封面", entries: [
+            SettingsEntry("motionLevel", "动效等级", detail: detail, keywords: "封面 倾斜 悬停 指针 鼠标 高光 立体 3D 动画 动效 简洁 适中 丰富 motion tilt hover") {
+                SegmentSwitch(selection: bind(\.motionLevel), options: [(.minimal, "简洁"), (.reduced, "适中"), (.fancy, "丰富")])
+            },
+        ])
     }
 
     private var lyricContent: SettingsGroup {

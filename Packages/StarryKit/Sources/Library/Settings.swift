@@ -95,6 +95,12 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     public enum SidebarMode: String, Codable, Sendable, CaseIterable { case docked, floating, autoHide }
 
+    public enum MotionLevel: String, Codable, Sendable {
+        case minimal, reduced, fancy
+
+        public var tiltsCover: Bool { self != .minimal }
+    }
+
     public struct Lyrics: Codable, Sendable, Equatable {
         public enum BlurMode: String, Codable, Sendable, CaseIterable { case off, upcoming, both }
         public enum Alignment: String, Codable, Sendable, CaseIterable { case leading, center }
@@ -350,6 +356,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var sidebarCollapsed = false
     public var sidebarMode: SidebarMode = .floating
     public var playerBarStyle: PlayerBarStyle = .systemDefault
+    public var motionLevel: MotionLevel = .fancy
     public var lyrics = Lyrics()
     public var background = Background()
     public var menuBarLyrics = MenuBarLyrics()
@@ -370,7 +377,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     // Tolerant decoding so settings saved by older builds keep working when fields are added.
     private enum CodingKeys: String, CodingKey {
-        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, language, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, lyrics, background, menuBarLyrics, desktopLyrics, notch, checksForUpdates
+        case lyricSourceOrder, knownLyricPlugins, preferredQuality, sourceQualities, allowTrialPlay, outputDevice, restorePlayback, showAdvancedSettings, preloadNextTrack, transition, loudness, lyricPreferTrackPlatform, lyricRaceProviders, amllDbEnabled, amllDbServer, localLyricRepository, stripLyricCredits, sources, scrobble, plugins, cache, vocalModelDirectory, visualizerEnabled, appearance, language, themeColorMode, customThemeColorHex, sidebarCollapsed, sidebarMode, playerBarStyle, motionLevel, lyrics, background, menuBarLyrics, desktopLyrics, notch, checksForUpdates
     }
 
     public init(from decoder: any Decoder) throws {
@@ -406,6 +413,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         sidebarCollapsed = try c.decodeIfPresent(Bool.self, forKey: .sidebarCollapsed) ?? d.sidebarCollapsed
         sidebarMode = (try? c.decodeIfPresent(SidebarMode.self, forKey: .sidebarMode)) ?? d.sidebarMode
         playerBarStyle = (try? c.decodeIfPresent(PlayerBarStyle.self, forKey: .playerBarStyle)) ?? d.playerBarStyle
+        motionLevel = (try? c.decodeIfPresent(MotionLevel.self, forKey: .motionLevel)) ?? d.motionLevel
         lyrics = (try? c.decodeIfPresent(Lyrics.self, forKey: .lyrics)) ?? d.lyrics
         background = (try? c.decodeIfPresent(Background.self, forKey: .background)) ?? d.background
         menuBarLyrics = (try? c.decodeIfPresent(MenuBarLyrics.self, forKey: .menuBarLyrics)) ?? d.menuBarLyrics
