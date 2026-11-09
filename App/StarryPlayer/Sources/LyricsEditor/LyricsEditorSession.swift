@@ -34,6 +34,7 @@ final class LyricsEditorSession {
     var isGeneratingRomanization = false
     let translation = LyricsEditorTranslationState()
     let metadataSearch = LyricsEditorMetadataSearchState()
+    let amllSubmit = LyricsEditorSubmitState()
     @ObservationIgnored private var flashTask: Task<Void, Never>?
     private var undoStack: [Snapshot] = []
     @ObservationIgnored private var coalescing: (key: String, epoch: Int, depth: Int)?
@@ -867,6 +868,14 @@ final class LyricsEditorSession {
 
     func writeLyrics(format: LyricsExportFormat, repositoryCompatible: Bool = false) throws -> LyricsExport.Output {
         try LyricsExport.write(draft, format: format, metadata: exportMetadata, duration: exportDuration, repositoryCompatible: repositoryCompatible)
+    }
+
+    func credit(_ author: AMLLSubmission.Author) {
+        guard !AMLLSubmission.credits(author, in: exportMetadata) else { return }
+        let keys = [AMLLSubmission.authorIDKey, AMLLSubmission.authorLoginKey]
+        metadata.removeAll { keys.contains($0.key) && $0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+        metadata.append(MetadataEntry(key: AMLLSubmission.authorIDKey, value: String(author.id)))
+        metadata.append(MetadataEntry(key: AMLLSubmission.authorLoginKey, value: author.login))
     }
 
     func needsTiming(for format: LyricsExportFormat) -> Bool {

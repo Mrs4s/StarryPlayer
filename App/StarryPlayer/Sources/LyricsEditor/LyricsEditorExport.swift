@@ -260,6 +260,7 @@ struct LyricsEditorExport: View {
     private static let edgeFade: CGFloat = 10
 
     let session: LyricsEditorSession
+    var submit: () -> Void
     var close: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
@@ -274,8 +275,9 @@ struct LyricsEditorExport: View {
     @State private var keyMonitor: Any?
     @Namespace private var selection
 
-    init(session: LyricsEditorSession, close: @escaping () -> Void) {
+    init(session: LyricsEditorSession, submit: @escaping () -> Void, close: @escaping () -> Void) {
         self.session = session
+        self.submit = submit
         self.close = close
         let stored = UserDefaults.standard.string(forKey: Self.choiceKey).flatMap(LyricsExportChoice.init(storageValue:))
         _choice = State(initialValue: stored ?? .format(.ttml))
@@ -571,6 +573,16 @@ struct LyricsEditorExport: View {
                 copyButton.transition(.opacity)
             }
             Spacer(minLength: 0)
+            if choice == .format(.ttml) {
+                PillButton(title: "提交到歌词库…", systemName: "arrow.triangle.pull", variant: .tertiary, height: 32) {
+                    remember()
+                    submit()
+                }
+                .disabled(!canExport)
+                .opacity(canExport ? 1 : 0.45)
+                .help("用 GitHub CLI 的登录向 AMLL TTML DB 开 Pull Request，文件原样合入")
+                .transition(.opacity)
+            }
             PillButton(title: "取消", variant: .ghost, height: 32, action: close)
             PillButton(title: choice == .project ? "保存工程…" : "导出…",
                        systemName: choice == .project ? "square.and.arrow.down.on.square" : "square.and.arrow.up",
@@ -694,7 +706,7 @@ private extension View {
     }
 }
 
-private extension Theme {
+extension Theme {
     var exportKept: Color { Color(hex: isDark ? "#5FD08A" : "#2E9D5B") }
     var exportLost: Color { Color(hex: isDark ? "#F0625D" : "#DC3F3A") }
 }

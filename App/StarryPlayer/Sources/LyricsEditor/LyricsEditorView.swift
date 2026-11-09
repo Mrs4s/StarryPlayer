@@ -57,7 +57,7 @@ struct LyricsEditorView: View {
     private var focusPreview: Bool { previewLayout == .preview }
 
     enum Panel: Equatable {
-        case importer, metadata, tracks, roles, shortcuts, translation, aiTiming, export
+        case importer, metadata, tracks, roles, shortcuts, translation, aiTiming, export, submit
         case alignment(UUID)
     }
 
@@ -172,7 +172,10 @@ struct LyricsEditorView: View {
             LyricsEditorAITiming(session: session, audio: audio, state: aiTiming, close: close)
                 .transition(.opacity).zIndex(3)
         case .export:
-            LyricsEditorExport(session: session, close: close).transition(.opacity).zIndex(3)
+            LyricsEditorExport(session: session, submit: { show(.submit) }, close: close).transition(.opacity).zIndex(3)
+        case .submit:
+            LyricsEditorSubmit(session: session, back: { show(.export) }, editMetadata: { show(.metadata) }, close: close)
+                .transition(.opacity).zIndex(3)
         case .alignment(let id):
             if let line = session.draft.lines.first(where: { $0.id == id }) {
                 LyricsEditorAlignment(session: session, audio: audio, line: line, close: close)
