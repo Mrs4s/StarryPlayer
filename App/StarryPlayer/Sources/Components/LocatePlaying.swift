@@ -198,6 +198,9 @@ struct LocatePlayingButton: View {
     var context: PlaybackContext
     var query: String
     var gap: CGFloat = 8
+    /// Off for a button that leaves the window as the page scrolls (in a table's header): the
+    /// page then keeps a hidden one that listens.
+    var listensForShortcut = true
     var clearSearch: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.pinnedTopInset) private var topInset
@@ -220,7 +223,7 @@ struct LocatePlayingButton: View {
         .animation(.easeOut(duration: 0.2), value: locatable != nil)
         .background(ScrollViewFinder { [locator] in locator.scrollView = $0 })
         .onChange(of: model.locateRequest) {
-            guard pageActive else { return }
+            guard listensForShortcut, pageActive else { return }
             if !locate() { model.showToast("正在播放的歌曲不在这个列表里") }
         }
     }
@@ -261,34 +264,5 @@ struct LocatePlayingButton: View {
             model.showToast("定位失败：\(failure)")
         }
         return true
-    }
-}
-
-struct LocatedGlow: ViewModifier {
-    var time: CFTimeInterval?
-    @Environment(\.theme) private var theme
-    @State private var lit = false
-
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                RoundedRectangle(cornerRadius: Radius.menu, style: .continuous)
-                    .fill(theme.primary.opacity(0.14))
-                    .strokeBorder(theme.primary.opacity(0.45), lineWidth: 1)
-                    .opacity(lit ? 1 : 0)
-                    .allowsHitTesting(false)
-            }
-            .onAppear(perform: glow)
-            .onChange(of: time) { glow() }
-    }
-
-    private func glow() {
-        // A row built after it was located (scrolled to) glows too, not one scrolled back to later.
-        guard let time, CACurrentMediaTime() - time < 0.5 else { return }
-        withAnimation(.easeOut(duration: 0.2).delay(0.2)) {
-            lit = true
-        } completion: {
-            withAnimation(.easeInOut(duration: 0.9).delay(0.7)) { lit = false }
-        }
     }
 }

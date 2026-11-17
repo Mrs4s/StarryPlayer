@@ -6,6 +6,7 @@ final class HostedRowView: NSView {
     let host = NSHostingView(rootView: AnyView(EmptyView()))
     private(set) var measured: CGFloat?
     var onHeight: ((CGFloat) -> Void)?
+    var rowID: String?
 
     init() {
         super.init(frame: .zero)

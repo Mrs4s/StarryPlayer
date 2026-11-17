@@ -57,18 +57,17 @@ struct SearchResultsPage: View {
     }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop) {
-            hero
-        } bar: { tab in
-            DetailTabBar(tab: tab, items: tabItems) { EmptyView() }
-                .reveal(appeared, delay: 0.12, distance: 6)
-        } rows: { tab in
-            tabRows(switchTab: tab)
-        }
-        .onGeometryChange(for: Int.self) { SearchGrid.columns(for: $0.size.width) } action: { columns = $0 }
-        .task(id: source) { await load() }
-        .task(id: topArtwork) { await backdrop.tint(from: topArtwork, pixels: Self.artworkPixels) }
-        .onAppear { appeared = true }
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero), bar: AnyView(bar), barBottomPadding: gapAboveRows, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0, arrival: .swapped)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .onGeometryChange(for: Int.self) { SearchGrid.columns(for: $0.size.width) } action: { columns = $0 }
+            .task(id: source) { await load() }
+            .task(id: topArtwork) { await backdrop.tint(from: topArtwork, pixels: Self.artworkPixels) }
+            .onAppear { appeared = true }
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: $tab, items: tabItems) { EmptyView() }
+            .reveal(appeared, delay: 0.12, distance: 6)
     }
 
     private var hero: some View {
@@ -108,18 +107,18 @@ struct SearchResultsPage: View {
         }
     }
 
-    @ViewBuilder private func tabRows(switchTab: Binding<Tab>) -> some View {
+    private var tableRows: [DetailTableRow] {
         switch tab {
-        case .top: topRows(switchTab: switchTab)
+        case .top: topRows
         case .songs: songRows
         case .artists:
-            gridRows(artists, fetch: fetch(.artist) { $0.artists }, circle: true, empty: "歌手") { artist in
+            gridRows(artists, kind: "artists", fetch: fetch(.artist) { $0.artists }, circle: true, empty: "歌手") { artist in
                 CoverCard(title: artist.name, subtitle: SearchFormat.artistSubtitle(artist), artwork: artist.artwork, circle: true) {
                     model.navigate(.artist(artist))
                 }
             }
         case .albums:
-            gridRows(albums, fetch: fetch(.album) { $0.albums }, empty: "专辑") { album in
+            gridRows(albums, kind: "albums", fetch: fetch(.album) { $0.albums }, empty: "专辑") { album in
                 CoverCard(title: album.name, subtitle: SearchFormat.albumSubtitle(album), artwork: album.artwork) {
                     model.navigate(.album(album))
                 } onPlay: {
@@ -127,7 +126,7 @@ struct SearchResultsPage: View {
                 }
             }
         case .playlists:
-            gridRows(playlists, fetch: fetch(.playlist) { $0.playlists }, empty: "歌单") { playlist in
+            gridRows(playlists, kind: "playlists", fetch: fetch(.playlist) { $0.playlists }, empty: "歌单") { playlist in
                 CoverCard(title: playlist.name, subtitle: SearchFormat.playlistSubtitle(playlist), artwork: playlist.artwork) {
                     model.navigate(.collection(playlist))
                 } onPlay: {
@@ -138,90 +137,115 @@ struct SearchResultsPage: View {
         }
     }
 
-    @ViewBuilder private func topRows(switchTab: Binding<Tab>) -> some View {
-        switch overview {
-        case .idle, .loading:
-            TopResultsSkeleton()
-        case .failed(let message):
-            failure(message) { Task { await loadOverview() } }
-        case .loaded(let overview):
-            if overview.isEmpty {
-                StateView(systemName: "magnifyingglass", title: "没有找到与“\(query)”相关的结果", detail: "换个关键词试试")
-            } else {
-                SearchOverviewRows(overview: overview, context: context, tint: backdrop.tint) { switchTab.wrappedValue = $0 }
-            }
+    private var gapAboveRows: CGFloat {
+        switch tab {
+        case .top: 0
+        case .songs: songs.phase == .loaded ? TrackListRows.gapAbove : 0
+        case .artists: artists.phase == .loaded && !artists.items.isEmpty ? SearchGrid.gapAbove : 0
+        case .albums: albums.phase == .loaded && !albums.items.isEmpty ? SearchGrid.gapAbove : 0
+        case .playlists: playlists.phase == .loaded && !playlists.items.isEmpty ? SearchGrid.gapAbove : 0
+        case .users: users.phase == .loaded ? TrackListRows.gapAbove : 0
         }
     }
 
-    @ViewBuilder private var userRows: some View {
+    private var topRows: [DetailTableRow] {
+        switch overview {
+        case .idle, .loading:
+            return [.hosted("top-loading") { TopResultsSkeleton() }]
+        case .failed(let message):
+            return [.hosted("top-failed") { failure(message) { Task { await loadOverview() } } }]
+        case .loaded(let overview):
+            guard !overview.isEmpty else {
+                return [.hosted("top-empty") {
+                    StateView(systemName: "magnifyingglass", title: "没有找到与“\(query)”相关的结果", detail: "换个关键词试试")
+                }]
+            }
+            return [.hosted("top") {
+                VStack(alignment: .leading, spacing: 0) {
+                    SearchOverviewRows(overview: overview, context: context, tint: backdrop.tint) { tab = $0 }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }]
+        }
+    }
+
+    private var userRows: [DetailTableRow] {
         let fetch = fetch(.user) { $0.users }
         switch users.phase {
         case .idle, .loading:
-            UserSkeleton(count: 8)
-                .task { await users.loadIfNeeded(pages: fetch) }
+            return [.hosted("users-loading") {
+                UserSkeleton(count: 8)
+                    .task { await users.loadIfNeeded(pages: fetch) }
+            }]
         case .failed(let message):
-            failure(message) { Task { await users.load(pages: fetch) } }
+            return [.hosted("users-failed") { failure(message) { Task { await users.load(pages: fetch) } } }]
         case .loaded:
-            Color.clear.frame(height: 8)
+            var rows: [DetailTableRow] = []
             if users.items.isEmpty {
-                StateView(systemName: "person.2", title: "没有找到与“\(query)”相关的用户")
+                rows.append(.hosted("users-empty") { StateView(systemName: "person.2", title: "没有找到与“\(query)”相关的用户") })
             } else {
-                UserRows(users: users.items, list: "search")
+                rows += users.items.map { user in
+                    DetailTableRow.hosted("users-\(user.id)", listRow: HostedListRow(estimatedHeight: UserRow.height)) { UserRow(user: user) }
+                }
             }
             if users.hasMore {
-                moreRows(users, fetch: fetch) { UserSkeleton(count: 3) }
+                rows.append(.more("users", of: users, load: { await users.loadMore(pages: fetch) }) { UserSkeleton(count: 3) })
             }
+            return rows
         }
     }
 
-    @ViewBuilder private var songRows: some View {
+    private var songRows: [DetailTableRow] {
         let fetch = fetch(.song) { $0.songs }
         switch songs.phase {
         case .idle, .loading:
-            TrackSkeleton(count: 10, artwork: true)
-                .task { await songs.loadIfNeeded(pages: fetch) }
+            return [.hosted("songs-loading") {
+                TrackSkeleton(count: 10, artwork: true)
+                    .task { await songs.loadIfNeeded(pages: fetch) }
+            }]
         case .failed(let message):
-            failure(message) { Task { await songs.load(pages: fetch) } }
+            return [.hosted("songs-failed") { failure(message) { Task { await songs.load(pages: fetch) } } }]
         case .loaded:
-            Color.clear.frame(height: 8)
+            var rows: [DetailTableRow] = []
             if songs.items.isEmpty {
-                StateView(systemName: "music.note", title: "没有找到与“\(query)”相关的单曲")
+                rows.append(.hosted("songs-empty") { StateView(systemName: "music.note", title: "没有找到与“\(query)”相关的单曲") })
             } else {
-                RevealedTrackRows(tracks: songs.items, context: context)
+                rows.append(DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(tracks: songs.items, context: context))))
             }
             if songs.hasMore {
-                moreRows(songs, fetch: fetch) { TrackSkeleton(count: 3, artwork: true) }
+                rows.append(.more("songs", of: songs, load: { await songs.loadMore(pages: fetch) }) { TrackSkeleton(count: 3, artwork: true) })
             }
+            return rows
         }
     }
 
-    @ViewBuilder private func gridRows<Item: Identifiable, Card: View>(_ feed: PagedFeed<Item>, fetch: @escaping PagedFeed<Item>.PageFetch, circle: Bool = false, empty: String, @ViewBuilder card: @escaping (Item) -> Card) -> some View {
+    private func gridRows<Item: Identifiable, Card: View>(_ feed: PagedFeed<Item>, kind: String, fetch: @escaping PagedFeed<Item>.PageFetch, circle: Bool = false, empty: String, @ViewBuilder card: @escaping (Item) -> Card) -> [DetailTableRow] {
         switch feed.phase {
         case .idle, .loading:
-            CardGridSkeleton(columns: columns, rows: 2, circle: circle)
-                .task { await feed.loadIfNeeded(pages: fetch) }
+            return [.hosted("\(kind)-loading") {
+                CardGridSkeleton(columns: columns, rows: 2, circle: circle)
+                    .task { await feed.loadIfNeeded(pages: fetch) }
+            }]
         case .failed(let message):
-            failure(message) { Task { await feed.load(pages: fetch) } }
+            return [.hosted("\(kind)-failed") { failure(message) { Task { await feed.load(pages: fetch) } } }]
         case .loaded:
+            var rows: [DetailTableRow] = []
             if feed.items.isEmpty {
-                StateView(systemName: "magnifyingglass", title: "没有找到与“\(query)”相关的\(empty)")
+                rows.append(.hosted("\(kind)-empty") { StateView(systemName: "magnifyingglass", title: "没有找到与“\(query)”相关的\(empty)") })
             } else {
-                SearchCardRows(items: feed.items, columns: columns, card: card)
+                let columns = max(columns, 1)
+                let items = feed.items
+                rows += stride(from: 0, to: items.count, by: columns).map { start in
+                    let row = Array(items[start..<min(start + columns, items.count)])
+                    return DetailTableRow.hosted("\(kind)-\(start / columns)", listRow: HostedListRow(heightKind: kind)) {
+                        SearchCardRow(items: row, columns: columns, card: card)
+                    }
+                }
             }
             if feed.hasMore {
-                moreRows(feed, fetch: fetch) { CardGridSkeleton(columns: columns, rows: 1, circle: circle) }
+                rows.append(.more(kind, of: feed, load: { await feed.loadMore(pages: fetch) }) { CardGridSkeleton(columns: columns, rows: 1, circle: circle) })
             }
-        }
-    }
-
-    @ViewBuilder private func moreRows<Item: Identifiable, Placeholder: View>(_ feed: PagedFeed<Item>, fetch: @escaping PagedFeed<Item>.PageFetch, @ViewBuilder placeholder: () -> Placeholder) -> some View {
-        if feed.moreFailed {
-            PillButton(title: "加载失败，重试", systemName: "arrow.clockwise", variant: .tertiary) { feed.retryMore() }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-        } else {
-            placeholder()
-                .task(id: feed.items.count) { await feed.loadMore(pages: fetch) }
+            return rows
         }
     }
 
@@ -262,7 +286,7 @@ struct SearchResultsPage: View {
     private func loadOverview() async {
         if overview.value == nil { overview = .loading }
         let source = source
-        // Not animated: the page's height changes with it (see `DetailPageScroll`).
+        // Not animated: the page's height changes with it (see `DetailTablePage`).
         overview = await Loadable.run { try await model.require(source, as: (any SearchableSource).self, "搜索").searchOverview(query) }
     }
 
@@ -500,44 +524,28 @@ private struct TopResultCard: View {
 enum SearchGrid {
     static let spacing: CGFloat = 22
     static let minCardWidth: CGFloat = 150
+    static let gapAbove: CGFloat = 22
 
     static func columns(for width: CGFloat) -> Int {
         max(2, Int((width - 2 * Metrics.pagePadding + spacing) / (minCardWidth + spacing)))
     }
 }
 
-private struct SearchCardRows<Item: Identifiable, Card: View>: View {
+private struct SearchCardRow<Item: Identifiable, Card: View>: View {
     var items: [Item]
     var columns: Int
     @ViewBuilder var card: (Item) -> Card
-    @State private var shown = false
 
     var body: some View {
-        let columns = max(columns, 1)
-        // Keyed by the kind as well: the lazy stack would take the artists' first rows for the
-        // albums' (same offsets) and keep showing the artists after a tab switch.
-        ForEach(Array(stride(from: 0, to: items.count, by: columns)).map { RowID(kind: "\(Item.self)", start: $0) }) { rowID in
-            let start = rowID.start
-            let row = items[start..<min(start + columns, items.count)]
-            HStack(alignment: .top, spacing: SearchGrid.spacing) {
-                ForEach(row) { item in
-                    card(item).frame(maxWidth: .infinity)
-                }
-                ForEach(row.count..<columns, id: \.self) { _ in
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
-                }
+        HStack(alignment: .top, spacing: SearchGrid.spacing) {
+            ForEach(items) { item in
+                card(item).frame(maxWidth: .infinity)
             }
-            .padding(.top, start == 0 ? 22 : 0)
-            .padding(.bottom, 24)
-            .staggeredReveal(shown, index: start / columns)
-            .onAppear { if !shown { shown = true } }
+            ForEach(items.count..<max(columns, items.count), id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+            }
         }
-    }
-
-    private struct RowID: Hashable, Identifiable {
-        var kind: String
-        var start: Int
-        var id: Self { self }
+        .padding(.bottom, 24)
     }
 }
 

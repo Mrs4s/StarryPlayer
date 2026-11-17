@@ -51,24 +51,23 @@ struct ArtistPage: View {
     }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop) {
-            hero
-        } bar: { tab in
-            DetailTabBar(tab: sectionBinding(tab), items: tabItems) {
-                if tab.wrappedValue.section == .songs, songOrders.count > 1 {
-                    SegmentSwitch(selection: orderBinding(tab), options: [(.hot, "热门"), (.time, "最新")])
-                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
-                }
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero), bar: AnyView(bar), barBottomPadding: gapAboveRows, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0, arrival: .swapped)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .onGeometryChange(for: Int.self) { DiscographyRows.columns(for: $0.size.width) } action: { columns = $0 }
+            .onChange(of: tab) { if tab.section == .songs { songTab = tab } }
+            .task(id: artist.id) { await load() }
+            .task(id: shown.artwork?.sized(Self.portraitPixels)) { await backdrop.tint(from: shown.artwork, pixels: Self.portraitPixels) }
+            .onAppear { appeared = true }
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: sectionBinding($tab), items: tabItems) {
+            if tab.section == .songs, songOrders.count > 1 {
+                SegmentSwitch(selection: orderBinding($tab), options: [(.hot, "热门"), (.time, "最新")])
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
             }
-            .reveal(appeared, delay: 0.26, distance: 6)
-        } rows: {
-            tabRows
         }
-        .onGeometryChange(for: Int.self) { DiscographyRows.columns(for: $0.size.width) } action: { columns = $0 }
-        .onChange(of: tab) { if tab.section == .songs { songTab = tab } }
-        .task(id: artist.id) { await load() }
-        .task(id: shown.artwork?.sized(Self.portraitPixels)) { await backdrop.tint(from: shown.artwork, pixels: Self.portraitPixels) }
-        .onAppear { appeared = true }
+        .reveal(appeared, delay: 0.26, distance: 6)
     }
 
     private var hero: some View {
@@ -239,81 +238,101 @@ struct ArtistPage: View {
         }
     }
 
-    @ViewBuilder private var tabRows: some View {
+    private var tableRows: [DetailTableRow] {
         switch tab {
-        case .hotSongs: songRows(hotSongs, order: songOrders.contains(.hot) ? .hot : songOrders.first ?? .hot)
-        case .newSongs: songRows(newSongs, order: .time)
+        case .hotSongs: songRows(hotSongs, order: songOrders.contains(.hot) ? .hot : songOrders.first ?? .hot, key: "hot")
+        case .newSongs: songRows(newSongs, order: .time, key: "new")
         case .albums: albumRows
         case .about: aboutRows
         }
     }
 
-    @ViewBuilder private func songRows(_ feed: PagedFeed<Track>, order: ArtistSongOrder) -> some View {
+    private var gapAboveRows: CGFloat {
+        switch tab {
+        case .hotSongs, .newSongs:
+            (tab == .hotSongs ? hotSongs : newSongs).phase == .loaded ? TrackListRows.gapAbove : 0
+        case .albums:
+            albums.phase == .loaded && !albums.items.isEmpty ? DiscographyRows.gapAbove : 0
+        case .about:
+            0
+        }
+    }
+
+    private func songRows(_ feed: PagedFeed<Track>, order: ArtistSongOrder, key: String) -> [DetailTableRow] {
         let fetch = songFetcher(order)
         switch feed.phase {
         case .idle, .loading:
-            TrackSkeleton(count: 10, artwork: true)
-                .task { await feed.loadIfNeeded(fetch) }
+            return [.hosted("songs-loading-\(key)") {
+                TrackSkeleton(count: 10, artwork: true)
+                    .task { await feed.loadIfNeeded(fetch) }
+            }]
         case .failed(let message):
-            failure(message) { Task { await feed.load(fetch) } }
+            return [.hosted("songs-failed-\(key)") { failure(message) { Task { await feed.load(fetch) } } }]
         case .loaded:
-            Color.clear.frame(height: 8)
+            var rows: [DetailTableRow] = []
             if feed.items.isEmpty {
-                StateView(systemName: "music.note", title: "暂无歌曲")
+                rows.append(.hosted("songs-empty-\(key)") { StateView(systemName: "music.note", title: "暂无歌曲") })
             } else {
-                RevealedTrackRows(tracks: feed.items, context: context)
+                rows.append(DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(tracks: feed.items, context: context))))
             }
             if feed.hasMore {
-                moreRows(feed, fetch: fetch) { TrackSkeleton(count: 3, artwork: true) }
+                rows.append(.more("songs-\(key)", of: feed, load: { await feed.loadMore(fetch) }) { TrackSkeleton(count: 3, artwork: true) })
             } else if !feed.items.isEmpty {
-                Text("共 \(feed.items.count) 首歌曲")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.onSurfaceVariant)
-                    .padding(.top, 22)
-                    .padding(.leading, 12)
+                rows.append(.hosted("songs-footer-\(key)") {
+                    Text("共 \(feed.items.count) 首歌曲")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.onSurfaceVariant)
+                        .padding(.top, 22)
+                        .padding(.leading, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                })
             }
+            return rows
         }
     }
 
-    @ViewBuilder private var albumRows: some View {
+    private var albumRows: [DetailTableRow] {
         let fetch = albumFetcher
         switch albums.phase {
         case .idle, .loading:
-            AlbumGridSkeleton(columns: columns, rows: 2, heading: true)
-                .task { await albums.loadIfNeeded(fetch) }
+            return [.hosted("albums-loading") {
+                AlbumGridSkeleton(columns: columns, rows: 2, heading: true)
+                    .task { await albums.loadIfNeeded(fetch) }
+            }]
         case .failed(let message):
-            failure(message) { Task { await albums.load(fetch) } }
+            return [.hosted("albums-failed") { failure(message) { Task { await albums.load(fetch) } } }]
         case .loaded:
+            var rows: [DetailTableRow] = []
             if albums.items.isEmpty {
-                StateView(systemName: "opticaldisc", title: "暂无专辑")
+                rows.append(.hosted("albums-empty") { StateView(systemName: "opticaldisc", title: "暂无专辑") })
             } else {
-                DiscographyRows(albums: albums.items, columns: columns)
+                let columns = columns
+                rows += DiscographyRows.rows(albums.items, columns: columns).enumerated().map { index, row in
+                    DetailTableRow.hosted("albums-\(row.id)", listRow: HostedListRow(heightKind: row.year != nil && index > 0 ? "albums-year" : "albums")) {
+                        DiscographyRow(row: row, columns: columns, leads: index == 0)
+                    }
+                }
             }
             if albums.hasMore {
-                moreRows(albums, fetch: fetch) { AlbumGridSkeleton(columns: columns, rows: 1, heading: false) }
+                rows.append(.more("albums", of: albums, load: { await albums.loadMore(fetch) }) { AlbumGridSkeleton(columns: columns, rows: 1, heading: false) })
             }
+            return rows
         }
     }
 
-    @ViewBuilder private var aboutRows: some View {
+    private var aboutRows: [DetailTableRow] {
         switch state {
         case .idle, .loading:
-            AboutSkeleton()
+            return [.hosted("about-loading") { AboutSkeleton() }]
         case .failed(let message):
-            failure(message) { Task { await load() } }
+            return [.hosted("about-failed") { failure(message) { Task { await load() } } }]
         case .loaded(let detail):
-            ArtistAboutRows(detail: detail, similar: similar) { await loadSimilar() }
-        }
-    }
-
-    @ViewBuilder private func moreRows<Item: Identifiable, Placeholder: View>(_ feed: PagedFeed<Item>, fetch: @escaping PagedFeed<Item>.Fetch, @ViewBuilder placeholder: () -> Placeholder) -> some View {
-        if feed.moreFailed {
-            PillButton(title: "加载失败，重试", systemName: "arrow.clockwise", variant: .tertiary) { feed.retryMore() }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-        } else {
-            placeholder()
-                .task(id: feed.items.count) { await feed.loadMore(fetch) }
+            return [.hosted("about") {
+                VStack(alignment: .leading, spacing: 0) {
+                    ArtistAboutRows(detail: detail, similar: similar) { await loadSimilar() }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }]
         }
     }
 
@@ -337,7 +356,7 @@ struct ArtistPage: View {
 
     private func load() async {
         if state.value == nil { state = .loading }
-        // Not animated: the page's height changes with it (see `DetailPageScroll`); the pieces
+        // Not animated: the page's height changes with it (see `DetailTablePage`); the pieces
         // that appear bring their own transitions.
         state = await Loadable.run { try await model.catalog(artist.source).artist(id: artist.id) }
         followed = nil
@@ -465,55 +484,20 @@ private struct ArtistPlayButton: View {
     }
 }
 
-struct RevealedTrackRows: View {
-    var tracks: [Track]
-    var context: PlaybackContext
-    @Environment(AppModel.self) private var model
-    @State private var shown = false
-
-    var body: some View {
-        ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-            SongRow(track: track, index: index + 1) {
-                model.player.play(tracks, startAt: index, context: context)
-            }
-            .staggeredReveal(shown, index: index)
-            .onAppear { if !shown { shown = true } }
-        }
-    }
-}
-
-struct DiscographyRows: View {
-    struct Row: Identifiable {
-        var id: String
-        var albums: [Album]
-        var year: (title: String, count: Int)?
-    }
-
-    var albums: [Album]
+private struct DiscographyRow: View {
+    var row: DiscographyRows.Row
     var columns: Int
+    var leads: Bool
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
-    @State private var shown = false
-
-    static let spacing: CGFloat = 22
-    static let minCardWidth: CGFloat = 150
-    static let gutter: CGFloat = 84
-
-    nonisolated static func columns(for width: CGFloat) -> Int {
-        max(2, Int((width - 2 * Metrics.pagePadding - gutter + spacing) / (minCardWidth + spacing)))
-    }
 
     var body: some View {
-        ForEach(Array(Self.rows(albums, columns: columns).enumerated()), id: \.element.id) { index, row in
-            HStack(alignment: .top, spacing: 0) {
-                yearLabel(row.year)
-                    .frame(width: Self.gutter, alignment: .topLeading)
-                cardRow(row.albums)
-            }
-            .padding(.top, row.year == nil ? 0 : (index == 0 ? 22 : 12))
-            .staggeredReveal(shown, index: index)
-            .onAppear { if !shown { shown = true } }
+        HStack(alignment: .top, spacing: 0) {
+            yearLabel(row.year)
+                .frame(width: DiscographyRows.gutter, alignment: .topLeading)
+            cardRow(row.albums)
         }
+        .padding(.top, row.year == nil || leads ? 0 : 12)
     }
 
     @ViewBuilder private func yearLabel(_ year: (title: String, count: Int)?) -> some View {
@@ -535,9 +519,9 @@ struct DiscographyRows: View {
     }
 
     private func cardRow(_ albums: [Album]) -> some View {
-        HStack(alignment: .top, spacing: Self.spacing) {
+        HStack(alignment: .top, spacing: DiscographyRows.spacing) {
             ForEach(albums) { album in
-                CoverCard(title: album.name, subtitle: Self.subtitle(album), artwork: album.artwork) {
+                CoverCard(title: album.name, subtitle: DiscographyRows.subtitle(album), artwork: album.artwork) {
                     model.navigate(.album(album))
                 } onPlay: {
                     play(album)
@@ -561,8 +545,25 @@ struct DiscographyRows: View {
             }
         }
     }
+}
 
-    nonisolated static func rows(_ albums: [Album], columns: Int, calendar: Calendar = Calendar(identifier: .gregorian)) -> [Row] {
+enum DiscographyRows {
+    struct Row: Identifiable {
+        var id: String
+        var albums: [Album]
+        var year: (title: String, count: Int)?
+    }
+
+    static let spacing: CGFloat = 22
+    static let minCardWidth: CGFloat = 150
+    static let gutter: CGFloat = 84
+    static let gapAbove: CGFloat = 22
+
+    static func columns(for width: CGFloat) -> Int {
+        max(2, Int((width - 2 * Metrics.pagePadding - gutter + spacing) / (minCardWidth + spacing)))
+    }
+
+    static func rows(_ albums: [Album], columns: Int, calendar: Calendar = Calendar(identifier: .gregorian)) -> [Row] {
         var groups: [(title: String, albums: [Album])] = []
         var undated: [Album] = []
         for album in albums {
@@ -583,7 +584,7 @@ struct DiscographyRows: View {
         }
     }
 
-    nonisolated static func subtitle(_ album: Album, calendar: Calendar = Calendar(identifier: .gregorian)) -> String {
+    static func subtitle(_ album: Album, calendar: Calendar = Calendar(identifier: .gregorian)) -> String {
         var parts: [String] = []
         if let date = album.releaseDate {
             let c = calendar.dateComponents([.month, .day], from: date)
@@ -593,7 +594,7 @@ struct DiscographyRows: View {
         return parts.joined(separator: " · ")
     }
 
-    nonisolated static func kind(_ album: Album) -> String? {
+    static func kind(_ album: Album) -> String? {
         if let edition = album.edition, !edition.isEmpty, edition != "录音室版" { return edition }
         switch album.releaseType {
         case "Single": return "单曲"

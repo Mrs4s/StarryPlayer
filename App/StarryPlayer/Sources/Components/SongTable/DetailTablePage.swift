@@ -4,8 +4,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SongRowsSpec {
-    var list: TrackListLoader
-    /// Positions in `list.tracks`; nil includes all tracks.
+    var list: TrackListLoader?
+    var fixed: [Track] = []
+    /// Positions in `tracks`; nil includes all tracks.
     var matches: [Int]?
     var query: String
     var context: PlaybackContext
@@ -14,13 +15,55 @@ struct SongRowsSpec {
     var onMove: (@MainActor (_ from: Int, _ to: Int) -> Void)? = nil
     var locator: TrackListLocator? = nil
     var animatesEdits = true
+    var columns = SongRowColumns()
+    var numbersByTrack = false
+    var headers: [Int: SongSectionHeader] = [:]
+    var trailing: [String?] = []
+    /// Normalized scores (0…1), indexed by track position.
+    var scores: [Double] = []
+    var scoreTint: Color = .clear
+
+    @MainActor var tracks: [Track] { list?.tracks ?? fixed }
+
+    @MainActor func number(at position: Int) -> Int {
+        numbersByTrack ? tracks[position].trackNumber ?? position + 1 : position + 1
+    }
+
+    func trailingText(at position: Int) -> String? {
+        trailing.indices.contains(position) ? trailing[position] : nil
+    }
+
+    func score(at position: Int) -> Double? {
+        scores.indices.contains(position) ? scores[position] : nil
+    }
+
+    @MainActor func play(from position: Int, on player: PlayerController) {
+        if let list {
+            list.play(startAt: position, on: player, context: context)
+        } else {
+            player.play(fixed, startAt: position, context: context)
+        }
+    }
+}
+
+extension SongRowsSpec {
+    init(tracks: [Track], matches: [Int]? = nil, query: String = "", context: PlaybackContext) {
+        self.init(list: nil, fixed: tracks, matches: matches, query: query, context: context)
+    }
+}
+
+/// Hosted rows released offscreen and animated with the list's stagger.
+struct HostedListRow {
+    /// Rows with the same kind share the last measured height as their estimate.
+    var heightKind: String? = nil
+    var estimatedHeight: CGFloat? = nil
 }
 
 struct DetailTableRow {
     enum Kind {
         case songs(SongRowsSpec)
         /// `nearEnd` fires at most once per measured row height.
-        case hosted(AnyView, nearEnd: (@MainActor () -> Void)? = nil)
+        case hosted(AnyView, nearEnd: (@MainActor () -> Void)? = nil, listRow: HostedListRow? = nil)
     }
 
     var id: String
@@ -28,8 +71,36 @@ struct DetailTableRow {
 }
 
 extension DetailTableRow {
-    static func hosted<Content: View>(_ id: String, nearEnd: (@MainActor () -> Void)? = nil, @ViewBuilder content: () -> Content) -> DetailTableRow {
-        DetailTableRow(id: id, kind: .hosted(AnyView(content().padding(.horizontal, Metrics.pagePadding)), nearEnd: nearEnd))
+    static func hosted<Content: View>(_ id: String, nearEnd: (@MainActor () -> Void)? = nil, listRow: HostedListRow? = nil, @ViewBuilder content: () -> Content) -> DetailTableRow {
+        DetailTableRow(id: id, kind: .hosted(AnyView(content().padding(.horizontal, Metrics.pagePadding)), nearEnd: nearEnd, listRow: listRow))
+    }
+}
+
+enum DetailTableArrival {
+    case edited
+    /// Replaces content with a list stagger or directional tab transition.
+    case swapped
+    case instant
+}
+
+enum DetailTableChrome {
+    /// A header that recedes as the page scrolls past it, then a tab bar that stays at the top.
+    case detail
+    /// A header that scrolls away with the rows, and no tab bar.
+    case plain
+}
+
+extension DetailTableRow {
+    /// Includes the loaded count in the row ID so each page triggers a new near-end request.
+    @MainActor static func more<Item: Identifiable, Placeholder: View>(_ id: String, of feed: PagedFeed<Item>, load: @escaping @MainActor () async -> Void, @ViewBuilder placeholder: () -> Placeholder) -> DetailTableRow {
+        if feed.moreFailed {
+            return .hosted("\(id)-retry") {
+                PillButton(title: "加载失败，重试", systemName: "arrow.clockwise", variant: .tertiary) { feed.retryMore() }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+            }
+        }
+        return .hosted("\(id)-more-\(feed.items.count)", nearEnd: { Task { await load() } }, content: placeholder)
     }
 }
 
@@ -46,6 +117,8 @@ struct DetailTablePage<Tab: RawRepresentable & Hashable>: NSViewRepresentable wh
     var barBottomPadding: CGFloat
     var rows: [DetailTableRow]
     var bottomInset: CGFloat
+    var arrival: DetailTableArrival = .edited
+    var chrome: DetailTableChrome = .detail
 
     func makeCoordinator() -> DetailTableCoordinator { DetailTableCoordinator() }
 
@@ -65,7 +138,34 @@ struct DetailTablePage<Tab: RawRepresentable & Hashable>: NSViewRepresentable wh
     }
 
     private func configuration(_ context: Context) -> DetailTableCoordinator.Configuration {
-        DetailTableCoordinator.Configuration(tab: tab.rawValue, backdrop: backdrop, model: model, hero: hero, bar: bar, barBottomPadding: barBottomPadding, rows: rows, bottomInset: bottomInset, environment: context.environment)
+        DetailTableCoordinator.Configuration(tab: tab.rawValue, backdrop: backdrop, model: model, hero: hero, bar: bar, barBottomPadding: barBottomPadding, rows: rows, bottomInset: bottomInset, arrival: arrival, chrome: chrome, environment: context.environment)
+    }
+}
+
+enum PlainPageTab: Int {
+    case only
+}
+
+extension DetailTablePage where Tab == PlainPageTab {
+    init(model: AppModel, header: AnyView, rows: [DetailTableRow], bottomInset: CGFloat, arrival: DetailTableArrival = .instant) {
+        self.init(tab: .constant(.only), backdrop: PageBackdrop(), model: model, hero: header, bar: AnyView(EmptyView()), barBottomPadding: 0, rows: rows, bottomInset: bottomInset, arrival: arrival, chrome: .plain)
+    }
+}
+
+extension View {
+    func plainPageHeader(gap: CGFloat) -> some View {
+        padding(.horizontal, Metrics.pagePadding)
+            .padding(.top, 12)
+            .padding(.bottom, gap)
+    }
+}
+
+extension DetailTableRow {
+    @MainActor static func songList(_ tracks: [Track], context: PlaybackContext, gapAbove: CGFloat = 0) -> [DetailTableRow] {
+        [
+            .hosted("columns") { SongListHeader().padding(.top, gapAbove) },
+            DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(tracks: tracks, context: context))),
+        ]
     }
 }
 
@@ -96,7 +196,10 @@ struct DetailTableLayout: Equatable {
     enum Kind: Equatable {
         case hero, bar
         case song(position: Int)
+        /// A heading above the song at `position`; `leads` when nothing but the bar is above it.
+        case header(position: Int, leads: Bool)
         case hosted
+        case listRow
         case filler
     }
 
@@ -107,34 +210,50 @@ struct DetailTableLayout: Equatable {
 
     var rows: [Row]
     var rowByPosition: [Int: Int] = [:]
+    var hostedRows: [String: Int] = [:]
+    var hasListRows = false
+    var firstContentRow = 2
+    var barRow: Int? { firstContentRow == 2 ? 1 : nil }
     var hasSongs: Bool { !rowByPosition.isEmpty }
+    var isList: Bool { hasSongs || hasListRows }
     var ids: [String] { rows.map(\.id) }
 
     static let heroID = "hero"
     static let barID = "bar"
     static let fillerID = "filler"
-    static let firstContentRow = 2
 
-    @MainActor static func make(_ content: [DetailTableRow]) -> DetailTableLayout {
-        var rows = [Row(id: heroID, kind: .hero), Row(id: barID, kind: .bar)]
+    @MainActor static func make(_ content: [DetailTableRow], bar: Bool = true) -> DetailTableLayout {
+        var rows = [Row(id: heroID, kind: .hero)]
+        if bar { rows.append(Row(id: barID, kind: .bar)) }
+        let firstContentRow = rows.count
         var rowByPosition: [Int: Int] = [:]
+        var hostedRows: [String: Int] = [:]
+        var hasListRows = false
         var seen: Set<String> = []
         for row in content {
             switch row.kind {
             case .songs(let spec):
-                let tracks = spec.list.tracks
+                let tracks = spec.tracks
                 for position in spec.matches ?? Array(tracks.indices) where tracks.indices.contains(position) {
+                    if let header = spec.headers[position] {
+                        var id = "header:\(header.title)"
+                        if !seen.insert(id).inserted { id += "#\(position)" }
+                        rows.append(Row(id: id, kind: .header(position: position, leads: rows.count == firstContentRow)))
+                    }
                     var id = "song:\(tracks[position].id.source.key)/\(tracks[position].id.id)"
                     if !seen.insert(id).inserted { id += "#\(position)" }
                     rowByPosition[position] = rows.count
                     rows.append(Row(id: id, kind: .song(position: position)))
                 }
-            case .hosted:
-                rows.append(Row(id: "hosted:\(row.id)", kind: .hosted))
+            case .hosted(_, _, let listRow):
+                let id = "hosted:\(row.id)"
+                hostedRows[id] = rows.count
+                if listRow != nil { hasListRows = true }
+                rows.append(Row(id: id, kind: listRow == nil ? .hosted : .listRow))
             }
         }
         rows.append(Row(id: fillerID, kind: .filler))
-        return DetailTableLayout(rows: rows, rowByPosition: rowByPosition)
+        return DetailTableLayout(rows: rows, rowByPosition: rowByPosition, hostedRows: hostedRows, hasListRows: hasListRows, firstContentRow: firstContentRow)
     }
 
     func position(ofRow row: Int) -> Int? {
@@ -169,6 +288,17 @@ enum DetailTableChange: Equatable {
 @MainActor @Observable
 final class HeroMotion {
     var t: Double = 0
+}
+
+/// A list row's content, deaf to the pointer while the page scrolls: the rows passing under a
+/// resting pointer would each light up otherwise.
+private struct QuietWhileScrolling: View {
+    var activity: ScrollActivity
+    var content: AnyView
+
+    var body: some View {
+        content.allowsHitTesting(!activity.isScrolling)
+    }
 }
 
 private struct HeroMotionView: View {
@@ -247,6 +377,12 @@ final class BarRowCell: NSView {
 @MainActor
 final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     struct Configuration {
+        struct Hosted {
+            var view: AnyView
+            var nearEnd: (@MainActor () -> Void)?
+            var listRow: HostedListRow?
+        }
+
         var tab: Int
         var backdrop: PageBackdrop
         var model: AppModel
@@ -255,20 +391,42 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
         var barBottomPadding: CGFloat
         var rows: [DetailTableRow]
         var bottomInset: CGFloat
+        var arrival: DetailTableArrival
+        var chrome: DetailTableChrome
         var environment: EnvironmentValues
+        private(set) var songs: SongRowsSpec?
+        private(set) var nearEndIDs: [String] = []
+        private var hostedRows: [String: Hosted] = [:]
+
+        init(tab: Int, backdrop: PageBackdrop, model: AppModel, hero: AnyView, bar: AnyView, barBottomPadding: CGFloat, rows: [DetailTableRow], bottomInset: CGFloat, arrival: DetailTableArrival, chrome: DetailTableChrome, environment: EnvironmentValues) {
+            self.tab = tab
+            self.backdrop = backdrop
+            self.model = model
+            self.hero = hero
+            self.bar = bar
+            self.barBottomPadding = barBottomPadding
+            self.rows = rows
+            self.bottomInset = bottomInset
+            self.arrival = arrival
+            self.chrome = chrome
+            self.environment = environment
+            for row in rows {
+                switch row.kind {
+                case .songs(let spec):
+                    if songs == nil { songs = spec }
+                case .hosted(let view, let nearEnd, let listRow):
+                    let id = "hosted:\(row.id)"
+                    hostedRows[id] = Hosted(view: view, nearEnd: nearEnd, listRow: listRow)
+                    if nearEnd != nil { nearEndIDs.append(id) }
+                }
+            }
+        }
 
         var theme: Theme { environment.theme }
         var pageActive: Bool { environment.isPageActive }
         var reduceMotion: Bool { environment.accessibilityReduceMotion }
-        var songs: SongRowsSpec? {
-            for row in rows { if case .songs(let spec) = row.kind { return spec } }
-            return nil
-        }
 
-        func hosted(_ id: String) -> (view: AnyView, nearEnd: (@MainActor () -> Void)?)? {
-            for row in rows { if case .hosted(let view, let nearEnd) = row.kind, "hosted:\(row.id)" == id { return (view, nearEnd) } }
-            return nil
-        }
+        func hosted(_ id: String) -> Hosted? { hostedRows[id] }
     }
 
     private weak var container: DetailTableContainer?
@@ -280,6 +438,9 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     private let insertionLine = InsertionLineView()
     private var hosted: [String: HostedRowView] = [:]
     private var heights: [String: CGFloat] = [:]
+    private var kindHeights: [String: CGFloat] = [:]
+    private var songRowHeight = Metrics.songRowHeight
+    private var scoreTint = NSColor.clear
     private var layout = DetailTableLayout(rows: [])
     private var configuration: Configuration?
     private var palette = SongTablePalette(theme: .darkBase)
@@ -293,13 +454,14 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     private var observingActivity = false
     private var observedLocator: TrackListLocator?
     private var entering: (direction: CGFloat, until: CFTimeInterval)?
+    private var sliding: (direction: CGFloat, until: CFTimeInterval)?
     private var veiled = false
     private var dropLanding: Int?
     private var nearEndNotified: [String: CGFloat] = [:]
 
     private static let heroGuess: CGFloat = 280
     private static let hostedGuess: CGFloat = 120
-    private static let bottomPadding: CGFloat = 40
+    private var bottomPadding: CGFloat { configuration?.chrome == .plain ? 32 : 40 }
     private static let songType = NSPasteboard.PasteboardType(UTType.starryTracks.identifier)
 
     // MARK: Setup
@@ -354,18 +516,30 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
             self.palette = palette
             insertionLine.palette = palette
         }
-        heroHost.show(AnyView(HeroMotionView(motion: heroMotion, hero: configuration.hero)), environment: hostedEnvironment)
-        showBar()
+        if configuration.chrome == .detail {
+            heroHost.show(AnyView(HeroMotionView(motion: heroMotion, hero: configuration.hero)), environment: hostedEnvironment)
+            showBar()
+        } else {
+            heroHost.show(configuration.hero, environment: hostedEnvironment)
+        }
         if let scroll {
-            let bottom = Self.bottomPadding + configuration.bottomInset
+            let bottom = bottomPadding + configuration.bottomInset
             if scroll.contentInsets.bottom != bottom { scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0) }
         }
-        if previous?.barBottomPadding != configuration.barBottomPadding, !layout.rows.isEmpty {
-            Self.unanimated { table.noteHeightOfRows(withIndexesChanged: [1, layout.rows.count - 1]) }
+        if previous?.barBottomPadding != configuration.barBottomPadding, !layout.rows.isEmpty, let bar = layout.barRow {
+            Self.unanimated { table.noteHeightOfRows(withIndexesChanged: [bar, layout.rows.count - 1]) }
+        }
+        scoreTint = configuration.songs.map { NSColor($0.scoreTint) } ?? .clear
+        let rowHeight = configuration.songs?.columns.rowHeight ?? Metrics.songRowHeight
+        if rowHeight != songRowHeight {
+            songRowHeight = rowHeight
+            if layout.hasSongs {
+                Self.unanimated { table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<layout.rows.count)) }
+            }
         }
         applyRows(configuration)
         for (id, view) in hosted {
-            if let row = configuration.hosted(id) { view.show(row.view, environment: hostedEnvironment) }
+            if let row = configuration.hosted(id) { view.show(content(of: row), environment: hostedEnvironment) }
         }
         if let spec = configuration.songs {
             if spec.onMove != nil { table.registerForDraggedTypes([Self.songType]) } else { table.unregisterDraggedTypes() }
@@ -384,9 +558,13 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
 
     private var hostedEnvironment: EnvironmentValues {
         var environment = configuration?.environment ?? EnvironmentValues()
-        environment.pinnedTopInset = Metrics.detailTabBarHeight
+        environment.pinnedTopInset = configuration?.chrome == .plain ? 0 : Metrics.detailTabBarHeight
         environment.detailBarPinned = pinned
         return environment
+    }
+
+    private func content(of row: Configuration.Hosted) -> AnyView {
+        row.listRow == nil ? row.view : AnyView(QuietWhileScrolling(activity: activity, content: row.view))
     }
 
     private func showBar() {
@@ -397,29 +575,34 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: Rows
 
     private func applyRows(_ configuration: Configuration) {
-        let new = DetailTableLayout.make(configuration.rows)
+        let new = DetailTableLayout.make(configuration.rows, bar: configuration.chrome == .detail)
+        let old = layout
         let tabChanged = shownTab != nil && shownTab != configuration.tab
         let queryChanged = shownQuery != configuration.songs?.query
         let direction: CGFloat = tabChanged ? (configuration.tab > (shownTab ?? 0) ? 1 : -1) : 0
         shownTab = configuration.tab
         shownQuery = configuration.songs?.query
-        let change: DetailTableChange = tabChanged || queryChanged ? (layout.ids == new.ids ? .none : .reload) : .plan(from: layout.ids, to: new.ids)
-        let hadSongs = layout.hasSongs
+        var change: DetailTableChange = tabChanged || queryChanged ? (old.ids == new.ids ? .none : .reload) : .plan(from: old.ids, to: new.ids)
+        // A list that takes the place of something else (its skeleton) comes in as a whole.
+        if configuration.arrival == .swapped, change != .none, new.isList, !old.isList { change = .reload }
         if tabChanged { switchTabs() }
         guard change != .none else { return }
         layout = new
-        hosted = hosted.filter { entry in new.rows.contains { $0.id == entry.key } }
-        nearEndNotified = nearEndNotified.filter { hosted[$0.key] != nil }
+        hosted = hosted.filter { new.hostedRows[$0.key] != nil }
+        nearEndNotified = nearEndNotified.filter { new.hostedRows[$0.key] != nil }
         switch change {
         case .none:
             break
         case .reload:
             Self.unanimated { table.reloadData() }
-            if new.hasSongs, !hadSongs || tabChanged, !configuration.reduceMotion {
-                entering = (direction, CACurrentMediaTime() + 0.1)
+            if !configuration.reduceMotion, configuration.arrival != .instant {
+                let until = CACurrentMediaTime() + 0.1
+                if new.isList, !old.isList || tabChanged { entering = (direction, until) }
+                if tabChanged, configuration.arrival == .swapped { sliding = (direction, until) }
             }
         case .edit(let removals, let insertions):
-            let animated = (configuration.songs?.animatesEdits ?? true) && removals.count + insertions.count <= DetailTableChange.animatedLimit
+            let lists = removals.contains { old.rows[$0].kind == .listRow } || insertions.contains { new.rows[$0].kind == .listRow }
+            let animated = configuration.arrival == .edited && !lists && (configuration.songs?.animatesEdits ?? true) && removals.count + insertions.count <= DetailTableChange.animatedLimit
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = animated ? 0.4 : 0
                 table.beginUpdates()
@@ -452,14 +635,21 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
         switch row.kind {
         case .hero: heroHeight
         case .bar: Metrics.detailTabBarHeight + (configuration?.barBottomPadding ?? 0)
-        case .song: Metrics.songRowHeight
+        case .song: songRowHeight
+        case .header(_, let leads): SongSectionHeaderCell.height(leading: leads)
         case .hosted: heights[row.id] ?? Self.hostedGuess
+        case .listRow: heights[row.id] ?? estimatedHeight(ofListRow: row.id)
         case .filler: fillerHeight
         }
     }
 
+    private func estimatedHeight(ofListRow id: String) -> CGFloat {
+        guard let listRow = configuration?.hosted(id)?.listRow else { return Self.hostedGuess }
+        return listRow.estimatedHeight ?? listRow.heightKind.flatMap { kindHeights[$0] } ?? Self.hostedGuess
+    }
+
     private var fillerHeight: CGFloat {
-        let content = layout.rows.filter { $0.kind != .filler }.map(height(of:)).reduce(0, +) + Self.bottomPadding
+        let content = layout.rows.filter { $0.kind != .filler }.map(height(of:)).reduce(0, +) + bottomPadding
         // NSTableView requires positive row heights.
         return max(floor - content, 1)
     }
@@ -467,11 +657,20 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     private func heightChanged(_ id: String, to height: CGFloat) {
         guard heights[id] != height, let scroll else { return }
         heights[id] = height
-        guard let row = layout.rows.firstIndex(where: { $0.id == id }) else { return }
+        guard !layout.rows.isEmpty, let row = id == DetailTableLayout.heroID ? 0 : layout.hostedRows[id] else { return }
+        var changed: IndexSet = [row, layout.rows.count - 1]
+        if let kind = configuration?.hosted(id)?.listRow?.heightKind, kindHeights[kind] != height {
+            kindHeights[kind] = height
+            for (other, index) in layout.hostedRows where other != id && configuration?.hosted(other)?.listRow?.heightKind == kind {
+                // The rows that are not shown were measured at another width, if at all.
+                if hosted[other] == nil { heights[other] = nil }
+                changed.insert(index)
+            }
+        }
         let clip = scroll.contentView
         let atTop = clip.bounds.origin.y < 1
         Self.unanimated {
-            table.noteHeightOfRows(withIndexesChanged: [row, layout.rows.count - 1])
+            table.noteHeightOfRows(withIndexesChanged: changed)
             if atTop {
                 clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: 0))
                 scroll.reflectScrolledClipView(clip)
@@ -495,8 +694,16 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     func numberOfRows(in tableView: NSTableView) -> Int { layout.rows.count }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        guard layout.rows.indices.contains(row) else { return Metrics.songRowHeight }
+        guard layout.rows.indices.contains(row) else { return songRowHeight }
         return height(of: layout.rows[row])
+    }
+
+    func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
+        // A list's hosted rows do not outlive their time on screen: a long list would keep a
+        // hosting view for every row scrolled past.
+        guard let view = rowView.view(atColumn: 0) as? HostedRowView, let id = view.rowID, hosted[id] === view,
+              configuration?.hosted(id)?.listRow != nil else { return }
+        hosted[id] = nil
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { false }
@@ -516,26 +723,49 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
             if !pinned { cell.addSubview(barHost) }
             return cell
         case .song(let position):
-            guard let spec = configuration.songs, spec.list.tracks.indices.contains(position) else { return nil }
+            guard let spec = configuration.songs, spec.tracks.indices.contains(position) else { return nil }
             let cell = tableView.makeView(withIdentifier: SongCellView.identifier, owner: nil) as? SongCellView ?? SongCellView()
             configure(cell, position: position, row: row, spec: spec)
             cell.alphaValue = veiled ? 0 : 1
             if let entering, CACurrentMediaTime() < entering.until, let layer = cell.layer {
-                let index = row - DetailTableLayout.firstContentRow
-                SongRowDrawing.enter(layer, direction: entering.direction, delay: Double(min(index, Motion.staggerLimit)) * Motion.staggerStep)
+                let index = min(row - layout.firstContentRow, Motion.staggerLimit)
+                SongRowDrawing.enter(layer, direction: entering.direction, delay: Double(index) * Motion.staggerStep)
+                if let score = spec.score(at: position) {
+                    cell.setScore(score, tint: scoreTint, growingAfter: 0.12 + Double(index) * 0.04)
+                }
             }
-            if let located = spec.locator?.located, located.id == spec.list.tracks[position].id, CACurrentMediaTime() - located.time < 0.5 {
+            if let located = spec.locator?.located, located.id == spec.tracks[position].id, CACurrentMediaTime() - located.time < 0.5 {
                 glow(cell)
             }
-            spec.list.prefetch(near: position)
+            spec.list?.prefetch(near: position)
             return cell
-        case .hosted:
+        case .header(let position, _):
+            let cell = tableView.makeView(withIdentifier: SongSectionHeaderCell.identifier, owner: nil) as? SongSectionHeaderCell ?? SongSectionHeaderCell()
+            cell.palette = palette
+            cell.header = configuration.songs?.headers[position]
+            cell.layer?.removeAllAnimations()
+            if let entering, CACurrentMediaTime() < entering.until, let layer = cell.layer {
+                let index = min(row - layout.firstContentRow, Motion.staggerLimit)
+                SongRowDrawing.enter(layer, direction: entering.direction, delay: Double(index) * Motion.staggerStep)
+            }
+            return cell
+        case .hosted, .listRow:
             if let view = hosted[entry.id] { return view }
-            guard let row = configuration.hosted(entry.id) else { return nil }
+            guard let hostedRow = configuration.hosted(entry.id) else { return nil }
             let view = HostedRowView()
+            view.rowID = entry.id
             view.onHeight = { [weak self] height in self?.heightChanged(entry.id, to: height) }
-            view.show(row.view, environment: hostedEnvironment)
+            view.show(content(of: hostedRow), environment: hostedEnvironment)
             hosted[entry.id] = view
+            let now = CACurrentMediaTime()
+            if entry.kind == .listRow, let entering, now < entering.until {
+                view.wantsLayer = true
+                let index = min(row - layout.firstContentRow, Motion.staggerLimit)
+                if let layer = view.layer { SongRowDrawing.enter(layer, direction: entering.direction, delay: Double(index) * Motion.staggerStep) }
+            } else if entry.kind == .hosted, let sliding, now < sliding.until {
+                view.wantsLayer = true
+                if let layer = view.layer { SongRowDrawing.slideIn(layer, direction: sliding.direction) }
+            }
             return view
         case .filler:
             return tableView.makeView(withIdentifier: Self.fillerIdentifier, owner: nil) ?? {
@@ -550,7 +780,7 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
 
     private func configure(_ cell: SongCellView, position: Int, row: Int, spec: SongRowsSpec) {
         guard let configuration else { return }
-        let track = spec.list.tracks[position]
+        let track = spec.tracks[position]
         let model = configuration.model
         let actions = SongCellView.Actions(
             play: { [weak self] in self?.play(position) },
@@ -559,7 +789,9 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
             showAlbum: { model.showAlbum(of: track) }
         )
         cell.palette = palette
-        cell.show(track, index: position + 1, tags: tags(of: track, model: model), state: state(of: track, row: row), actions: actions)
+        cell.columns = spec.columns
+        cell.show(track, index: spec.number(at: position), tags: tags(of: track, model: model), trailing: spec.trailingText(at: position), state: state(of: track, row: row), actions: actions)
+        cell.setScore(spec.score(at: position), tint: scoreTint)
     }
 
     private func tags(of track: Track, model: AppModel) -> [SongTagSpec] {
@@ -592,13 +824,20 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     private func refreshVisible() {
         guard let spec = configuration?.songs else { return }
         table.enumerateAvailableRowViews { [self] rowView, row in
-            guard let cell = rowView.view(atColumn: 0) as? SongCellView, let position = layout.position(ofRow: row), spec.list.tracks.indices.contains(position) else { return }
-            let track = spec.list.tracks[position]
-            if cell.track?.id != track.id {
+            if let cell = rowView.view(atColumn: 0) as? SongSectionHeaderCell {
+                cell.palette = palette
+                if layout.rows.indices.contains(row), case .header(let position, _) = layout.rows[row].kind { cell.header = spec.headers[position] }
+                return
+            }
+            guard let cell = rowView.view(atColumn: 0) as? SongCellView, let position = layout.position(ofRow: row), spec.tracks.indices.contains(position) else { return }
+            let track = spec.tracks[position]
+            if cell.track?.id != track.id || cell.columns != spec.columns {
                 configure(cell, position: position, row: row, spec: spec)
             } else {
                 cell.palette = palette
-                cell.setIndex(position + 1)
+                cell.setIndex(spec.number(at: position))
+                cell.setTrailing(spec.trailingText(at: position))
+                cell.setScore(spec.score(at: position), tint: scoreTint)
                 cell.apply(state(of: track, row: row))
             }
         }
@@ -610,7 +849,7 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
 
     private func play(_ position: Int) {
         guard let configuration, let spec = configuration.songs else { return }
-        spec.list.play(startAt: position, on: configuration.model.player, context: spec.context)
+        spec.play(from: position, on: configuration.model.player)
     }
 
     @objc private func doubleClicked(_ sender: Any?) {
@@ -619,8 +858,8 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     private func menu(at point: NSPoint) -> NSMenu? {
-        guard let configuration, let spec = configuration.songs, let position = layout.position(ofRow: table.row(at: point)), spec.list.tracks.indices.contains(position) else { return nil }
-        let track = spec.list.tracks[position]
+        guard let configuration, let spec = configuration.songs, let position = layout.position(ofRow: table.row(at: point)), spec.tracks.indices.contains(position) else { return nil }
+        let track = spec.tracks[position]
         var removeFromPlaylist: (@MainActor () -> Void)?
         if let remove = spec.onRemove { removeFromPlaylist = { remove(track) } }
         return SongRowMenu.make(for: track, model: configuration.model, play: { [weak self] in self?.play(position) }, removeFromPlaylist: removeFromPlaylist)
@@ -690,7 +929,7 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
             }
         }
         if let located = locator.located, CACurrentMediaTime() - located.time < 0.5, let spec = configuration?.songs,
-           case .loaded(let position)? = spec.list.place(of: located.id), let row = layout.rowByPosition[position], let cell = songCell(at: row) {
+           case .loaded(let position)? = spec.list?.place(of: located.id), let row = layout.rowByPosition[position], let cell = songCell(at: row) {
             glow(cell)
         }
     }
@@ -708,6 +947,7 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
         guard let scroll, let configuration else { return }
         let offset = scroll.contentView.bounds.origin.y
         activity.moved(to: offset)
+        guard configuration.chrome == .detail else { return checkNearEnd() }
         let hero = heroHeight
         let t = min(max(offset / max(hero, 1), 0), 1)
         let fade = (Double(t) * 60).rounded() / 60
@@ -738,14 +978,14 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     private func checkNearEnd() {
-        guard let scroll, let configuration else { return }
+        guard let scroll, let configuration, !configuration.nearEndIDs.isEmpty else { return }
         let clip = scroll.contentView
         let visibleBottom = clip.bounds.origin.y + clip.bounds.height
-        for (row, entry) in layout.rows.enumerated() where entry.kind == .hosted {
-            guard let nearEnd = configuration.hosted(entry.id)?.nearEnd else { continue }
+        for id in configuration.nearEndIDs {
+            guard let row = layout.hostedRows[id], let nearEnd = configuration.hosted(id)?.nearEnd else { continue }
             let rect = table.rect(ofRow: row)
-            guard rect.maxY - visibleBottom < clip.bounds.height * 1.5, nearEndNotified[entry.id] != rect.height else { continue }
-            nearEndNotified[entry.id] = rect.height
+            guard rect.maxY - visibleBottom < clip.bounds.height * 1.5, nearEndNotified[id] != rect.height else { continue }
+            nearEndNotified[id] = rect.height
             nearEnd()
         }
     }
@@ -787,15 +1027,15 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     private func cellState(at row: Int) -> SongCellView.State? {
-        guard let spec = configuration?.songs, let position = layout.position(ofRow: row), spec.list.tracks.indices.contains(position) else { return nil }
-        return state(of: spec.list.tracks[position], row: row)
+        guard let spec = configuration?.songs, let position = layout.position(ofRow: row), spec.tracks.indices.contains(position) else { return nil }
+        return state(of: spec.tracks[position], row: row)
     }
 
     // MARK: Dragging
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
-        guard let spec = configuration?.songs, let position = layout.position(ofRow: row), spec.list.tracks.indices.contains(position) else { return nil }
-        let track = spec.list.tracks[position]
+        guard let spec = configuration?.songs, let position = layout.position(ofRow: row), spec.tracks.indices.contains(position) else { return nil }
+        let track = spec.tracks[position]
         let item = NSPasteboardItem()
         item.setString(([track.title] + [track.artists.map(\.name).joined(separator: " / ")].filter { !$0.isEmpty }).joined(separator: " - "), forType: .string)
         item.setData(Data(track.id.id.utf8), forType: Self.songType)
@@ -803,8 +1043,8 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
-        guard let configuration, let spec = configuration.songs, let row = rowIndexes.first, let position = layout.position(ofRow: row), spec.list.tracks.indices.contains(position) else { return }
-        let track = spec.list.tracks[position]
+        guard let configuration, let spec = configuration.songs, let row = rowIndexes.first, let position = layout.position(ofRow: row), spec.tracks.indices.contains(position) else { return }
+        let track = spec.tracks[position]
         configuration.model.draggedTracks = [track]
         let image = SongDragImage.make(for: track, palette: palette)
         let point = table.convert(table.window?.convertPoint(fromScreen: screenPoint) ?? .zero, from: nil)
@@ -827,11 +1067,11 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
         guard let configuration, let spec = configuration.songs, spec.onMove != nil, spec.matches == nil,
               info.draggingPasteboard.types?.contains(Self.songType) == true else { return nil }
         let tracks = configuration.model.draggedTracks
-        guard tracks.count == 1, let track = tracks.first, let from = spec.list.tracks.firstIndex(where: { $0.id == track.id }) else { return nil }
+        guard tracks.count == 1, let track = tracks.first, let from = spec.tracks.firstIndex(where: { $0.id == track.id }) else { return nil }
         let point = table.convert(info.draggingLocation, from: nil)
         let row = table.row(at: point)
         guard let position = layout.position(ofRow: row) else { return nil }
-        let target = point.y - table.rect(ofRow: row).minY < Metrics.songRowHeight / 2 ? position : position + 1
+        let target = point.y - table.rect(ofRow: row).minY < songRowHeight / 2 ? position : position + 1
         return (from, target == from || target == from + 1 ? nil : target)
     }
 
@@ -860,7 +1100,7 @@ final class DetailTableCoordinator: NSObject, NSTableViewDataSource, NSTableView
             insertionLine.removeFromSuperview()
             return
         }
-        let count = spec.list.tracks.count
+        let count = spec.tracks.count
         let y: CGFloat
         if landing < count, let row = layout.rowByPosition[landing] {
             y = table.rect(ofRow: row).minY - 1.5

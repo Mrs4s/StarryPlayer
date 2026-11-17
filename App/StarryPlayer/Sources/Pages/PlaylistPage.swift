@@ -353,7 +353,7 @@ struct PlaylistPage: View {
         if let detail = result.value, let catalog = try? model.catalog(playlist.source) {
             list = TrackListLoader(tracks: detail.tracks, pendingIDs: detail.pendingTrackIDs) { try await catalog.songs(ids: $0) }
         }
-        // Not animated: the page's height changes with it (see `DetailPageScroll`); the pieces
+        // Not animated: the page's height changes with it (see `DetailTablePage`); the pieces
         // that appear bring their own transitions.
         state = result
         subscribed = nil

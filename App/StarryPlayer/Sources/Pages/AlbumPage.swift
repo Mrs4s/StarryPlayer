@@ -34,17 +34,16 @@ struct AlbumPage: View {
     private var hasComments: Bool { model.commentSource(album.source) != nil }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop) {
-            hero
-        } bar: { tab in
-            DetailTabBar(tab: tab, items: tabItems, search: tab.wrappedValue == .songs ? $filter : nil, searchPlaceholder: "搜索专辑内歌曲")
-                .reveal(appeared, delay: 0.24, distance: 6)
-        } rows: {
-            tabRows
-        }
-        .task(id: album.id) { await load() }
-        .task(id: shown.artwork?.sized(Self.coverPixels)) { await backdrop.tint(from: shown.artwork ?? album.artwork, pixels: Self.coverPixels) }
-        .onAppear { appeared = true }
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero), bar: AnyView(bar), barBottomPadding: showsList ? TrackListRows.gapAbove : 0, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0, arrival: .swapped)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .task(id: album.id) { await load() }
+            .task(id: shown.artwork?.sized(Self.coverPixels)) { await backdrop.tint(from: shown.artwork ?? album.artwork, pixels: Self.coverPixels) }
+            .onAppear { appeared = true }
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: $tab, items: tabItems, search: tab == .songs ? $filter : nil, searchPlaceholder: "搜索专辑内歌曲")
+            .reveal(appeared, delay: 0.24, distance: 6)
     }
 
     private var hero: some View {
@@ -218,36 +217,60 @@ struct AlbumPage: View {
         return items
     }
 
-    @ViewBuilder private var tabRows: some View {
+    private var tableRows: [DetailTableRow] {
         switch tab {
-        case .songs: songRows
-        case .comments: CommentThreadView(feed: comments)
-        case .details: AlbumInfoView(album: shown, tracks: state.value?.tracks)
+        case .songs:
+            return songRows
+        case .comments:
+            let feed = comments
+            let model = model
+            return [.hosted("comments", nearEnd: {
+                guard let source = model.commentSource(feed.source) else { return }
+                Task { await feed.loadMore(from: source) }
+            }) {
+                VStack(alignment: .leading, spacing: 0) { CommentThreadView(feed: feed, autoLoadsMore: false) }
+            }]
+        case .details:
+            return [.hosted("details") { AlbumInfoView(album: shown, tracks: state.value?.tracks) }]
         }
     }
 
-    @ViewBuilder private var songRows: some View {
+    private var songRows: [DetailTableRow] {
         switch state {
         case .idle, .loading:
-            TrackSkeleton(count: min(max(shown.trackCount, 6), 10))
+            return [.hosted("skeleton") { TrackSkeleton(count: min(max(shown.trackCount, 6), 10)) }]
         case .failed(let message):
-            VStack(spacing: 14) {
-                StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
-                PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
-            }
-            .frame(maxWidth: .infinity, minHeight: 280)
+            return [.hosted("failed") {
+                VStack(spacing: 14) {
+                    StateView(systemName: "exclamationmark.triangle", localizedTitle: LocalizedStringResource("common.loadFailed", defaultValue: "加载失败"), detail: message).frame(minHeight: 0)
+                    PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary) { Task { await load() } }
+                }
+                .frame(maxWidth: .infinity, minHeight: 280)
+            }]
         case .loaded(let detail):
-            let tracks = filtered(detail.tracks)
-            Color.clear.frame(height: 8)
-            if tracks.isEmpty {
-                StateView(systemName: "magnifyingglass", title: detail.tracks.isEmpty ? "专辑暂无歌曲" : "没有匹配的歌曲")
+            let matches = Self.matches(filter, in: detail.tracks)
+            var rows: [DetailTableRow] = []
+            if matches?.isEmpty ?? detail.tracks.isEmpty {
+                rows.append(.hosted(detail.tracks.isEmpty ? "empty" : "no-matches") {
+                    StateView(systemName: "magnifyingglass", title: detail.tracks.isEmpty ? "专辑暂无歌曲" : "没有匹配的歌曲")
+                })
             } else {
-                AlbumTrackRows(tracks: tracks, queue: detail.tracks, context: context, showPopularity: detail.tracks.contains { $0.popularity != nil })
+                var spec = SongRowsSpec(tracks: detail.tracks, matches: matches, query: filter, context: context)
+                spec.columns = SongRowColumns(artwork: false, album: false, popularity: detail.tracks.contains { $0.popularity != nil })
+                spec.numbersByTrack = true
+                spec.headers = Self.discHeaders(detail.tracks, shown: matches)
+                rows.append(DetailTableRow(id: "songs", kind: .songs(spec)))
             }
             if filter.isEmpty, !detail.tracks.isEmpty {
-                footer(detail)
+                rows.append(.hosted("footer") { footer(detail).frame(maxWidth: .infinity, alignment: .leading) })
             }
+            return rows
         }
+    }
+
+    private var showsList: Bool {
+        if tab == .songs, case .loaded = state { return true }
+        return false
     }
 
     private func footer(_ detail: AlbumDetail) -> some View {
@@ -262,15 +285,32 @@ struct AlbumPage: View {
         .padding(.leading, 12)
     }
 
-    private func filtered(_ tracks: [Track]) -> [Track] {
+    static func matches(_ filter: String, in tracks: [Track]) -> [Int]? {
         let query = filter.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return tracks }
-        return tracks.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.alias?.localizedCaseInsensitiveContains(query) ?? false) || $0.artistText.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return nil }
+        return tracks.indices.filter {
+            let track = tracks[$0]
+            return track.title.localizedCaseInsensitiveContains(query) || (track.alias?.localizedCaseInsensitiveContains(query) ?? false) || track.artistText.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    static func discHeaders(_ tracks: [Track], shown: [Int]?) -> [Int: SongSectionHeader] {
+        guard Set(tracks.map { $0.discNumber ?? 1 }).count > 1 else { return [:] }
+        var headers: [Int: SongSectionHeader] = [:]
+        var previous: Int?
+        for position in shown ?? Array(tracks.indices) {
+            let disc = tracks[position].discNumber
+            if headers.isEmpty || disc != previous {
+                headers[position] = SongSectionHeader(title: "CD \(disc ?? 1)", systemImage: "opticaldisc")
+            }
+            previous = disc
+        }
+        return headers
     }
 
     private func load() async {
         if state.value == nil { state = .loading }
-        // Not animated: the page's height changes with it (see `tabBinding`); the pieces that
+        // Not animated: the page's height changes with it (see `DetailTablePage`); the pieces that
         // appear bring their own transitions.
         state = await Loadable.run { try await model.catalog(album.source).album(id: album.id) }
         subscribed = nil
@@ -367,43 +407,6 @@ private struct AlbumCoverStack: View {
             .onHover { hovering = $0 }
             .animation(Motion.lift, value: hovering)
             .reveal(appeared, distance: 0, scale: 0.94)
-    }
-}
-
-private struct AlbumTrackRows: View {
-    var tracks: [Track]
-    var queue: [Track]
-    var context: PlaybackContext
-    var showPopularity: Bool
-    @Environment(AppModel.self) private var model
-    @Environment(\.theme) private var theme
-    @State private var shown = false
-
-    var body: some View {
-        let multiDisc = Set(queue.map { $0.discNumber ?? 1 }).count > 1
-        ForEach(Array(tracks.enumerated()), id: \.element.id) { position, track in
-            if multiDisc, position == 0 || tracks[position - 1].discNumber != track.discNumber {
-                discHeader(track.discNumber ?? 1, first: position == 0)
-                    .staggeredReveal(shown, index: position)
-            }
-            SongRow(track: track, index: track.trackNumber ?? position + 1, showAlbum: false, showPopularity: showPopularity, showArtwork: false) {
-                model.player.play(queue, startAt: queue.firstIndex { $0.id == track.id } ?? 0, context: context)
-            }
-            .staggeredReveal(shown, index: position)
-            .onAppear { if !shown { shown = true } }
-        }
-    }
-
-    private func discHeader(_ number: Int, first: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "opticaldisc").font(.system(size: 12, weight: .medium))
-            Text("CD \(number)").font(.system(size: 13, weight: .semibold))
-        }
-        .foregroundStyle(theme.onSurfaceVariant)
-        .padding(.horizontal, 12)
-        .padding(.top, first ? 6 : 22)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

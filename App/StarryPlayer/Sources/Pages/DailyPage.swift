@@ -36,38 +36,83 @@ private struct DailyRecommendationsContent: View {
     @State private var daily: DailyRecommendationsModel
     @State private var stylePicker: RecommendationStylePicker.Request?
     @State private var stylePickerHeight: CGFloat = 400
+    @State private var pageAnchor = ViewAnchor()
+    @State private var styleButtonAnchor = ViewAnchor()
 
     init(source: any MusicSource, kind: DailyRecommendationsModel.Kind, initialDate: String?) {
         _daily = State(initialValue: DailyRecommendationsModel(source: source, kind: kind, initialDate: initialDate))
     }
 
     var body: some View {
-        PageScroll {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                switch daily.kind {
-                case .today:
-                    songList(daily.today, empty: LocalizedStringResource("daily.empty", defaultValue: "今天还没有推荐歌曲")) {
-                        await daily.load(force: true)
-                    }
-                case .styles:
-                    styleContent
-                case .history:
-                    historyContent
-                }
+        DetailTablePage(model: model, header: AnyView(header.plainPageHeader(gap: 20)), rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0)
+            .allowsHitTesting(stylePicker == nil)
+            .disabled(stylePicker != nil)
+            .accessibilityHidden(stylePicker != nil)
+            .background(ViewAnchorProbe(anchor: pageAnchor))
+            .overlay { stylePickerOverlay }
+            .task { await daily.load() }
+            .onChange(of: pageActive) { _, active in if !active { stylePicker = nil } }
+            .onDisappear {
+                stylePicker = nil
+                daily.cancel()
             }
+    }
+
+    private static let contentGap: CGFloat = 18
+
+    private var tableRows: [DetailTableRow] {
+        switch daily.kind {
+        case .today:
+            return songRows(daily.today, empty: LocalizedStringResource("daily.empty", defaultValue: "今天还没有推荐歌曲")) {
+                await daily.load(force: true)
+            }
+        case .styles:
+            var rows: [DetailTableRow] = []
+            if case .failed(let message) = daily.styles {
+                rows.append(.hosted("styles-failed") {
+                    HStack(spacing: 12) {
+                        DisplayTextView(text: message).font(.system(size: 13)).foregroundStyle(theme.onSurfaceVariant)
+                        PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary, height: 28) {
+                            Task { await daily.load(force: true) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, Self.contentGap)
+                })
+            }
+            return rows + songRows(daily.styleSongs, empty: LocalizedStringResource("daily.styles.empty", defaultValue: "暂时没有风格推荐歌曲")) {
+                await daily.reloadStyleSongs()
+            }
+        case .history:
+            guard case .loaded(let dates) = daily.dates else {
+                return [.hosted("dates-state") {
+                    AsyncContent(state: daily.dates, retry: { Task { await daily.load(force: true) } }) { (_: [String]) in EmptyView() }
+                }]
+            }
+            guard !dates.isEmpty else {
+                return [.hosted("dates-empty") {
+                    StateView(systemName: "calendar.badge.clock",
+                              localizedTitle: LocalizedStringResource("daily.history.empty", defaultValue: "暂无历史日推"),
+                              detail: .localized(LocalizedStringResource("daily.history.empty.detail", defaultValue: "当前账号还没有可查看的历史推荐")))
+                }]
+            }
+            return [.hosted("dates") { historyDateTabs(dates).padding(.bottom, Self.contentGap) }]
+                + songRows(daily.historySongs, empty: LocalizedStringResource("daily.history.emptyDate", defaultValue: "这一天没有推荐歌曲")) {
+                    if let date = daily.selectedDate { await daily.loadHistory(date: date) }
+                }
         }
-        .disabled(stylePicker != nil)
-        .accessibilityHidden(stylePicker != nil)
-        .overlayPreferenceValue(StylePickerAnchorKey.self) { anchor in
-            stylePickerOverlay(anchor)
+    }
+
+    private func songRows(_ state: Loadable<[Track]>, empty: LocalizedStringResource, retry: @escaping @MainActor () async -> Void) -> [DetailTableRow] {
+        guard case .loaded(let tracks) = state else {
+            return [.hosted("songs-state") {
+                AsyncContent(state: state, retry: { Task { await retry() } }) { (_: [Track]) in EmptyView() }
+            }]
         }
-        .task { await daily.load() }
-        .onChange(of: pageActive) { _, active in if !active { stylePicker = nil } }
-        .onDisappear {
-            stylePicker = nil
-            daily.cancel()
+        guard !tracks.isEmpty else {
+            return [.hosted("songs-empty") { StateView(systemName: "music.note.list", localizedTitle: empty) }]
         }
+        return DetailTableRow.songList(tracks, context: daily.context)
     }
 
     private var header: some View {
@@ -153,22 +198,6 @@ private struct DailyRecommendationsContent: View {
         }
     }
 
-    private var styleContent: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if case .failed(let message) = daily.styles {
-                HStack(spacing: 12) {
-                    DisplayTextView(text: message).font(.system(size: 13)).foregroundStyle(theme.onSurfaceVariant)
-                    PillButton(localizedTitle: LocalizedStringResource("common.retry", defaultValue: "重试"), systemName: "arrow.clockwise", variant: .tertiary, height: 28) {
-                        Task { await daily.load(force: true) }
-                    }
-                }
-            }
-            songList(daily.styleSongs, empty: LocalizedStringResource("daily.styles.empty", defaultValue: "暂时没有风格推荐歌曲")) {
-                await daily.reloadStyleSongs()
-            }
-        }
-    }
-
     private var styleSelectionButton: some View {
         Button {
             if let categories = daily.styles.value {
@@ -191,7 +220,7 @@ private struct DailyRecommendationsContent: View {
         .help(localization.string(LocalizedStringResource("daily.styles.choose", defaultValue: "选择推荐风格")))
         .accessibilityLabel(localization.string(LocalizedStringResource("daily.styles.choose", defaultValue: "选择推荐风格")))
         .accessibilityValue(localization.string(styleSelectionTitle))
-        .anchorPreference(key: StylePickerAnchorKey.self, value: .bounds) { $0 }
+        .background(ViewAnchorProbe(anchor: styleButtonAnchor))
     }
 
     private var styleSelectionTitle: DisplayText {
@@ -210,12 +239,13 @@ private struct DailyRecommendationsContent: View {
             : .verbatim(title)
     }
 
+    /// Under the button that opened it. The button is in the table's header, out of reach of
+    /// an anchor preference, so its place comes from the views themselves.
     @ViewBuilder
-    private func stylePickerOverlay(_ anchor: Anchor<CGRect>?) -> some View {
-        if let request = stylePicker, let anchor {
+    private var stylePickerOverlay: some View {
+        if let request = stylePicker, let button = styleButtonAnchor.frame(in: pageAnchor) {
             let width = RecommendationStylePicker.width
             GeometryReader { geometry in
-                let button = geometry[anchor]
                 let bottomInset = model.player.current == nil ? 0 : Metrics.playerBarInset
                 let leading = button.minX + width <= geometry.size.width - 12 ? button.minX : button.maxX - width
                 let x = min(max(12, leading), max(12, geometry.size.width - width - 12))
@@ -233,23 +263,6 @@ private struct DailyRecommendationsContent: View {
                         .shadow(color: .black.opacity(0.3), radius: 18, y: 8)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stylePickerHeight = $0 }
                         .offset(x: x, y: y)
-                }
-            }
-        }
-    }
-
-    private var historyContent: some View {
-        AsyncContent(state: daily.dates, retry: { Task { await daily.load(force: true) } }) { dates in
-            if dates.isEmpty {
-                StateView(systemName: "calendar.badge.clock",
-                          localizedTitle: LocalizedStringResource("daily.history.empty", defaultValue: "暂无历史日推"),
-                          detail: .localized(LocalizedStringResource("daily.history.empty.detail", defaultValue: "当前账号还没有可查看的历史推荐")))
-            } else {
-                VStack(alignment: .leading, spacing: 18) {
-                    historyDateTabs(dates)
-                    songList(daily.historySongs, empty: LocalizedStringResource("daily.history.emptyDate", defaultValue: "这一天没有推荐歌曲")) {
-                        if let date = daily.selectedDate { await daily.loadHistory(date: date) }
-                    }
                 }
             }
         }
@@ -276,19 +289,4 @@ private struct DailyRecommendationsContent: View {
         .accessibilityLabel(localization.string(LocalizedStringResource("daily.history.dates", defaultValue: "推荐日期")))
         .accessibilityValue(daily.selectedDate ?? "")
     }
-
-    private func songList(_ state: Loadable<[Track]>, empty: LocalizedStringResource, retry: @escaping @MainActor () async -> Void) -> some View {
-        AsyncContent(state: state, retry: { Task { await retry() } }) { tracks in
-            if tracks.isEmpty {
-                StateView(systemName: "music.note.list", localizedTitle: empty)
-            } else {
-                SongList(tracks: tracks, context: daily.context)
-            }
-        }
-    }
-}
-
-private struct StylePickerAnchorKey: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>? { nil }
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
 }

@@ -4,25 +4,33 @@ import SwiftUI
 
 struct HistoryPage: View {
     @Environment(AppModel.self) private var model
+
+    private var context: PlaybackContext { PlaybackContext(source: nil, originType: .history, originName: "最近播放") }
+
     var body: some View {
-        PageScroll {
-            VStack(alignment: .leading, spacing: 18) {
-                PageTitle(title: "最近播放", stat: "\(model.library.history.count) 首歌曲", statIcon: "clock.arrow.circlepath")
-                HStack {
-                    PillButton(title: "播放全部", systemName: "play.fill") {
-                        model.player.play(model.library.history, context: PlaybackContext(source: nil, originType: .history, originName: "最近播放"))
-                    }
-                    .disabled(model.library.history.isEmpty)
-                    PillButton(title: "清空记录", systemName: "trash", variant: .tertiary) { model.library.clearHistory() }
-                    Spacer()
+        DetailTablePage(model: model, header: AnyView(header.plainPageHeader(gap: 18)), rows: rows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            PageTitle(title: "最近播放", stat: "\(model.library.history.count) 首歌曲", statIcon: "clock.arrow.circlepath")
+            HStack {
+                PillButton(title: "播放全部", systemName: "play.fill") {
+                    model.player.play(model.library.history, context: context)
                 }
-                if model.library.history.isEmpty {
-                    StateView(systemName: "clock.arrow.circlepath", title: "还没有播放记录")
-                } else {
-                    SongList(tracks: model.library.history, context: PlaybackContext(source: nil, originType: .history, originName: "最近播放"))
-                }
+                .disabled(model.library.history.isEmpty)
+                PillButton(title: "清空记录", systemName: "trash", variant: .tertiary) { model.library.clearHistory() }
+                Spacer()
             }
         }
+    }
+
+    private var rows: [DetailTableRow] {
+        let history = model.library.history
+        guard !history.isEmpty else {
+            return [.hosted("empty") { StateView(systemName: "clock.arrow.circlepath", title: "还没有播放记录") }]
+        }
+        return DetailTableRow.songList(history, context: context)
     }
 }
 
@@ -37,38 +45,49 @@ struct AllMediaPage: View {
     private var loadKey: String? { model.hasAllMedia && model.signedInUser != nil ? "\(source.key)|\(model.homeKey)" : nil }
 
     var body: some View {
-        PageScroll {
-            VStack(alignment: .leading, spacing: 18) {
-                PageTitle(title: "所有媒体", stat: list.flatMap { $0.tracks.isEmpty && !$0.isComplete ? nil : "\($0.totalCount) 首歌曲" }, statIcon: "square.stack")
-                HStack {
-                    PillButton(title: "播放全部", systemName: "play.fill") { list?.play(on: model.player, context: context) }
-                        .disabled(list?.tracks.isEmpty != false)
-                    Spacer()
-                    LocatePlayingButton(list: list, locator: locator, context: context, query: "", gap: 0) {}
+        DetailTablePage(model: model, header: AnyView(header.plainPageHeader(gap: 18)), rows: rows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0, arrival: .swapped)
+            // The header's button is gone from the window once scrolled past: this one, never
+            // seen, hears the shortcut wherever the page is.
+            .background { LocatePlayingButton(list: list, locator: locator, context: context, query: "", gap: 0) {}.hidden() }
+            .task(id: loadKey) {
+                guard loadKey != nil, let media = try? model.require(source, as: (any AllMediaSource).self, "所有媒体") else {
+                    list = nil
+                    return
                 }
-                if !model.hasAllMedia {
-                    SourceLacks(feature: "所有媒体", systemName: "square.stack")
-                } else if !model.isLoggedIn {
-                    LoginPrompt()
-                } else if let list {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if list.tracks.isEmpty, list.isComplete {
-                            StateView(systemName: "square.stack", title: "还没有媒体")
-                        } else {
-                            TrackListRows(list: list, context: context, locator: locator)
-                        }
-                        TrackListEnd(list: list) {}
-                    }
-                }
+                list = TrackListLoader { try await media.allMedia(page: $0) }
+            }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            PageTitle(title: "所有媒体", stat: list.flatMap { $0.tracks.isEmpty && !$0.isComplete ? nil : "\($0.totalCount) 首歌曲" }, statIcon: "square.stack")
+            HStack {
+                PillButton(title: "播放全部", systemName: "play.fill") { list?.play(on: model.player, context: context) }
+                    .disabled(list?.tracks.isEmpty != false)
+                Spacer()
+                LocatePlayingButton(list: list, locator: locator, context: context, query: "", gap: 0, listensForShortcut: false) {}
             }
         }
-        .task(id: loadKey) {
-            guard loadKey != nil, let media = try? model.require(source, as: (any AllMediaSource).self, "所有媒体") else {
-                list = nil
-                return
-            }
-            list = TrackListLoader { try await media.allMedia(page: $0) }
+    }
+
+    private var rows: [DetailTableRow] {
+        if !model.hasAllMedia {
+            return [.hosted("lacks") { SourceLacks(feature: "所有媒体", systemName: "square.stack") }]
         }
+        if !model.isLoggedIn {
+            return [.hosted("login") { LoginPrompt() }]
+        }
+        guard let list else { return [] }
+        var rows: [DetailTableRow] = []
+        if list.tracks.isEmpty, list.isComplete {
+            rows.append(.hosted("empty") { StateView(systemName: "square.stack", title: "还没有媒体") })
+        } else {
+            rows.append(DetailTableRow(id: "songs", kind: .songs(SongRowsSpec(list: list, matches: nil, query: "", context: context, locator: locator))))
+        }
+        if !list.isComplete || list.failure != nil {
+            rows.append(.hosted("end") { TrackListEnd(list: list) {} })
+        }
+        return rows
     }
 }
 

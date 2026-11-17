@@ -2,28 +2,13 @@ import MusicSources
 import StarryCore
 import SwiftUI
 
-struct UserRows: View {
-    var users: [UserProfile]
-    /// Tells these rows from another list's in the same lazy stack (a user in both the follows
-    /// and the followers must not be taken for the other tab's row).
-    var list: String
-    @State private var shown = false
-
-    var body: some View {
-        let rows = users.enumerated().map { (key: "\(list)-\($0.element.id)", index: $0.offset, user: $0.element) }
-        ForEach(rows, id: \.key) { _, index, user in
-            UserRow(user: user)
-                .staggeredReveal(shown, index: index)
-                .onAppear { if !shown { shown = true } }
-        }
-    }
-}
-
 struct UserRow: View {
     var user: UserProfile
     @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
     @State private var hovering = false
+
+    static let height: CGFloat = 64
 
     var body: some View {
         Button {
@@ -59,7 +44,7 @@ struct UserRow: View {
                     .offset(x: hovering ? 0 : -4)
             }
             .padding(.horizontal, 12)
-            .frame(height: 64)
+            .frame(height: Self.height)
             .background(theme.onSurface.opacity(hovering ? 0.06 : 0), in: RoundedRectangle(cornerRadius: Radius.menu, style: .continuous))
             .contentShape(Rectangle())
         }

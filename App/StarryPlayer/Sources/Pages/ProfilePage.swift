@@ -51,26 +51,25 @@ struct ProfilePage: View {
     private var hasFollowLists: Bool { model.source(user.source, as: (any UserFollowSource).self) != nil }
 
     var body: some View {
-        DetailPageScroll(tab: $tab, backdrop: backdrop, switchingHero: { tab in
-            hero(switchTab: tab)
-        }, bar: { tab in
-            DetailTabBar(tab: sectionBinding(tab), items: tabItems) {
-                if tab.wrappedValue.section == .ranking, hasRanking, !isRankingHidden {
-                    SegmentSwitch(selection: periodBinding(tab), options: [(.week, "最近一周"), (.allTime, "所有时间")])
-                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
-                }
+        DetailTablePage(tab: $tab, backdrop: backdrop, model: model, hero: AnyView(hero(switchTab: $tab)), bar: AnyView(bar), barBottomPadding: gapAboveRows, rows: tableRows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0, arrival: .swapped)
+            .preference(key: PageBackdropKey.self, value: backdrop)
+            .onGeometryChange(for: Int.self) { ProfilePlaylistRow.columns(for: $0.size.width) } action: { columns = $0 }
+            .onChange(of: tab) { if tab.section == .ranking { rankingTab = tab } }
+            .task(id: user.id) { await load() }
+            .task(id: user.id) { await loadPlaylists() }
+            .onAppear { if !hasRanking, tab.section == .ranking { tab = .created } }
+            .task(id: shown.avatar?.sized(Self.avatarPixels)) { await backdrop.tint(from: shown.avatar, pixels: Self.avatarPixels) }
+            .onAppear { appeared = true }
+    }
+
+    private var bar: some View {
+        DetailTabBar(tab: sectionBinding($tab), items: tabItems) {
+            if tab.section == .ranking, hasRanking, !isRankingHidden {
+                SegmentSwitch(selection: periodBinding($tab), options: [(.week, "最近一周"), (.allTime, "所有时间")])
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
             }
-            .reveal(appeared, delay: 0.26, distance: 6)
-        }, rows: { _ in
-            tabRows
-        })
-        .onGeometryChange(for: Int.self) { ProfilePlaylistRows.columns(for: $0.size.width) } action: { columns = $0 }
-        .onChange(of: tab) { if tab.section == .ranking { rankingTab = tab } }
-        .task(id: user.id) { await load() }
-        .task(id: user.id) { await loadPlaylists() }
-        .onAppear { if !hasRanking, tab.section == .ranking { tab = .created } }
-        .task(id: shown.avatar?.sized(Self.avatarPixels)) { await backdrop.tint(from: shown.avatar, pixels: Self.avatarPixels) }
-        .onAppear { appeared = true }
+        }
+        .reveal(appeared, delay: 0.26, distance: 6)
     }
 
     private func hero(switchTab: Binding<Tab>) -> some View {
@@ -298,7 +297,7 @@ struct ProfilePage: View {
         }
     }
 
-    @ViewBuilder private var tabRows: some View {
+    private var tableRows: [DetailTableRow] {
         switch tab {
         case .weekRanking: rankingRows(.week)
         case .allRanking: rankingRows(.allTime)
@@ -309,34 +308,49 @@ struct ProfilePage: View {
         }
     }
 
-    @ViewBuilder private func userRows(_ feed: PagedFeed<UserProfile>, list: String, empty: String, fetch: @escaping PagedFeed<UserProfile>.PageFetch) -> some View {
+    private var gapAboveRows: CGFloat {
+        switch tab.section {
+        case .ranking:
+            guard !isRankingHidden, case .loaded = (tab == .weekRanking ? week : allTime) else { return 0 }
+            return TrackListRows.gapAbove
+        case .created, .subscribed:
+            guard let lists = lists.value else { return 0 }
+            return (tab == .created ? lists.created : lists.subscribed).isEmpty ? 0 : ProfilePlaylistRow.gapAbove
+        case .follows, .followers:
+            guard !isFollowListHidden, (tab == .follows ? follows : followers).phase == .loaded else { return 0 }
+            return TrackListRows.gapAbove
+        }
+    }
+
+    private func userRows(_ feed: PagedFeed<UserProfile>, list: String, empty: String, fetch: @escaping PagedFeed<UserProfile>.PageFetch) -> [DetailTableRow] {
         if isFollowListHidden {
-            StateView(systemName: "lock", title: "\(shown.nickname.isEmpty ? "TA" : shown.nickname) 没有公开关注和粉丝")
-        } else {
-            switch feed.phase {
-            case .idle, .loading:
+            return [.hosted("follows-hidden") {
+                StateView(systemName: "lock", title: "\(shown.nickname.isEmpty ? "TA" : shown.nickname) 没有公开关注和粉丝")
+            }]
+        }
+        switch feed.phase {
+        case .idle, .loading:
+            return [.hosted("\(list)-loading") {
                 UserSkeleton(count: 8)
                     .task { await feed.loadIfNeeded(pages: fetch) }
-            case .failed(let message):
-                failure(message) { Task { await feed.load(pages: fetch) } }
-            case .loaded:
-                Color.clear.frame(height: 8)
-                if feed.items.isEmpty {
-                    StateView(systemName: "person.2", title: empty)
-                } else {
-                    UserRows(users: feed.items, list: list)
-                }
-                if feed.hasMore {
-                    if feed.moreFailed {
-                        PillButton(title: "加载失败，重试", systemName: "arrow.clockwise", variant: .tertiary) { feed.retryMore() }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                    } else {
-                        UserSkeleton(count: 3)
-                            .task(id: feed.items.count) { await feed.loadMore(pages: fetch) }
-                    }
+            }]
+        case .failed(let message):
+            return [.hosted("\(list)-failed") { failure(message) { Task { await feed.load(pages: fetch) } } }]
+        case .loaded:
+            var rows: [DetailTableRow] = []
+            if feed.items.isEmpty {
+                rows.append(.hosted("\(list)-empty") { StateView(systemName: "person.2", title: empty) })
+            } else {
+                // A table row each, keyed by the list too: a user in both the follows and the
+                // followers must not be taken for the other tab's row.
+                rows += feed.items.map { user in
+                    DetailTableRow.hosted("\(list)-\(user.id)", listRow: HostedListRow(estimatedHeight: UserRow.height)) { UserRow(user: user) }
                 }
             }
+            if feed.hasMore {
+                rows.append(.more(list, of: feed, load: { await feed.loadMore(pages: fetch) }) { UserSkeleton(count: 3) })
+            }
+            return rows
         }
     }
 
@@ -354,32 +368,52 @@ struct ProfilePage: View {
         }
     }
 
-    @ViewBuilder private func rankingRows(_ period: ListeningPeriod) -> some View {
+    private func rankingRows(_ period: ListeningPeriod) -> [DetailTableRow] {
         let ranking = period == .week ? week : allTime
+        let key = period == .week ? "week" : "all"
         if isRankingHidden {
-            StateView(systemName: "lock", title: "\(shown.nickname.isEmpty ? "TA" : shown.nickname) 没有公开听歌排行")
-        } else {
-            switch ranking {
-            case .idle, .loading:
+            return [.hosted("ranking-hidden") {
+                StateView(systemName: "lock", title: "\(shown.nickname.isEmpty ? "TA" : shown.nickname) 没有公开听歌排行")
+            }]
+        }
+        switch ranking {
+        case .idle, .loading:
+            return [.hosted("ranking-loading-\(key)") {
                 TrackSkeleton(count: 10, artwork: true)
                     .task { await loadRanking(period) }
-            case .failed(let message):
-                failure(message) { Task { await loadRanking(period, again: true) } }
-            case .loaded(let ranked):
-                Color.clear.frame(height: 8)
-                if ranked.isEmpty {
+            }]
+        case .failed(let message):
+            return [.hosted("ranking-failed-\(key)") { failure(message) { Task { await loadRanking(period, again: true) } } }]
+        case .loaded(let ranked):
+            guard !ranked.isEmpty else {
+                return [.hosted("ranking-empty-\(key)") {
                     StateView(systemName: "music.note", title: period == .week ? "最近一周没有听歌记录" : "还没有听歌记录")
-                } else {
-                    RankingRows(ranked: ranked, period: period, context: context, tint: barTint)
+                }]
+            }
+            return [
+                DetailTableRow(id: "songs", kind: .songs(Self.rankingSpec(ranked, context: context, tint: barTint))),
+                .hosted("ranking-footer-\(key)") {
                     Text(rankingFooter(ranked, period: period))
                         .font(.system(size: 12))
                         .monospacedDigit()
                         .foregroundStyle(theme.onSurfaceVariant)
                         .padding(.top, 22)
                         .padding(.leading, 12)
-                }
-            }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                },
+            ]
         }
+    }
+
+    static func rankingSpec(_ ranked: [RankedTrack], context: PlaybackContext, tint: Color) -> SongRowsSpec {
+        var spec = SongRowsSpec(tracks: ranked.map(\.track), context: context)
+        if ranked.contains(where: { $0.playCount != nil }) {
+            spec.columns.trailingWidth = SongRowColumns.playCountWidth
+            spec.trailing = ranked.map { $0.playCount.map { "\($0) 次" } }
+        }
+        spec.scores = ranked.map { Double($0.score) / 100 }
+        spec.scoreTint = tint
+        return spec
     }
 
     private func rankingFooter(_ ranked: [RankedTrack], period: ListeningPeriod) -> String {
@@ -388,18 +422,26 @@ struct ProfilePage: View {
         return parts.joined(separator: " · ")
     }
 
-    @ViewBuilder private func playlistRows(created: Bool) -> some View {
+    private func playlistRows(created: Bool) -> [DetailTableRow] {
         switch lists {
         case .idle, .loading:
-            PlaylistGridSkeleton(columns: columns)
+            return [.hosted("playlists-loading") { PlaylistGridSkeleton(columns: columns) }]
         case .failed(let message):
-            failure(message) { Task { await loadPlaylists() } }
+            return [.hosted("playlists-failed") { failure(message) { Task { await loadPlaylists() } } }]
         case .loaded(let lists):
             let playlists = created ? lists.created : lists.subscribed
-            if playlists.isEmpty {
-                StateView(systemName: "music.note.list", title: created ? "还没有创建歌单" : "没有公开收藏的歌单")
-            } else {
-                ProfilePlaylistRows(playlists: playlists, columns: columns, showsCreator: !created)
+            let kind = created ? "created" : "subscribed"
+            guard !playlists.isEmpty else {
+                return [.hosted("\(kind)-empty") {
+                    StateView(systemName: "music.note.list", title: created ? "还没有创建歌单" : "没有公开收藏的歌单")
+                }]
+            }
+            let columns = max(columns, 1)
+            return stride(from: 0, to: playlists.count, by: columns).map { start in
+                let row = Array(playlists[start..<min(start + columns, playlists.count)])
+                return .hosted("\(kind)-\(start / columns)", listRow: HostedListRow(heightKind: "playlists")) {
+                    ProfilePlaylistRow(playlists: row, columns: columns, showsCreator: !created)
+                }
             }
         }
     }
@@ -425,7 +467,7 @@ struct ProfilePage: View {
 
     private func load() async {
         if state.value == nil { state = .loading }
-        // Not animated: the page's height changes with it (see `DetailPageScroll`); the pieces
+        // Not animated: the page's height changes with it (see `DetailTablePage`); the pieces
         // that appear bring their own transitions.
         state = await Loadable.run { try await model.users(user.source).user(id: user.id) }
         followed = nil
@@ -750,106 +792,35 @@ private struct RankingPlayButton: View {
     }
 }
 
-private struct RankingRows: View {
-    var ranked: [RankedTrack]
-    var period: ListeningPeriod
-    var context: PlaybackContext
-    var tint: Color
-    @Environment(AppModel.self) private var model
-    @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-
-    var body: some View {
-        let tracks = ranked.map(\.track)
-        // Keyed by period too: a song in both lists must not be taken for the other list's row
-        // by the lazy stack.
-        let rows = ranked.enumerated().map { (key: "\(period.rawValue)-\($0.element.track.id.id)", index: $0.offset, item: $0.element) }
-        ForEach(rows, id: \.key) { _, index, item in
-            SongRow(track: item.track, index: index + 1, trailing: item.playCount.map { AnyView(PlayCount(count: $0)) }) {
-                model.player.play(tracks, startAt: index, context: context)
-            }
-            .background {
-                ScoreBar(fraction: shown ? Double(item.score) / 100 : 0)
-                    .fill(LinearGradient(colors: [tint.opacity(theme.isDark ? 0.15 : 0.11), tint.opacity(theme.isDark ? 0.04 : 0.03)], startPoint: .leading, endPoint: .trailing))
-                    .animation(reduceMotion ? nil : .spring(response: 0.9, dampingFraction: 0.92).delay(0.12 + Double(min(index, Motion.staggerLimit)) * 0.04), value: shown)
-            }
-            .staggeredReveal(shown, index: index)
-            .onAppear { if !shown { shown = true } }
-        }
-    }
-}
-
-private struct PlayCount: View {
-    var count: Int
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        Text("\(count) 次")
-            .font(.system(size: 12.5))
-            .monospacedDigit()
-            .foregroundStyle(theme.onSurfaceVariant)
-            .frame(width: 52, alignment: .trailing)
-    }
-}
-
-private struct ScoreBar: Shape {
-    var fraction: Double
-
-    var animatableData: Double {
-        get { fraction }
-        set { fraction = newValue }
-    }
-
-    private static let inset: CGFloat = 5
-    private static let radius: CGFloat = 10
-
-    func path(in rect: CGRect) -> Path {
-        let lane = rect.insetBy(dx: 0, dy: Self.inset)
-        let width = lane.width * min(max(fraction, 0), 1)
-        guard width > 0.5 else { return Path() }
-        let bar = CGRect(x: lane.minX, y: lane.minY, width: width, height: lane.height)
-        return Path(roundedRect: bar, cornerRadius: min(Self.radius, width / 2), style: .continuous)
-    }
-}
-
-private struct ProfilePlaylistRows: View {
+private struct ProfilePlaylistRow: View {
     var playlists: [Playlist]
     var columns: Int
     var showsCreator: Bool
     @Environment(AppModel.self) private var model
-    @State private var shown = false
 
     static let spacing: CGFloat = 22
     static let minCardWidth: CGFloat = 156
+    static let gapAbove: CGFloat = 22
 
     nonisolated static func columns(for width: CGFloat) -> Int {
         max(2, Int((width - 2 * Metrics.pagePadding + spacing) / (minCardWidth + spacing)))
     }
 
     var body: some View {
-        let columns = max(columns, 1)
-        let kind = showsCreator ? "subscribed" : "created"
-        let rows = stride(from: 0, to: playlists.count, by: columns).map { (key: "\(kind)-\($0 / columns)", index: $0 / columns, row: Array(playlists[$0..<min($0 + columns, playlists.count)])) }
-        ForEach(rows, id: \.key) { _, index, row in
-            HStack(alignment: .top, spacing: Self.spacing) {
-                ForEach(row) { playlist in
-                    CoverCard(title: playlist.name, subtitle: subtitle(playlist), artwork: playlist.artwork) {
-                        model.navigate(.collection(playlist))
-                    } onPlay: {
-                        play(playlist)
-                    }
-                    .frame(maxWidth: .infinity)
+        HStack(alignment: .top, spacing: Self.spacing) {
+            ForEach(playlists) { playlist in
+                CoverCard(title: playlist.name, subtitle: subtitle(playlist), artwork: playlist.artwork) {
+                    model.navigate(.collection(playlist))
+                } onPlay: {
+                    play(playlist)
                 }
-                ForEach(row.count..<columns, id: \.self) { _ in
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
-                }
+                .frame(maxWidth: .infinity)
             }
-            .padding(.top, index == 0 ? 22 : 0)
-            .padding(.bottom, 24)
-            .staggeredReveal(shown, index: index)
-            .onAppear { if !shown { shown = true } }
+            ForEach(playlists.count..<max(columns, playlists.count), id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+            }
         }
+        .padding(.bottom, 24)
     }
 
     private func subtitle(_ playlist: Playlist) -> String {
@@ -878,7 +849,7 @@ private struct PlaylistGridSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
             ForEach(0..<2, id: \.self) { _ in
-                HStack(alignment: .top, spacing: ProfilePlaylistRows.spacing) {
+                HStack(alignment: .top, spacing: ProfilePlaylistRow.spacing) {
                     ForEach(0..<max(columns, 1), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 10) {
                             RoundedRectangle(cornerRadius: Radius.card, style: .continuous)

@@ -2,183 +2,34 @@ import AppKit
 import StarryCore
 import SwiftUI
 
-struct SongList: View {
-    var tracks: [Track]
+struct SongListHeader: View {
     var showAlbum = true
     var showPopularity = false
-    var showHeader = true
-    var context: PlaybackContext? = nil
-    @Environment(AppModel.self) private var model
     @Environment(\.theme) private var theme
-
-    var body: some View {
-        LazyVStack(spacing: 0) {
-            if showHeader {
-                SongColumns {
-                    Text("#").frame(width: SongColumns.indexWidth)
-                    DisplayTextView(text: .localized(LocalizedStringResource("songs.title", defaultValue: "标题")))
-                        .frame(maxWidth: .infinity, alignment: .leading).columnWeight(3)
-                    if showAlbum {
-                        DisplayTextView(text: .localized(LocalizedStringResource("songs.album", defaultValue: "专辑")))
-                            .frame(maxWidth: .infinity, alignment: .leading).columnWeight(2)
-                    }
-                    Color.clear.frame(width: SongColumns.likeWidth, height: 1)
-                    DisplayTextView(text: .localized(LocalizedStringResource("songs.duration", defaultValue: "时长")))
-                        .frame(width: SongColumns.durationWidth, alignment: .leading)
-                    if showPopularity {
-                        DisplayTextView(text: .localized(LocalizedStringResource("songs.popularity", defaultValue: "热度")))
-                            .frame(width: SongColumns.popularityWidth, alignment: .leading)
-                    }
-                }
-                .font(.system(size: 13))
-                .foregroundStyle(theme.onSurfaceVariant)
-                .padding(.horizontal, 12)
-                .frame(height: 36)
-                .overlay(alignment: .bottom) { Rectangle().fill(theme.outlineVariant).frame(height: 1) }
-                .padding(.bottom, 6)
-            }
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                SongRow(track: track, index: index + 1, showAlbum: showAlbum, showPopularity: showPopularity) {
-                    model.player.play(tracks, startAt: index, context: context)
-                }
-            }
-        }
-    }
-}
-
-struct SongRow: View {
-    var track: Track
-    var index: Int
-    var showAlbum = true
-    var showPopularity = false
-    var showArtwork = true
-    var trailing: AnyView? = nil
-    var removeFromPlaylist: (() -> Void)? = nil
-    var onPlay: () -> Void
-    @Environment(AppModel.self) private var model
-    @Environment(\.theme) private var theme
-    @Environment(\.isPageActive) private var pageActive
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
-
-    private var isCurrent: Bool { model.player.current?.id == track.id }
 
     var body: some View {
         SongColumns {
-            indexCell.frame(width: SongColumns.indexWidth)
-
-            HStack(spacing: 12) {
-                if showArtwork {
-                    ArtworkView(artwork: track.artwork, radius: 6, pixelSize: 120)
-                        .frame(width: 40, height: 40)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    titleLine
-                    HStack(spacing: 4) {
-                        tags
-                        ArtistLinks(track: track, color: theme.onSurfaceVariant, hoverColor: theme.onSurface)
-                            .font(.system(size: 13))
-                            .padding(.leading, 2)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .columnWeight(3)
-
+            Text("#").frame(width: SongColumns.indexWidth)
+            DisplayTextView(text: .localized(LocalizedStringResource("songs.title", defaultValue: "标题")))
+                .frame(maxWidth: .infinity, alignment: .leading).columnWeight(3)
             if showAlbum {
-                TextLink(text: track.album?.name ?? "", color: theme.onSurfaceVariant, hoverColor: theme.onSurface, action: track.album?.isLinkable == true ? { model.showAlbum(of: track) } : nil)
-                    .font(.system(size: 13))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .columnWeight(2)
+                DisplayTextView(text: .localized(LocalizedStringResource("songs.album", defaultValue: "专辑")))
+                    .frame(maxWidth: .infinity, alignment: .leading).columnWeight(2)
             }
-
-            HeartButton(track: track, size: SongColumns.likeWidth)
-                .opacity(hovering || model.player.isLiked(track) ? 1 : 0)
-
-            Text(TimeFormatting.clock(track.duration))
-                .font(.system(size: 13)).monospacedDigit()
-                .foregroundStyle(theme.onSurfaceVariant)
+            Color.clear.frame(width: SongColumns.likeWidth, height: 1)
+            DisplayTextView(text: .localized(LocalizedStringResource("songs.duration", defaultValue: "时长")))
                 .frame(width: SongColumns.durationWidth, alignment: .leading)
-
             if showPopularity {
-                PopularityBar(value: track.popularity)
+                DisplayTextView(text: .localized(LocalizedStringResource("songs.popularity", defaultValue: "热度")))
                     .frame(width: SongColumns.popularityWidth, alignment: .leading)
             }
-
-            if let trailing { trailing }
         }
+        .font(.system(size: 13))
+        .foregroundStyle(theme.onSurfaceVariant)
         .padding(.horizontal, 12)
-        .frame(height: showArtwork ? Metrics.songRowHeight : 56)
-        .background(rowFill, in: RoundedRectangle(cornerRadius: Radius.menu, style: .continuous))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .animation(Motion.hover, value: hovering)
-        .onTapGesture(count: 2, perform: onPlay)
-        .onDrag { model.dragItem(for: [track]) } preview: { SongDragPreview(track: track) }
-        .contextMenu {
-            Button("立即播放", action: onPlay)
-            Button("下一首播放") { model.player.playNext(track) }
-            Button("添加到队列") { model.player.addToQueue(track) }
-            AddToPlaylistMenu(tracks: [track])
-            Divider()
-            if model.canLike(track) {
-                Button(model.player.isLiked(track) ? "取消喜欢" : "喜欢") { model.toggleLike(track) }
-            }
-            if track.album?.isLinkable == true {
-                Button("查看专辑") { model.showAlbum(of: track) }
-            }
-            ForEach(track.artists.filter(\.isLinkable)) { artist in
-                Button("查看歌手：\(artist.name)") { model.showArtist(artist, of: track) }
-            }
-            if let path = track.localPath {
-                Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-            }
-            if let removeFromPlaylist {
-                Divider()
-                Button("从歌单中删除", role: .destructive, action: removeFromPlaylist)
-            }
-        }
-    }
-
-    @ViewBuilder private var indexCell: some View {
-        ZStack {
-            if isCurrent, model.player.isPlaying {
-                PlayingBars(color: theme.primary, animating: pageActive && !reduceMotion)
-                    .frame(width: 14, height: 12)
-            } else if hovering || isCurrent {
-                Button(action: onPlay) {
-                    Image(systemName: "play.fill").font(.system(size: 12, weight: .bold))
-                }
-                .buttonStyle(.plain)
-            } else {
-                Text(String(format: "%02d", index)).font(.system(size: 13, weight: .medium)).monospacedDigit()
-            }
-        }
-        .foregroundStyle(isCurrent ? theme.primary : theme.onSurfaceVariant)
-    }
-
-    private var titleLine: some View {
-        let title = Text(track.title).foregroundStyle(isCurrent ? theme.primary : theme.onSurface)
-        let alias = Text(track.alias.map { " (\($0))" } ?? "").foregroundStyle(theme.onSurfaceVariant)
-        return Text("\(title)\(alias)")
-            .font(.system(size: 15, weight: isCurrent ? .medium : .regular))
-            .lineLimit(1)
-    }
-
-    @ViewBuilder private var tags: some View {
-        let tiers = model.availableTiers(of: track)
-        if let badge = tiers.last(where: { !$0.isSpatial && $0.badge != nil })?.badge { Tag(text: badge, style: .amber, soft: true) }
-        ForEach(tiers.filter(\.isSpatial)) { tier in
-            if let badge = tier.badge { Tag(text: badge, style: .amber, soft: true) }
-        }
-        if track.fee == .vip { Tag(text: "VIP", style: .red, soft: true) }
-        else if track.fee == .purchase { Tag(text: "EP", style: .red, soft: true) }
-        if track.hasVideo { Tag(text: "MV", soft: true) }
-    }
-
-    private var rowFill: Color {
-        if isCurrent { return theme.primary.opacity(hovering ? 0.14 : 0.10) }
-        return theme.onSurface.opacity(hovering ? 0.06 : 0)
+        .frame(height: 36)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.outlineVariant).frame(height: 1) }
+        .padding(.bottom, 6)
     }
 }
 
@@ -206,22 +57,6 @@ struct SongColumns: Layout {
             subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
             x += width + spacing
         }
-    }
-}
-
-private struct PopularityBar: View {
-    var value: Double?
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(theme.onSurface.opacity(0.15))
-            if let value, value > 0 {
-                Capsule().fill(theme.primary).frame(width: max(48 * value, 4))
-            }
-        }
-        .frame(width: 48, height: 4)
-        .help(value.map { "热度 \(Int(($0 * 100).rounded()))" } ?? "")
     }
 }
 

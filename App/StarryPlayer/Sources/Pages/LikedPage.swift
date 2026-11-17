@@ -251,7 +251,7 @@ struct LikedPage: View {
             return (nil, TrackListLoader(tracks: [], pendingIDs: ids, fetch: fetch), ids)
         }
         guard key == loadKey, !Task.isCancelled else { return }
-        // Not animated: the page's height changes with it (see `DetailPageScroll`).
+        // Not animated: the page's height changes with it (see `DetailTablePage`).
         switch result {
         case .loaded(let loaded):
             list = loaded.list

@@ -36,6 +36,22 @@ struct SongTagSpec: Equatable {
     var style: Style
 }
 
+struct SongRowColumns: Equatable {
+    var artwork = true
+    var album = true
+    var popularity = false
+    var trailingWidth: CGFloat = 0
+
+    var rowHeight: CGFloat { artwork ? Metrics.songRowHeight : 56 }
+
+    static let playCountWidth: CGFloat = 52
+}
+
+struct SongSectionHeader: Equatable {
+    var title: String
+    var systemImage: String
+}
+
 struct SongRowGeometry: Equatable {
     var indexRect: NSRect
     var coverRect: NSRect
@@ -43,28 +59,62 @@ struct SongRowGeometry: Equatable {
     var albumRect: NSRect
     var heartRect: NSRect
     var durationRect: NSRect
+    var popularityRect: NSRect
+    var trailingRect: NSRect
 
     static let spacing: CGFloat = 16
     static let inset = Metrics.pagePadding + 12
     static let coverSide: CGFloat = 40
+    static let popularityBarSize = NSSize(width: 48, height: 4)
 
-    init(width: CGFloat, height: CGFloat) {
+    init(width: CGFloat, height: CGFloat, columns: SongRowColumns = SongRowColumns()) {
         let content = NSRect(x: Self.inset, y: 0, width: max(width - Self.inset * 2, 0), height: height)
-        let fixed = SongColumns.indexWidth + SongColumns.likeWidth + SongColumns.durationWidth + Self.spacing * 4
-        let free = max(content.width - fixed, 0)
-        let titleWidth = free * 3 / 5
-        let albumWidth = free * 2 / 5
+        var fixed = SongColumns.indexWidth + SongColumns.likeWidth + SongColumns.durationWidth
+        var count = 4
+        if columns.album { count += 1 }
+        if columns.popularity {
+            fixed += SongColumns.popularityWidth
+            count += 1
+        }
+        if columns.trailingWidth > 0 {
+            fixed += columns.trailingWidth
+            count += 1
+        }
+        let free = max(content.width - fixed - Self.spacing * CGFloat(count - 1), 0)
+        let titleWidth = columns.album ? free * 3 / 5 : free
         var x = content.minX
         indexRect = NSRect(x: x, y: 0, width: SongColumns.indexWidth, height: height)
         x += SongColumns.indexWidth + Self.spacing
-        coverRect = NSRect(x: x, y: (height - Self.coverSide) / 2, width: Self.coverSide, height: Self.coverSide)
-        textRect = NSRect(x: coverRect.maxX + 12, y: 0, width: max(titleWidth - Self.coverSide - 12, 0), height: height)
+        if columns.artwork {
+            coverRect = NSRect(x: x, y: (height - Self.coverSide) / 2, width: Self.coverSide, height: Self.coverSide)
+            textRect = NSRect(x: coverRect.maxX + 12, y: 0, width: max(titleWidth - Self.coverSide - 12, 0), height: height)
+        } else {
+            coverRect = .zero
+            textRect = NSRect(x: x, y: 0, width: titleWidth, height: height)
+        }
         x += titleWidth + Self.spacing
-        albumRect = NSRect(x: x, y: 0, width: albumWidth, height: height)
-        x += albumWidth + Self.spacing
+        if columns.album {
+            let albumWidth = free * 2 / 5
+            albumRect = NSRect(x: x, y: 0, width: albumWidth, height: height)
+            x += albumWidth + Self.spacing
+        } else {
+            albumRect = .zero
+        }
         heartRect = NSRect(x: x, y: (height - SongColumns.likeWidth) / 2, width: SongColumns.likeWidth, height: SongColumns.likeWidth)
         x += SongColumns.likeWidth + Self.spacing
         durationRect = NSRect(x: x, y: 0, width: SongColumns.durationWidth, height: height)
+        x += SongColumns.durationWidth + Self.spacing
+        if columns.popularity {
+            popularityRect = NSRect(x: x, y: 0, width: SongColumns.popularityWidth, height: height)
+            x += SongColumns.popularityWidth + Self.spacing
+        } else {
+            popularityRect = .zero
+        }
+        trailingRect = columns.trailingWidth > 0 ? NSRect(x: x, y: 0, width: columns.trailingWidth, height: height) : .zero
+    }
+
+    var popularityBar: NSRect {
+        NSRect(x: popularityRect.minX, y: popularityRect.midY - Self.popularityBarSize.height / 2, width: Self.popularityBarSize.width, height: Self.popularityBarSize.height)
     }
 }
 
@@ -75,7 +125,11 @@ enum SongRowDrawing {
     static let smallFont = NSFont.systemFont(ofSize: 13)
     static let digitFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
     static let indexFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+    static let trailingFont = NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .regular)
+    static let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
     static let tagFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+    static let hoverDuration: CFTimeInterval = 0.18
+    static let hoverKey = "hover"
     private static var symbols: [String: NSImage] = [:]
 
     static func lineHeight(_ font: NSFont) -> CGFloat { ceil(font.ascender - font.descender + font.leading) }
@@ -109,18 +163,22 @@ enum SongRowDrawing {
         image.draw(in: drawn, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
+    static func fadeHover(_ layer: CALayer?) {
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = hoverDuration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        // Core Animation files a transition under this key whatever it is given.
+        layer?.add(fade, forKey: kCATransition)
+    }
+
     static func enter(_ layer: CALayer, direction: CGFloat, rise: CGFloat = 8, delay: TimeInterval) {
         let fade = spring(keyPath: "opacity", from: 0, to: 1)
         let up = spring(keyPath: "transform.translation.y", from: rise, to: 0)
         var animations: [CAAnimation] = [fade, up]
         var duration = fade.settlingDuration
         if direction != 0 {
-            let slide = CABasicAnimation(keyPath: "transform.translation.x")
-            slide.fromValue = 28 * direction
-            slide.toValue = 0
-            slide.duration = 0.36
-            slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
-            animations.append(slide)
+            animations.append(slide(direction))
             duration = max(duration, 0.36)
         }
         let group = CAAnimationGroup()
@@ -131,12 +189,32 @@ enum SongRowDrawing {
         layer.add(group, forKey: "enter")
     }
 
-    private static func spring(keyPath: String, from: CGFloat, to: CGFloat) -> CASpringAnimation {
-        // Match Motion.reveal: response 0.55 s, damping fraction 0.86.
+    static func slideIn(_ layer: CALayer, direction: CGFloat) {
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = direction == 0 ? [fade] : [fade, slide(direction)]
+        group.duration = 0.36
+        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+        layer.add(group, forKey: "enter")
+    }
+
+    private static func slide(_ direction: CGFloat) -> CABasicAnimation {
+        let slide = CABasicAnimation(keyPath: "transform.translation.x")
+        slide.fromValue = 28 * direction
+        slide.toValue = 0
+        slide.duration = 0.36
+        slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+        return slide
+    }
+
+    /// `Animation.spring(response:dampingFraction:)` as a layer animation.
+    static func spring(keyPath: String, from: CGFloat, to: CGFloat, response: Double = 0.55, dampingFraction: Double = 0.86) -> CASpringAnimation {
         let animation = CASpringAnimation(keyPath: keyPath)
         animation.mass = 1
-        animation.stiffness = pow(2 * .pi / 0.55, 2)
-        animation.damping = 2 * 0.86 * sqrt(animation.stiffness)
+        animation.stiffness = pow(2 * .pi / response, 2)
+        animation.damping = 2 * dampingFraction * sqrt(animation.stiffness)
         animation.fromValue = from
         animation.toValue = to
         animation.duration = animation.settlingDuration
@@ -216,9 +294,18 @@ final class SongCellView: NSView {
             applyState()
         }
     }
+    /// Set before `show`: a row without artwork does not load its cover.
+    var columns = SongRowColumns() {
+        didSet {
+            guard columns != oldValue else { return }
+            content.columns = columns
+            needsLayout = true
+        }
+    }
     private(set) var track: Track?
     private var state = State()
     private var actions = Actions()
+    private let score = SongScoreBarView()
     private let fill = NSView()
     private let glow = SongRowGlowView()
     private let content = SongContentView()
@@ -237,7 +324,7 @@ final class SongCellView: NSView {
         glow.layer?.cornerCurve = .continuous
         glow.layer?.borderWidth = 1
         glow.alphaValue = 0
-        for view in [fill, content, mark, heart, glow] { addSubview(view) }
+        for view in [score, fill, content, mark, heart, glow] { addSubview(view) }
         mark.onPlay = { [weak self] in self?.actions.play() }
         heart.onToggle = { [weak self] in self?.actions.toggleLike() }
     }
@@ -248,8 +335,9 @@ final class SongCellView: NSView {
 
     override func layout() {
         super.layout()
-        let geometry = SongRowGeometry(width: bounds.width, height: bounds.height)
+        let geometry = SongRowGeometry(width: bounds.width, height: bounds.height, columns: columns)
         let inset = NSRect(x: Metrics.pagePadding, y: 0, width: max(bounds.width - Metrics.pagePadding * 2, 0), height: bounds.height)
+        score.frame = inset.insetBy(dx: 0, dy: SongScoreBarView.inset)
         fill.frame = inset
         glow.frame = inset
         content.frame = bounds
@@ -257,15 +345,17 @@ final class SongCellView: NSView {
         heart.frame = geometry.heartRect
     }
 
-    func show(_ track: Track, index: Int, tags: [SongTagSpec], state: State, actions: Actions) {
+    func show(_ track: Track, index: Int, tags: [SongTagSpec], trailing: String? = nil, state: State, actions: Actions) {
         self.track = track
         self.state = state
         self.actions = actions
-        content.show(track, tags: tags, current: state.isCurrent, actions: actions)
+        content.show(track, tags: tags, trailing: trailing, current: state.isCurrent, actions: actions)
         mark.index = index
         glow.alphaValue = 0
         glow.layer?.removeAllAnimations()
         layer?.removeAllAnimations()
+        fill.layer?.removeAnimation(forKey: SongRowDrawing.hoverKey)
+        for view in [mark, heart] { view.layer?.removeAnimation(forKey: kCATransition) }
         applyState(fresh: true)
     }
 
@@ -273,12 +363,21 @@ final class SongCellView: NSView {
         mark.index = index
     }
 
+    func setTrailing(_ text: String?) {
+        content.trailing = text
+    }
+
+    func setScore(_ fraction: Double?, tint: NSColor, growingAfter delay: TimeInterval? = nil) {
+        score.show(fraction, tint: tint, dark: palette.theme.isDark, growingAfter: delay)
+    }
+
     func apply(_ state: State) {
         guard state != self.state else { return }
         let wasCurrent = self.state.isCurrent
+        let wasHovered = self.state.hovered
         self.state = state
         if state.isCurrent != wasCurrent { content.current = state.isCurrent }
-        applyState()
+        applyState(fading: state.hovered != wasHovered)
     }
 
     func pointerMoved(to point: NSPoint?) {
@@ -310,9 +409,21 @@ final class SongCellView: NSView {
         }
     }
 
-    private func applyState(fresh: Bool = false) {
-        let color: NSColor? = state.isCurrent ? palette.primary.withAlphaComponent(state.hovered ? 0.14 : 0.10) : state.hovered ? palette.onSurface.withAlphaComponent(0.06) : nil
-        fill.layer?.backgroundColor = color?.cgColor
+    private func applyState(fresh: Bool = false, fading: Bool = false) {
+        let color = state.isCurrent ? palette.primary.withAlphaComponent(state.hovered ? 0.14 : 0.10) : palette.onSurface.withAlphaComponent(state.hovered ? 0.06 : 0)
+        if let layer = fill.layer {
+            if fading {
+                let fade = CABasicAnimation(keyPath: "backgroundColor")
+                fade.fromValue = layer.presentation()?.backgroundColor ?? layer.backgroundColor ?? color.withAlphaComponent(0).cgColor
+                fade.toValue = color.cgColor
+                fade.duration = SongRowDrawing.hoverDuration
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(fade, forKey: SongRowDrawing.hoverKey)
+                SongRowDrawing.fadeHover(mark.layer)
+                SongRowDrawing.fadeHover(heart.layer)
+            }
+            layer.backgroundColor = state.isCurrent || state.hovered ? color.cgColor : nil
+        }
         mark.state = state
         if fresh { heart.reset(state) } else { heart.state = state }
     }
@@ -332,6 +443,14 @@ final class SongContentView: NSView {
 
     var palette = SongTablePalette(theme: .darkBase) { didSet { if palette != oldValue { needsDisplay = true } } }
     var current = false { didSet { if current != oldValue { needsDisplay = true } } }
+    var columns = SongRowColumns() {
+        didSet {
+            guard columns != oldValue else { return }
+            needsDisplay = true
+            updateToolTips()
+        }
+    }
+    var trailing: String? { didSet { if trailing != oldValue { needsDisplay = true } } }
     private var track: Track?
     private var tags: [SongTagSpec] = []
     private var image: NSImage?
@@ -356,9 +475,10 @@ final class SongContentView: NSView {
 
     static var tagHeight: CGFloat { SongRowDrawing.lineHeight(SongRowDrawing.tagFont) + tagPaddingY * 2 }
 
-    func show(_ track: Track, tags: [SongTagSpec], current: Bool, actions: SongCellView.Actions) {
+    func show(_ track: Track, tags: [SongTagSpec], trailing: String? = nil, current: Bool, actions: SongCellView.Actions) {
         self.track = track
         self.tags = tags
+        self.trailing = trailing
         self.current = current
         runs = []
         for (index, artist) in track.artists.enumerated() {
@@ -375,7 +495,8 @@ final class SongContentView: NSView {
         loading?.cancel()
         loading = nil
         image = nil
-        if let url = track.artwork?.sized(Self.coverPixels) {
+        updateToolTips()
+        if columns.artwork, let url = track.artwork?.sized(Self.coverPixels) {
             if let cached = ImageStore.shared.image(for: url, maxPixelSize: Self.coverPixels) {
                 image = cached
             } else {
@@ -393,8 +514,8 @@ final class SongContentView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let track else { return }
-        let geometry = SongRowGeometry(width: bounds.width, height: bounds.height)
-        drawCover(track, in: geometry.coverRect)
+        let geometry = SongRowGeometry(width: bounds.width, height: bounds.height, columns: columns)
+        if columns.artwork { drawCover(track, in: geometry.coverRect) }
 
         let lines = Self.lines(bounds.height)
         let titleFont = current ? SongRowDrawing.titleFontCurrent : SongRowDrawing.titleFont
@@ -444,13 +565,52 @@ final class SongContentView: NSView {
         }
 
         if let album = runs.indices.last {
-            let line = runLine(album)
-            let rect = NSRect(x: geometry.albumRect.minX, y: ((bounds.height - smallHeight) / 2).rounded(), width: geometry.albumRect.width, height: smallHeight)
-            runs[album].rect = NSRect(x: rect.minX, y: rect.minY, width: min(line.width, rect.width), height: smallHeight)
-            line.draw(in: rect, centred: false)
+            if columns.album {
+                let line = runLine(album)
+                let rect = NSRect(x: geometry.albumRect.minX, y: ((bounds.height - smallHeight) / 2).rounded(), width: geometry.albumRect.width, height: smallHeight)
+                runs[album].rect = NSRect(x: rect.minX, y: rect.minY, width: min(line.width, rect.width), height: smallHeight)
+                line.draw(in: rect, centred: false)
+            } else {
+                runs[album].rect = .zero
+            }
         }
 
         SongTextLine(TimeFormatting.clock(track.duration), font: SongRowDrawing.digitFont, color: palette.onSurfaceVariant).draw(in: geometry.durationRect, centred: true)
+
+        if columns.popularity { drawPopularity(track.popularity, in: geometry.popularityBar) }
+
+        if let trailing, columns.trailingWidth > 0 {
+            let line = SongTextLine(trailing, font: SongRowDrawing.trailingFont, color: palette.onSurfaceVariant)
+            let width = min(line.width, geometry.trailingRect.width)
+            line.draw(in: NSRect(x: geometry.trailingRect.maxX - width, y: 0, width: width, height: bounds.height), centred: true)
+        }
+    }
+
+    private func drawPopularity(_ value: Double?, in bar: NSRect) {
+        let radius = bar.height / 2
+        palette.onSurface.withAlphaComponent(0.15).setFill()
+        NSBezierPath(roundedRect: bar, xRadius: radius, yRadius: radius).fill()
+        guard let value, value > 0 else { return }
+        palette.primary.setFill()
+        NSBezierPath(roundedRect: NSRect(x: bar.minX, y: bar.minY, width: max(bar.width * value, 4), height: bar.height), xRadius: radius, yRadius: radius).fill()
+    }
+
+    private var popularityText: String? {
+        guard columns.popularity, let value = track?.popularity else { return nil }
+        return "热度 \(Int((value * 100).rounded()))"
+    }
+
+    private func updateToolTips() {
+        removeAllToolTips()
+        guard popularityText != nil else { return }
+        let bar = SongRowGeometry(width: bounds.width, height: bounds.height, columns: columns).popularityBar
+        addToolTip(bar.insetBy(dx: 0, dy: -6), owner: self, userData: nil)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { updateToolTips() }
     }
 
     private func runLine(_ index: Int) -> SongTextLine {
@@ -506,6 +666,116 @@ final class SongContentView: NSView {
     }
 }
 
+extension SongContentView: NSViewToolTipOwner {
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
+        popularityText ?? ""
+    }
+}
+
+final class SongScoreBarView: NSView {
+    static let inset: CGFloat = 5
+    private static let radius: CGFloat = 10
+    private let bar = CAGradientLayer()
+    private var fraction: CGFloat?
+    private var colors: [NSColor] = []
+    /// When the bar is to start growing; kept until the row has a width to grow to.
+    private var growsAt: CFTimeInterval?
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        isHidden = true
+        bar.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bar.startPoint = CGPoint(x: 0, y: 0.5)
+        bar.endPoint = CGPoint(x: 1, y: 0.5)
+        bar.cornerCurve = .continuous
+        layer?.addSublayer(bar)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        place()
+        grow()
+    }
+
+    func show(_ fraction: Double?, tint: NSColor, dark: Bool, growingAfter delay: TimeInterval?) {
+        let fraction = fraction.map { CGFloat(min(max($0, 0), 1)) }
+        let colors = [tint.withAlphaComponent(dark ? 0.15 : 0.11), tint.withAlphaComponent(dark ? 0.04 : 0.03)]
+        // Leave a bar that is already right alone: it may still be growing.
+        guard fraction != self.fraction || colors != self.colors || delay != nil else { return }
+        self.fraction = fraction
+        self.colors = colors
+        bar.removeAnimation(forKey: "grow")
+        growsAt = delay.map { CACurrentMediaTime() + $0 }
+        isHidden = fraction == nil
+        place()
+        grow()
+    }
+
+    private func grow() {
+        // A row new to the table is laid out only after it is shown.
+        guard let growsAt, bounds.width > 0 else { return }
+        self.growsAt = nil
+        guard bar.bounds.width > 0.5 else { return }
+        // Match the ranking's spring: response 0.9 s, damping fraction 0.92.
+        let grow = SongRowDrawing.spring(keyPath: "bounds.size.width", from: 0, to: bar.bounds.width, response: 0.9, dampingFraction: 0.92)
+        grow.beginTime = growsAt
+        grow.fillMode = .backwards
+        bar.add(grow, forKey: "grow")
+    }
+
+    private func place() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let width = bounds.width * (fraction ?? 0)
+        bar.colors = colors.map(\.cgColor)
+        bar.bounds = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+        bar.position = CGPoint(x: 0, y: bounds.midY)
+        bar.cornerRadius = min(Self.radius, width / 2)
+        bar.isHidden = width <= 0.5
+        CATransaction.commit()
+    }
+}
+
+final class SongSectionHeaderCell: NSView {
+    static let identifier = NSUserInterfaceItemIdentifier("SongSectionHeaderCell")
+
+    var palette = SongTablePalette(theme: .darkBase) { didSet { if palette != oldValue { needsDisplay = true } } }
+    var header: SongSectionHeader? { didSet { if header != oldValue { needsDisplay = true } } }
+
+    private static let bottomPadding: CGFloat = 6
+
+    init() {
+        super.init(frame: .zero)
+        identifier = Self.identifier
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    static func height(leading: Bool) -> CGFloat {
+        (leading ? 6 : 22) + SongRowDrawing.lineHeight(SongRowDrawing.headerFont) + bottomPadding
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let header else { return }
+        let height = SongRowDrawing.lineHeight(SongRowDrawing.headerFont)
+        let line = NSRect(x: SongRowGeometry.inset, y: bounds.height - Self.bottomPadding - height, width: max(bounds.width - SongRowGeometry.inset * 2, 0), height: height)
+        var x = line.minX
+        if let image = SongRowDrawing.symbol(header.systemImage, size: 12, weight: .medium, color: palette.onSurfaceVariant) {
+            SongRowDrawing.drawSymbol(header.systemImage, size: 12, weight: .medium, color: palette.onSurfaceVariant, centredIn: NSRect(x: x, y: line.minY, width: image.size.width, height: height))
+            x += image.size.width + 6
+        }
+        SongRowDrawing.draw(header.title, font: SongRowDrawing.headerFont, color: palette.onSurfaceVariant, in: NSRect(x: x, y: line.minY, width: max(line.maxX - x, 0), height: height), centred: false)
+    }
+}
+
 final class SongMarkView: NSView {
     var palette = SongTablePalette(theme: .darkBase) {
         didSet {
@@ -522,6 +792,7 @@ final class SongMarkView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
         bars.isHidden = true
         addSubview(bars)
     }
@@ -577,14 +848,17 @@ final class SongHeartView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        isHidden = true
+        wantsLayer = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var isFlipped: Bool { true }
 
+    /// The view stays in place and draws nothing when not shown, so the heart can fade.
     private var shown: Bool { state.canLike && (state.liked || state.hovered) }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { shown ? super.hitTest(point) : nil }
 
     func reset(_ state: SongCellView.State) {
         resetting = true
@@ -595,13 +869,16 @@ final class SongHeartView: NSView {
 
     private func update(from old: SongCellView.State) {
         let shown = shown
-        if isHidden == shown {
-            isHidden = !shown
+        if shown != (old.canLike && (old.liked || old.hovered)) {
+            needsDisplay = true
             if !shown { hot = false }
         }
-        guard shown else { return }
+        guard shown else {
+            toolTip = nil
+            return
+        }
         toolTip = state.liked ? "取消喜欢" : "喜欢"
-        if old.liked != state.liked, !isHidden, !resetting {
+        if old.liked != state.liked, !resetting {
             needsDisplay = true
             wantsLayer = true
             let bounce = CAKeyframeAnimation(keyPath: "transform.scale")
@@ -626,7 +903,7 @@ final class SongHeartView: NSView {
     }
 
     func pointer(at point: NSPoint?) {
-        hot = !isHidden && (point.map { bounds.contains($0) } ?? false)
+        hot = shown && (point.map { bounds.contains($0) } ?? false)
     }
 
     override func mouseDown(with event: NSEvent) {

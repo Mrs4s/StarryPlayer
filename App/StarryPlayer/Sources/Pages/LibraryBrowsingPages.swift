@@ -215,16 +215,11 @@ struct LibraryFolderView: View {
     private var source: SourceID { model.browsingSourceID }
 
     var body: some View {
-        PageScroll {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                AsyncContent(state: state, retry: { Task { await load() } }) { page in
-                    content(page)
-                }
-            }
-        }
-        .task(id: "\(model.homeKey)|\(path ?? "")") { await load() }
+        DetailTablePage(model: model, header: AnyView(header.plainPageHeader(gap: Self.sectionGap)), rows: rows, bottomInset: model.player.current != nil ? Metrics.playerBarInset : 0)
+            .task(id: "\(model.homeKey)|\(path ?? "")") { await load() }
     }
+
+    private static let sectionGap: CGFloat = 18
 
     private var page: LibraryFolderPage? { state.value }
 
@@ -266,21 +261,29 @@ struct LibraryFolderView: View {
         }
     }
 
-    @ViewBuilder
-    private func content(_ page: LibraryFolderPage) -> some View {
-        if page.folders.isEmpty, page.tracks.isEmpty {
-            StateView(systemName: "folder", title: path == nil ? "还没有添加文件夹" : "这个文件夹里没有歌曲")
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(page.folders) { entry in
-                    FolderRow(entry: entry) { model.navigate(.libraryFolder(entry.path)) }
-                }
-            }
-            if !page.tracks.isEmpty {
-                SongList(tracks: page.tracks, context: context)
-                    .padding(.top, page.folders.isEmpty ? 0 : 12)
-            }
+    private var rows: [DetailTableRow] {
+        guard case .loaded(let page) = state else {
+            return [.hosted("state") {
+                AsyncContent(state: state, retry: { Task { await load() } }) { (_: LibraryFolderPage) in EmptyView() }
+            }]
         }
+        if page.folders.isEmpty, page.tracks.isEmpty {
+            return [.hosted("empty") { StateView(systemName: "folder", title: path == nil ? "还没有添加文件夹" : "这个文件夹里没有歌曲") }]
+        }
+        var rows: [DetailTableRow] = []
+        if !page.folders.isEmpty {
+            rows.append(.hosted("folders") {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(page.folders) { entry in
+                        FolderRow(entry: entry) { model.navigate(.libraryFolder(entry.path)) }
+                    }
+                }
+            })
+        }
+        if !page.tracks.isEmpty {
+            rows += DetailTableRow.songList(page.tracks, context: context, gapAbove: Self.sectionGap + (page.folders.isEmpty ? 0 : 12))
+        }
+        return rows
     }
 
     private func load() async {
