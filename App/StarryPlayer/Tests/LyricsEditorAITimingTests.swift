@@ -190,4 +190,34 @@ import Testing
         session.redo()
         #expect(session.aiReviewNotes == [before.lines[1].syllables[0].id: ["声学证据偏弱"]])
     }
+
+    @Test func mixAssistancePassesMixURLWhenEnabledAndInvalidatesPreviewWhenToggled() async throws {
+        actor Capture {
+            var mix: URL?
+            func store(_ url: URL?) { mix = url }
+        }
+        let capture = Capture()
+        let session = session()
+        let mixURL = URL(fileURLWithPath: "/unused-mix-fixture.caf")
+        let source = LyricsEditorAudio.AIAlignmentSource(file: URL(fileURLWithPath: "/unused-vocals-fixture.caf"),
+                                                         mix: mixURL, identity: "audio-mix")
+        let state = LyricsEditorAITimingState { request, _ in
+            await capture.store(request.mix)
+            return Self.aligned(request.draft)
+        }
+        var enabled = configuration
+        enabled.usesMixAssistance = true
+        state.start(configuration: enabled, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
+        try await wait(state)
+        #expect(await capture.mix == mixURL)
+        #expect(state.canApply(in: session, configuration: enabled, audioIdentity: source.identity))
+
+        var disabled = enabled
+        disabled.usesMixAssistance = false
+        #expect(!state.canApply(in: session, configuration: disabled, audioIdentity: source.identity))
+
+        state.start(configuration: disabled, in: session, prepareAudio: { source }, currentAudioIdentity: { source.identity })
+        try await wait(state)
+        #expect(await capture.mix == nil)
+    }
 }

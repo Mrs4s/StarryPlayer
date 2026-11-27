@@ -8,6 +8,7 @@ final class LyricsEditorAITimingState {
     struct Configuration: Equatable, Sendable {
         var directory: URL
         var backend: LyricsAIBackend
+        var usesMixAssistance = true
         var resplitSyllables = false
         var englishSplit: LyricsAIEnglishSplit = .automatic
         var splitsRubyMorae = false
@@ -15,6 +16,7 @@ final class LyricsEditorAITimingState {
     struct Request: Sendable {
         var draft: LyricsDraft
         var audio: URL
+        var mix: URL? = nil
         var configuration: Configuration
     }
     struct ModelInfo: Sendable {
@@ -49,6 +51,7 @@ final class LyricsEditorAITimingState {
         self.worker = worker
         perform = work ?? { request, progress in
             try await worker.align(request.draft, vocals: request.audio,
+                                   mix: request.configuration.usesMixAssistance ? request.mix : nil,
                                    modelDirectory: request.configuration.directory,
                                    backend: request.configuration.backend, englishSplit: request.configuration.englishSplit, progress: progress)
         }
@@ -135,7 +138,9 @@ final class LyricsEditorAITimingState {
                         input.lines[line].syllables.indices.map { LyricsDraft.Position(line: line, syllable: $0) }
                     })
                 }
-                let result = try await perform(Request(draft: input, audio: audio.file, configuration: configuration)) { [weak self] progress in
+                let result = try await perform(Request(draft: input, audio: audio.file,
+                                                       mix: configuration.usesMixAssistance ? audio.mix : nil,
+                                                       configuration: configuration)) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.request == id, self.isWorking, !self.isCancelling else { return }
                         self.progress = progress

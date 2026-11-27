@@ -213,6 +213,7 @@ final class LyricsEditorAudio {
 
     struct AIAlignmentSource: Sendable {
         var file: URL
+        var mix: URL? = nil
         var identity: String
     }
 
@@ -231,7 +232,8 @@ final class LyricsEditorAudio {
         guard vocals == .ready, let vocalsFile, FileManager.default.fileExists(atPath: vocalsFile.path) else {
             throw AlignmentFailure.unavailable
         }
-        return AIAlignmentSource(file: vocalsFile, identity: aiAlignmentIdentity)
+        let mixFile: URL? = if case .pcm(_, let song) = backend, FileManager.default.fileExists(atPath: song.path) { song } else { nil }
+        return AIAlignmentSource(file: vocalsFile, mix: mixFile, identity: aiAlignmentIdentity)
     }
 
     func alignmentAnalysis(in range: ClosedRange<TimeInterval>, voice: HintVoice = .all) async throws -> VocalOnsetDetector.Analysis {

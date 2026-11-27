@@ -153,7 +153,7 @@ enum LyricCalibrationAudio {
             draft.lines[index].resplitSyllables()
         }
         let worker = LyricsAIAligner()
-        return try await worker.align(draft, vocals: vocals, modelDirectory: modelDirectory, backend: backend, englishSplit: englishSplit) {
+        return try await worker.align(draft, vocals: vocals, mix: file.url, modelDirectory: modelDirectory, backend: backend, englishSplit: englishSplit) {
             progress(.init(0.25 + $0.fraction * 0.75, $0.message))
         }
     }

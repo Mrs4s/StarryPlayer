@@ -234,4 +234,36 @@ import Testing
         #expect(alignment.raw[1].start == 1.0)
         #expect(abs(alignment.spans[1].start - (1.0 - 0.36)) <= 0.02 + 1e-9)
     }
+
+    @Test func dualSourcePosteriorFusionPreservesHeardLabelsAndFlagsCrossSourceDisagreement() {
+        var emA = [Float](repeating: log(0.001), count: 123)
+        var emM = [Float](repeating: log(0.001), count: 123)
+        emA[121] = log(0.98); emA[10] = log(0.01)
+        emM[121] = log(0.05); emM[10] = log(0.90)
+        var suA = [Float](repeating: log(0.01), count: 8); suA[0] = log(0.93)
+        var suM = [Float](repeating: log(0.01), count: 8); suM[1] = log(0.93)
+        let acousticA = LyricsAIAligner.Acoustic(frames: 2, samples: 720, emission: emA + emA, sustain: suA + suA, levels: [-50, -10])
+        let acousticM = LyricsAIAligner.Acoustic(frames: 2, samples: 720, emission: emM + emM, sustain: suM + suM, levels: [-5, -5])
+
+        let single = LyricsAIAligner.combine([(acousticA, 1)], levels: acousticA)
+        #expect(single.logProbabilities == acousticA.emission)
+        #expect(single.silent == [true, false])
+
+        let blended = LyricsAIAligner.combine([(acousticA, 2), (acousticM, 1)], levels: acousticA)
+        #expect(blended.silent == [true, false])
+        let expectedProb = (2 * Float(0.01) + Float(0.90)) / 3
+        #expect(abs(exp(blended.logProbabilities[10]) - expectedProb) < 1e-4)
+
+        let draft = LyricsDraft(lines: [.init(syllables: [.init(text: "あ")])])
+        let plan = LyricsAIPronunciation(tokens: [.init(label: 10, sustainClass: 1, endsLine: true)],
+                                         units: [.init(line: 0, syllable: 0, tokens: 0..<1, ruby: [], approximate: false)],
+                                         lines: [0], estimatedCount: 0, backgroundCount: 0)
+        let issues = LyricsAITimingReview.issues(
+            plan: plan, draft: draft, evidence: blended,
+            rawSpans: [.init(start: 0.0, end: 0.04)],
+            spans: [.init(start: 0.0, end: 0.04)],
+            alternateSpans: (vocals: [.init(start: 0.20, end: 0.24)], mix: [.init(start: 0.0, end: 0.04)])
+        )
+        #expect(issues.contains { $0.message.contains("人声轨与原曲混音定位不一致") })
+    }
 }

@@ -10,11 +10,14 @@ enum LyricsAITimingReview {
     static let lateEnd: TimeInterval = 0.8
     /// Blocks longer than this are usually a misplaced word or a hold through someone else's line.
     static let longBlock: TimeInterval = 2.5
+    /// Vocals-only vs mix-only placement disagreement above this threshold reliably flags residual alignment errors.
+    static let sourceDisagreement: TimeInterval = 0.12
 
     // Thresholds were fitted to human corrections of 18 songs; they flag fewer blocks than the former
     // per-token weakness rule while catching more of the blocks that were off by over 300 ms.
     static func issues(plan: LyricsAIPronunciation, draft: LyricsDraft, evidence: LyricsAICTC.Evidence,
-                       rawSpans: [LyricsAICTC.Span], spans: [LyricsAICTC.Span], sharedSounds: [Range<Int>] = []) -> [LyricsAIReviewIssue] {
+                       rawSpans: [LyricsAICTC.Span], spans: [LyricsAICTC.Span], sharedSounds: [Range<Int>] = [],
+                       alternateSpans: (vocals: [LyricsAICTC.Span], mix: [LyricsAICTC.Span])? = nil) -> [LyricsAIReviewIssue] {
         guard rawSpans.count == plan.tokens.count, spans.count == plan.tokens.count else { return [] }
         var result: [LyricsAIReviewIssue] = []
         var previous: LyricsAIPronunciation.Unit?
@@ -49,6 +52,17 @@ enum LyricsAITimingReview {
                    spans[right].end - spans[left].start >= 0.24,
                    abs((spans[left].end - spans[left].start) - (spans[right].end - spans[right].start)) >= 0.001 {
                     reasons.append("连续同音的字间边界需核对")
+                }
+            }
+            if let alternateSpans, alternateSpans.vocals.count == plan.tokens.count, alternateSpans.mix.count == plan.tokens.count {
+                let startDiff = shared ? 0 : abs(alternateSpans.vocals[first].start - alternateSpans.mix[first].start)
+                let endDiff = sharedEnd ? 0 : abs(alternateSpans.vocals[last].end - alternateSpans.mix[last].end)
+                let residualStart = shared ? 0 : max(abs(spans[first].start - alternateSpans.vocals[first].start),
+                                                     abs(spans[first].start - alternateSpans.mix[first].start))
+                let residualEnd = sharedEnd ? 0 : max(abs(spans[last].end - alternateSpans.vocals[last].end),
+                                                      abs(spans[last].end - alternateSpans.mix[last].end))
+                if max(startDiff, endDiff) >= sourceDisagreement - 1e-9, max(residualStart, residualEnd) >= 0.06 - 1e-9 {
+                    reasons.append("人声轨与原曲混音定位不一致")
                 }
             }
             if !reasons.isEmpty {

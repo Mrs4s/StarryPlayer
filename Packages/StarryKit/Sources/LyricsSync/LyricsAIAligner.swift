@@ -29,6 +29,14 @@ public struct LyricsAIAlignmentResult: Sendable {
 
 /// Keep compiled models at a stable URL so Core ML can reuse its cache.
 public actor LyricsAIAligner {
+    struct Acoustic: Sendable {
+        var frames: Int
+        var samples: Int
+        var emission: [Float]
+        var sustain: [Float]
+        var levels: [Float]
+    }
+
     private struct Loaded {
         var stamp: String
         var identity: String
@@ -36,7 +44,7 @@ public actor LyricsAIAligner {
         var model: MLModel
     }
     private var loaded: Loaded?
-    private var cached: (key: String, evidence: LyricsAICTC.Evidence)?
+    private var cachedAcoustics: [(key: String, acoustic: Acoustic)] = []
     private var busy = false
     private var releasePending = false
     private let cacheDirectory: URL
@@ -48,10 +56,10 @@ public actor LyricsAIAligner {
 
     public func releaseWhenIdle() {
         if busy { releasePending = true }
-        else { loaded = nil; cached = nil }
+        else { loaded = nil; cachedAcoustics.removeAll() }
     }
 
-    public func align(_ draft: LyricsDraft, vocals: URL, modelDirectory: URL, backend: LyricsAIBackend,
+    public func align(_ draft: LyricsDraft, vocals: URL, mix: URL? = nil, modelDirectory: URL, backend: LyricsAIBackend,
                       englishSplit: LyricsAIEnglishSplit = .automatic,
                       progress: @escaping @Sendable (LyricsAIProgress) -> Void = { _ in }) async throws -> LyricsAIAlignmentResult {
         guard #available(macOS 15, *) else { throw LyricsAIError.unsupportedSystem }
@@ -59,7 +67,7 @@ public actor LyricsAIAligner {
         busy = true
         defer {
             busy = false
-            if releasePending { loaded = nil; cached = nil; releasePending = false }
+            if releasePending { loaded = nil; cachedAcoustics.removeAll(); releasePending = false }
         }
         let access = modelDirectory.startAccessingSecurityScopedResource()
         defer { if access { modelDirectory.stopAccessingSecurityScopedResource() } }
@@ -69,23 +77,71 @@ public actor LyricsAIAligner {
         var plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: bundle.vocabulary, english: bundle.englishReadings)
         let stamp = try bundle.stamp()
         let audioValues = try vocals.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        let audioKey = "\(vocals.path):\(audioValues.fileSize ?? -1):\(audioValues.contentModificationDate?.timeIntervalSince1970 ?? 0)"
-        let key = stamp + backend.rawValue + audioKey
-        let evidence: LyricsAICTC.Evidence
-        if let cached, cached.key == key {
-            evidence = cached.evidence
-            progress(.init(0.84, "复用人声分析结果…"))
-        } else {
-            progress(.init(0.05, "读取人声音频…"))
-            let samples = try LyricsAIAudio.read(vocals)
-            let frames = (samples.count - 400) / 320 + 1
-            let (cells, overflow) = frames.multipliedReportingOverflow(by: 2 * plan.tokens.count + 1)
+        let vocalsKey = stamp + backend.rawValue + "\(vocals.path):\(audioValues.fileSize ?? -1):\(audioValues.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+        let distinctMix = mix.flatMap { $0.standardizedFileURL == vocals.standardizedFileURL ? nil : $0 }
+        let mixValues = try? distinctMix?.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let mixKey = distinctMix.map { url in
+            stamp + backend.rawValue + "\(url.path):\(mixValues?.fileSize ?? -1):\(mixValues?.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+        }
+
+        let vocalsAcoustic: Acoustic
+        var mixAcoustic: Acoustic?
+        let cachedVocals = cachedAcoustics.first(where: { $0.key == vocalsKey })?.acoustic
+        let cachedMix = mixKey.flatMap { key in cachedAcoustics.first(where: { $0.key == key })?.acoustic }
+        let needsVocals = cachedVocals == nil
+        let needsMix = distinctMix != nil && cachedMix == nil
+
+        if !needsVocals && !needsMix {
+            vocalsAcoustic = cachedVocals!
+            mixAcoustic = cachedMix
+            let (cells, overflow) = vocalsAcoustic.frames.multipliedReportingOverflow(by: 2 * plan.tokens.count + 1)
             guard !overflow, cells <= 160_000_000 else { throw LyricsAIError.tooLarge }
+            progress(.init(0.84, "复用声学分析结果…"))
+        } else {
             let model = try await prepare(bundle, stamp: stamp, backend: backend, progress: progress)
             try Task.checkCancellation()
-            evidence = try infer(samples, bundle: bundle, model: model, progress: progress)
-            try Task.checkCancellation()
-            cached = (key, evidence)
+            let vocalsProgressRange: ClosedRange<Double> = needsMix ? 0.20...0.52 : 0.20...0.84
+            if let cachedVocals {
+                vocalsAcoustic = cachedVocals
+                let (cells, overflow) = vocalsAcoustic.frames.multipliedReportingOverflow(by: 2 * plan.tokens.count + 1)
+                guard !overflow, cells <= 160_000_000 else { throw LyricsAIError.tooLarge }
+            } else {
+                progress(.init(0.05, "读取人声音频…"))
+                let samples = try LyricsAIAudio.read(vocals)
+                let frames = (samples.count - 400) / 320 + 1
+                let (cells, overflow) = frames.multipliedReportingOverflow(by: 2 * plan.tokens.count + 1)
+                guard !overflow, cells <= 160_000_000 else { throw LyricsAIError.tooLarge }
+                try Task.checkCancellation()
+                vocalsAcoustic = try infer(samples, bundle: bundle, model: model, range: vocalsProgressRange,
+                                           label: distinctMix == nil ? "分析歌声" : "分析分离人声", progress: progress)
+                try Task.checkCancellation()
+                storeCachedAcoustic(key: vocalsKey, acoustic: vocalsAcoustic)
+            }
+            if let cachedMix {
+                mixAcoustic = cachedMix
+            } else if let mixURL = distinctMix, let mixKey {
+                do {
+                    let mixSamples = try LyricsAIAudio.read(mixURL)
+                    try Task.checkCancellation()
+                    let inferred = try infer(mixSamples, bundle: bundle, model: model,
+                                             range: needsVocals ? 0.52...0.84 : 0.20...0.84,
+                                             label: "结合原曲混音", progress: progress)
+                    try Task.checkCancellation()
+                    storeCachedAcoustic(key: mixKey, acoustic: inferred)
+                    mixAcoustic = inferred
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    mixAcoustic = nil
+                }
+            }
+        }
+
+        let evidence: LyricsAICTC.Evidence
+        if let mixAcoustic {
+            evidence = Self.combine([(vocalsAcoustic, 2), (mixAcoustic, 1)], levels: vocalsAcoustic)
+        } else {
+            evidence = Self.combine([(vocalsAcoustic, 1)], levels: vocalsAcoustic)
         }
         progress(.init(0.85, "定位歌词时间…"))
         var alignment = try LyricsAICTC.decode(evidence, tokens: plan.tokens) { fraction in
@@ -100,9 +156,9 @@ public actor LyricsAIAligner {
                 progress(.init(0.93 + fraction * 0.025, "定位歌词时间…"))
             }
         }
-        progress(.init(0.96, "核对末段歌词时间…"))
+        progress(.init(0.96, "核对末段与间奏时间…"))
         let recovery = try LyricsAITailRecovery.recover(alignment, evidence: evidence, plan: plan, draft: draft) { fraction in
-            progress(.init(0.96 + fraction * 0.03, "重新定位末段歌词…"))
+            progress(.init(0.96 + fraction * 0.03, "重新定位异常段落…"))
         }
         alignment = recovery.alignment
         progress(.init(0.99, "细化歌词边界…"))
@@ -110,14 +166,30 @@ public actor LyricsAIAligner {
         let refinement = try LyricsAIRepeatedVowels.refinement(alignment.spans, evidence: evidence, tokens: plan.tokens,
                                                                rawSpans: alignment.raw, displayBoundaries: displayBoundaries, vocals: vocals)
         let spans = refinement.spans
+        var alternateSpans: (vocals: [LyricsAICTC.Span], mix: [LyricsAICTC.Span])?
+        if let mixAcoustic {
+            let vocalsOnly = Self.combine([(vocalsAcoustic, 1)], levels: vocalsAcoustic)
+            let mixOnly = Self.combine([(mixAcoustic, 1)], levels: vocalsAcoustic)
+            if let vSpans = try? LyricsAICTC.align(vocalsOnly, tokens: plan.tokens),
+               let mSpans = try? LyricsAICTC.align(mixOnly, tokens: plan.tokens) {
+                alternateSpans = (vSpans, mSpans)
+            }
+        }
         try Task.checkCancellation()
         guard try bundle.stamp() == stamp else { throw LyricsAIError.invalidModel("模型文件在执行期间发生变化，请重试") }
         let currentAudio = try vocals.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         guard currentAudio.fileSize == audioValues.fileSize, currentAudio.contentModificationDate == audioValues.contentModificationDate else {
             throw LyricsAIError.alignment("人声音频在执行期间发生变化，请重试")
         }
+        if mixAcoustic != nil, let mixURL = distinctMix, let mixValues {
+            let currentMix = try mixURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            guard currentMix.fileSize == mixValues.fileSize, currentMix.contentModificationDate == mixValues.contentModificationDate else {
+                throw LyricsAIError.alignment("原曲音频在执行期间发生变化，请重试")
+            }
+        }
         var issues = LyricsAITimingReview.issues(plan: plan, draft: draft, evidence: evidence,
-                                                rawSpans: alignment.raw, spans: spans, sharedSounds: refinement.sharedSounds)
+                                                rawSpans: alignment.raw, spans: spans, sharedSounds: refinement.sharedSounds,
+                                                alternateSpans: alternateSpans)
         issues += recovery.reviewIssues
         issues += readings.decisions.filter(\.uncertain).map {
             let reading = $0.reading.contains("\u{E000}") ? "未确定" : $0.reading
@@ -130,6 +202,51 @@ public actor LyricsAIAligner {
         result.resolvedReadings = readings.resolvedCount
         progress(.init(1, "打轴完成，请预览并试听"))
         return result
+    }
+
+    private func storeCachedAcoustic(key: String, acoustic: Acoustic) {
+        cachedAcoustics.removeAll { $0.key == key }
+        cachedAcoustics.append((key, acoustic))
+        if cachedAcoustics.count > 4 { cachedAcoustics.removeFirst(cachedAcoustics.count - 4) }
+    }
+
+    /// Combines per-frame posteriors in probability space (arithmetic mean), keeping `levelSource`'s silence mask.
+    /// A single source returns its own emission and sustain log-probabilities unchanged.
+    nonisolated static func combine(_ parts: [(acoustic: Acoustic, weight: Float)], levels levelSource: Acoustic) -> LyricsAICTC.Evidence {
+        let frames = (parts.map(\.acoustic.frames) + [levelSource.frames]).min()!
+        let samples = (parts.map(\.acoustic.samples) + [levelSource.samples]).min()!
+        let emission: [Float]
+        let sustain: [Float]
+        if parts.count == 1 {
+            let single = parts[0].acoustic
+            emission = frames == single.frames ? single.emission : Array(single.emission.prefix(frames * 123))
+            sustain = frames == single.frames ? single.sustain : Array(single.sustain.prefix(frames * 8))
+        } else {
+            let total = parts.reduce(Float(0)) { $0 + $1.weight }
+            var blendedEmission = [Float](repeating: 0, count: frames * 123)
+            var blendedSustain = [Float](repeating: 0, count: frames * 8)
+            func mean(_ valueAt: (Acoustic) -> Float) -> Float {
+                var top = -Float.infinity
+                for (acoustic, _) in parts { top = max(top, valueAt(acoustic)) }
+                var sum: Float = 0
+                for (acoustic, weight) in parts { sum += (weight / total) * exp(valueAt(acoustic) - top) }
+                return top + log(sum)
+            }
+            for frame in 0..<frames {
+                let eBase = frame * 123, sBase = frame * 8
+                for column in 0..<122 { blendedEmission[eBase + column] = mean { $0.emission[eBase + column] } }
+                blendedEmission[eBase + 122] = log1p(-exp(min(blendedEmission[eBase + 121], -1e-6))) - 1
+                for column in 0..<8 { blendedSustain[sBase + column] = mean { $0.sustain[sBase + column] } }
+            }
+            emission = blendedEmission
+            sustain = blendedSustain
+        }
+        let levelSlice = frames == levelSource.frames ? levelSource.levels : Array(levelSource.levels.prefix(frames))
+        let sorted = levelSlice.sorted(), percentile = Double(frames - 1) * 0.9
+        let lo = Int(percentile), hi = min(frames - 1, lo + 1)
+        let threshold = sorted[lo] + Float(percentile - Double(lo)) * (sorted[hi] - sorted[lo]) - 30
+        return .init(frames: frames, width: 123, blank: 121, logProbabilities: emission,
+                     sustain: sustain, silent: levelSlice.map { $0 < threshold }, duration: Double(samples) / 16000)
     }
 
     private func prepare(_ bundle: LyricsAIModelBundle, stamp: String, backend: LyricsAIBackend,
@@ -178,14 +295,16 @@ public actor LyricsAIAligner {
     }
 
     private func infer(_ samples: [Float], bundle: LyricsAIModelBundle, model: MLModel,
-                       progress: @escaping @Sendable (LyricsAIProgress) -> Void) throws -> LyricsAICTC.Evidence {
+                       range progressRange: ClosedRange<Double>, label: String,
+                       progress: @escaping @Sendable (LyricsAIProgress) -> Void) throws -> Acoustic {
         let frames = (samples.count - 400) / 320 + 1
         var emission = [Float](); emission.reserveCapacity(frames * 123)
         var sustain = [Float](); sustain.reserveCapacity(frames * 8)
         let windows = (frames + 999) / 1000
+        let span = progressRange.upperBound - progressRange.lowerBound
         for (window, start) in stride(from: 0, to: frames, by: 1000).enumerated() {
             try Task.checkCancellation()
-            progress(.init(0.2 + Double(window) / Double(windows) * 0.64, "分析歌声 \(window + 1)/\(windows)…"))
+            progress(.init(progressRange.lowerBound + Double(window) / Double(windows) * span, "\(label) \(window + 1)/\(windows)…"))
             let end = min(frames, start + 1000), left = max(0, start - 250), right = min(frames, end + 250)
             let slice = samples[(left * 320)..<((right - 1) * 320 + 400)]
             let mel = try LyricsAIMel.encode(slice, filters: bundle.melFilters, hann: bundle.hann)
@@ -219,11 +338,7 @@ public actor LyricsAIAligner {
             for i in (frame * 320)..<((frame + 1) * 320) { sum += Double(samples[i]) * Double(samples[i]) }
             levels[frame] = Float(10 * log10(sum / 320 + 1e-12))
         }
-        let sorted = levels.sorted(), percentile = Double(frames - 1) * 0.9
-        let lo = Int(percentile), hi = min(frames - 1, lo + 1)
-        let threshold = sorted[lo] + Float(percentile - Double(lo)) * (sorted[hi] - sorted[lo]) - 30
-        return .init(frames: frames, width: 123, blank: 121, logProbabilities: emission,
-                     sustain: sustain, silent: levels.map { $0 < threshold }, duration: Double(samples.count) / 16000)
+        return Acoustic(frames: frames, samples: samples.count, emission: emission, sustain: sustain, levels: levels)
     }
 
     private static func rows(_ array: MLMultiArray, range: Range<Int>, columns: Int) throws -> [Float] {

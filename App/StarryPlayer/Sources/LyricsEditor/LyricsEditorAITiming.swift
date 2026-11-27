@@ -6,6 +6,7 @@ import SwiftUI
 struct LyricsEditorAITiming: View {
     static let directoryKey = LyricsAIModelDownloadState.directoryKey
     static let backendKey = "starry.lyricsEditor.aiTiming.backend"
+    static let mixAssistanceKey = "starry.lyricsEditor.aiTiming.mixAssistance"
     static let englishSplitKey = "starry.lyricsEditor.aiTiming.englishSplit"
 
     let session: LyricsEditorSession
@@ -17,6 +18,7 @@ struct LyricsEditorAITiming: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Self.directoryKey) private var modelPath = ""
     @AppStorage(Self.backendKey) private var backend = LyricsAIBackend.neuralEngine
+    @AppStorage(Self.mixAssistanceKey) private var usesMixAssistance = true
     @AppStorage(Self.englishSplitKey) private var englishSplit = LyricsAIEnglishSplit.automatic
     @State private var resplitSyllables = false
     @State private var splitsRubyMorae = false
@@ -33,7 +35,10 @@ struct LyricsEditorAITiming: View {
 
     private var directory: URL? { modelPath.isEmpty ? nil : URL(fileURLWithPath: modelPath, isDirectory: true) }
     private var configuration: LyricsEditorAITimingState.Configuration? {
-        directory.map { .init(directory: $0, backend: backend, resplitSyllables: resplitSyllables, englishSplit: englishSplit, splitsRubyMorae: splitsRubyMorae) }
+        directory.map {
+            .init(directory: $0, backend: backend, usesMixAssistance: usesMixAssistance,
+                  resplitSyllables: resplitSyllables, englishSplit: englishSplit, splitsRubyMorae: splitsRubyMorae)
+        }
     }
     private var supported: Bool {
         if #available(macOS 15, *) { return true }
@@ -83,6 +88,7 @@ struct LyricsEditorAITiming: View {
         .task { await modelDownload.discover() }
         .onChange(of: modelPath) { _, _ in state.validate(directory) }
         .onChange(of: backend) { _, _ in state.invalidate() }
+        .onChange(of: usesMixAssistance) { _, _ in state.invalidate() }
         .onChange(of: resplitSyllables) { _, _ in state.invalidate() }
         .onChange(of: splitsRubyMorae) { _, _ in state.invalidate() }
         .onChange(of: englishSplit) { _, _ in state.invalidate() }
@@ -119,6 +125,19 @@ struct LyricsEditorAITiming: View {
                 SegmentSwitch(selection: $backend, options: LyricsAIBackend.allCases.map { ($0, $0.title) })
                     .disabled(state.isWorking)
                     .opacity(state.isWorking ? 0.5 : 1)
+            }
+            Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
+            settingRow("waveform.badge.plus") {
+                Text("结合原曲混音")
+            } detail: {
+                Text("补充人声分离弱化处的发音线索，减少漏字与大偏差")
+            } trailing: {
+                AICheckbox(value: usesMixAssistance ? .on : .off, label: "结合原曲混音") {
+                    usesMixAssistance.toggle()
+                }
+                .disabled(state.isWorking)
+                .opacity(state.isWorking ? 0.5 : 1)
+                .help("默认开启。同时分析分离人声与原曲混音并融合后验概率，弥补人声分离偶发的弱化与伪影；同时对比两路定位以提示可疑字块。")
             }
             Rectangle().fill(theme.onSurface.opacity(0.06)).frame(height: 1).padding(.leading, 56)
             settingRow("textformat.abc") {
