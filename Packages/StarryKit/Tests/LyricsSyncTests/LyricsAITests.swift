@@ -160,4 +160,54 @@ import Testing
         #expect(plan.tokens.map(\.sustainClass) == [1, 1, 3])
         #expect(plan.tokens.map(\.isMoraContinuation) == [false, true, false])
     }
+
+    @Test func englishPronunciationSupportsTrainingOverridesPrefixesCompoundsRepeatsAndAcronyms() throws {
+        let alphabet = Array("あいうえおかきくけこがぎぐげござじずぜぞさしすせそたちつてとだぢづでどなにぬねのはひふへほばびぶべぼぱぴぷぺぽまみむめもやゆよらりるれろわをんっゃゅょぁぃぅぇぉー")
+        let vocab = Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { (String($0.element), $0.offset) })
+        let inverse = Dictionary(uniqueKeysWithValues: vocab.map { ($0.value, $0.key) })
+        let dict = [
+            "yeah": "ヤー",
+            "so": "ソ",
+            "spawn": "スポーン",
+            "sun": "サン",
+            "light": "ライト",
+            "believer": "ビリーバー"
+        ]
+        func read(_ word: String) throws -> String {
+            let draft = LyricsDraft(lines: [.init(syllables: [.init(text: word)])])
+            let plan = try LyricsAIPronunciation.make(draft: draft, vocabulary: vocab, english: dict)
+            return plan.tokens.map { inverse[$0.label] ?? "?" }.joined()
+        }
+        #expect(try read("Yeah") == "いぇー")
+        #expect(try read("so") == "そー")
+        #expect(try read("to") == "とぅー")
+        #expect(try read("I'm") == "あいむ")
+        #expect(try read("dont") == "どんと")
+        #expect(try read("respawn") == "りすぽーん")
+        #expect(try read("yeahyeahyeahyeah") == "いぇーいぇーいぇーいぇー")
+        #expect(try read("sunlight") == "さんらいと")
+        #expect(try read("believers") == "びりーばーず")
+        #expect(try read("ya") == "や")
+        #expect(try read("DJ") == "でぃーじぇー")
+    }
+
+    @Test func japanesePronunciationAppliesLyricDefaultsAndMultiDigitNumbers() throws {
+        let alphabet = Array("あいうえおかきくけこがぎぐげござじずぜぞさしすせそたちつてとだぢづでどなにぬねのはひふへほばびぶべぼぱぴぷぺぽまみむめもやゆよらりるれろわをんっゃゅょぁぃぅぇぉー")
+        let vocab = Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { (String($0.element), $0.offset) })
+        let inverse = Dictionary(uniqueKeysWithValues: vocab.map { ($0.value, $0.key) })
+        func read(_ words: [String]) throws -> LyricsAIPronunciation {
+            let draft = LyricsDraft(lines: [.init(syllables: words.map { .init(text: $0) })])
+            return try LyricsAIPronunciation.make(draft: draft, vocabulary: vocab, english: [:])
+        }
+        let watashi = try read(["私"])
+        #expect(watashi.tokens.map { inverse[$0.label]! }.joined() == "わたし")
+        #expect(watashi.words.first?.candidates.contains("わたくし") == true)
+
+        let karada = try read(["身体"])
+        #expect(karada.tokens.map { inverse[$0.label]! }.joined() == "からだ")
+        #expect(karada.words.first?.candidates.contains("しんたい") == true)
+
+        let numbers = try read(["365", "と", "137億", "と", "8兆"])
+        #expect(numbers.tokens.map { inverse[$0.label] ?? "?" }.joined() == "さんびゃくろくじゅうごとひゃくさんじゅうななおくとはっちょう")
+    }
 }

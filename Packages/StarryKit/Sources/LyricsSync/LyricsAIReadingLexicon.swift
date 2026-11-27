@@ -16,10 +16,16 @@ enum LyricsAIReadingLexicon {
         "身体": ["からだ", "しんたい"],
         "人気": ["にんき", "ひとけ"],
         "良い": ["いい", "よい"],
+        "言う": ["いう", "ゆう"],
         "運命": ["うんめい", "さだめ"],
         "永遠": ["えいえん", "とわ"],
         "故郷": ["ふるさと", "こきょう"],
         "理由": ["りゆう", "わけ"]
+    ]
+
+    private static let lyricStems: [(surface: String, prose: String, lyric: String)] = [
+        ("瞬", "しばたた", "またた"),
+        ("埋も", "うずも", "うも")
     ]
 
     static func candidates(for surface: String, defaultReading: String?) -> [String] {
@@ -34,6 +40,15 @@ enum LyricsAIReadingLexicon {
             return a.reading < b.reading
         }
         var result = supplements[key] ?? []
+        for stem in lyricStems where key.hasPrefix(stem.surface) {
+            if preferred.hasPrefix(stem.prose) {
+                let tail = String(preferred.dropFirst(stem.prose.count))
+                for candidate in [stem.lyric + tail, preferred] where !result.contains(candidate) { result.append(candidate) }
+            } else if preferred.hasPrefix(stem.lyric) {
+                let tail = String(preferred.dropFirst(stem.lyric.count))
+                for candidate in [preferred, stem.prose + tail] where !result.contains(candidate) { result.append(candidate) }
+            }
+        }
         for entry in ordered where !result.contains(entry.reading) { result.append(entry.reading) }
         return result
     }
