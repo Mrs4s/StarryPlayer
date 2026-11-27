@@ -226,4 +226,25 @@ import Testing
         #expect(result.spans == [.init(start: 0, end: 0.4), .init(start: 0.4, end: 0.8)])
         #expect(result.sharedSounds == [0..<2])
     }
+
+    @Test func repeatedConsonantWithLongHeldSecondMoraSnapsToEarlyOnsetInsteadOfMidpoint() throws {
+        let frames = 132 // 2.64 s
+        let logp = (0..<frames).flatMap { frame -> [Float] in
+            // CTC spikes at frame 0 (0.00s) and frame 17 (0.34s), blank (0.99) throughout held vowel!
+            let active = frame <= 1 || (17...18).contains(frame)
+            return (active ? [Float(0.05), 0.95] : [Float(0.99), 0.01]).map(log)
+        }
+        let sustain = (0..<frames).flatMap { _ in [Float(0.001), 0.993, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001].map(log) }
+        let held = LyricsAICTC.Evidence(frames: frames, width: 2, blank: 0, logProbabilities: logp,
+                                        sustain: sustain, silent: .init(repeating: false, count: frames), duration: Double(frames) * 0.02)
+        var consonants = tokens(2)
+        for index in consonants.indices { consonants[index].isStandaloneVowel = false }
+        let filled: [LyricsAICTC.Span] = [.init(start: 0, end: 2.60), .init(start: 2.62, end: 2.64)]
+        let raw: [LyricsAICTC.Span] = [.init(start: 0, end: 2.60), .init(start: 2.62, end: 2.64)]
+        let refined = try LyricsAIRepeatedVowels.refine(filled, evidence: held, tokens: consonants,
+                                                       rawSpans: raw, onsets: [.init(time: 0.34, strength: 0.9)])
+        #expect(abs(refined[1].start - 0.34) <= 0.04 + 1e-9)
+        #expect(refined[0].end == refined[1].start)
+        #expect(refined[1].end == 2.64)
+    }
 }

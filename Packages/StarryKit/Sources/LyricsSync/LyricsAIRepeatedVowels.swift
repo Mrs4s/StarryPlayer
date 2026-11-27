@@ -9,6 +9,7 @@ enum LyricsAIRepeatedVowels {
 
     private struct Group {
         var morae: [Range<Int>]
+        var label: Int
         var sound: Int
         var continuous: Bool
         var tokens: Range<Int> { morae.first!.lowerBound..<morae.last!.upperBound }
@@ -101,7 +102,8 @@ enum LyricsAIRepeatedVowels {
             var accepted: Group?
             if end - first >= 2 {
                 for finish in stride(from: end, through: first + 2, by: -1) {
-                    let group = Group(morae: Array(morae[first..<finish]), sound: sound, continuous: continuous)
+                    let group = Group(morae: Array(morae[first..<finish]), label: tokens[initial.lowerBound].label,
+                                      sound: sound, continuous: continuous)
                     if let displayBoundaries, !group.morae.dropFirst().contains(where: { displayBoundaries.contains($0.lowerBound) }) { continue }
                     if eligible(group, spans: spans, raw: raw, evidence: evidence, tokens: tokens) {
                         accepted = group; break
@@ -222,7 +224,8 @@ enum LyricsAIRepeatedVowels {
         for frame in minimum...(length - minimum) {
             let time = Double(lower + frame) * evidence.frameSeconds
             let distance = hints.map { abs($0.time - time) }.min() ?? .infinity
-            if group.continuous, hints.count >= count - 1, distance > evidence.frameSeconds + 1e-9 {
+            let snapWindow = (group.continuous ? 1.0 : 2.0) * evidence.frameSeconds + 1e-9
+            if hints.count >= count - 1, distance > snapWindow {
                 boundaryScores[frame] = -.infinity
                 continue
             }
@@ -230,8 +233,16 @@ enum LyricsAIRepeatedVowels {
                 let distance = (hint.time - time) / 0.025
                 return Double(min(hint.strength, 1)) * exp(-0.5 * distance * distance)
             }.max() ?? 0
-            let blank = group.continuous ? 0 : exp(evidence.logProbabilities[(lower + frame) * evidence.width + evidence.blank])
-            boundaryScores[frame] = 2 * onset + Double(blank)
+            let reattack: Double
+            if group.continuous {
+                reattack = 0
+            } else {
+                let current = Double(exp(evidence.logProbabilities[(lower + frame) * evidence.width + group.label]))
+                let nextFrame = min(evidence.frames - 1, lower + frame + 1)
+                let next = Double(exp(evidence.logProbabilities[nextFrame * evidence.width + group.label]))
+                reattack = max(current, next)
+            }
+            boundaryScores[frame] = 2 * onset + reattack
         }
         var previous = [Double](repeating: -.infinity, count: length + 1)
         previous[0] = 0

@@ -155,4 +155,60 @@ import Testing
         let held = try LyricsAICTC.decode(evidence, tokens: tokens, terminalPenalty: 4)
         #expect(held.raw[1].end >= 0.14)
     }
+
+    @Test func midSongInterludeChasmRecoversStrandedOpeningTokensWithinNeighbouringAnchors() throws {
+        let frames = 700, width = 20
+        var scores = Array(repeating: log(Float(0.01) / Float(width - 1)), count: frames * width)
+        var sustain = Array(repeating: log(Float(0.001)), count: frames * 8)
+        for frame in 0..<frames {
+            scores[frame * width] = log(0.99)
+            sustain[frame * 8] = log(0.993)
+        }
+        func place(label: Int, startFrame: Int, count: Int = 4) {
+            for frame in startFrame..<(startFrame + count) {
+                for column in 0..<width { scores[frame * width + column] = log(Float(0.005) / Float(width - 2)) }
+                scores[frame * width] = log(0.005)
+                scores[frame * width + label] = log(0.99)
+                sustain[frame * 8] = log(0.001)
+                sustain[frame * 8 + 1] = log(0.993)
+            }
+        }
+        // Line 0 around 0.4s..1.0s (frames 20..50)
+        for i in 0..<4 { place(label: 1 + i, startFrame: 20 + i * 7) }
+        // Line 1 true singing around 9.0s..10.2s (frames 450..510), 6 tokens (labels 5..10)
+        for i in 0..<6 { place(label: 5 + i, startFrame: 450 + i * 9) }
+        // Line 2 around 11.0s..11.6s (frames 550..580)
+        for i in 0..<4 { place(label: 11 + i, startFrame: 550 + i * 7) }
+
+        let draft = LyricsDraft(lines: [
+            .init(syllables: [.init(text: "前句")]),
+            .init(syllables: [.init(text: "間奏後の句")]),
+            .init(syllables: [.init(text: "後句")])
+        ])
+        let tokens: [LyricsAICTC.Token] =
+            (0..<4).map { .init(label: 1 + $0, sustainClass: 1, endsLine: $0 == 3) } +
+            (0..<6).map { .init(label: 5 + $0, sustainClass: 1, endsLine: $0 == 5) } +
+            (0..<4).map { .init(label: 11 + $0, sustainClass: 1, endsLine: $0 == 3) }
+        let plan = LyricsAIPronunciation(
+            tokens: tokens,
+            units: [
+                .init(line: 0, syllable: 0, tokens: 0..<4, ruby: [], approximate: false),
+                .init(line: 1, syllable: 0, tokens: 4..<10, ruby: [], approximate: false),
+                .init(line: 2, syllable: 0, tokens: 10..<14, ruby: [], approximate: false)
+            ],
+            lines: [0, 1, 2], estimatedCount: 0, backgroundCount: 0
+        )
+        let ev = LyricsAICTC.Evidence(frames: frames, width: width, blank: 0, logProbabilities: scores,
+                                      sustain: sustain, silent: Array(repeating: false, count: frames), duration: Double(frames) * 0.02)
+        var corrupted = try LyricsAICTC.decode(ev, tokens: tokens)
+        // Simulate first token of Line 1 stranded at 1.4s (frame 70) before an 7.7s interlude chasm!
+        corrupted.raw[4] = .init(start: 1.40, end: 1.44)
+        corrupted.spans[4] = .init(start: 1.40, end: 1.48)
+
+        let recovered = try LyricsAITailRecovery.recover(corrupted, evidence: ev, plan: plan, draft: draft)
+        #expect(recovered.alignment.spans[4].start >= 8.8)
+        #expect(recovered.alignment.spans[4].end <= recovered.alignment.spans[5].start + 1e-9)
+        #expect(recovered.reviewIssues.count == 1)
+        #expect(recovered.reviewIssues[0].message.contains("跨间奏异常已重新定位"))
+    }
 }

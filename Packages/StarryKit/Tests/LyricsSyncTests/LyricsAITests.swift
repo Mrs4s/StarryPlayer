@@ -210,4 +210,28 @@ import Testing
         let numbers = try read(["365", "と", "137億", "と", "8兆"])
         #expect(numbers.tokens.map { inverse[$0.label] ?? "?" }.joined() == "さんびゃくろくじゅうごとひゃくさんじゅうななおくとはっちょう")
     }
+
+    @Test func preExtensionGuardStopsConsonantTokensFromReachingFarAcrossSilence() throws {
+        let frames = 60
+        var rows = Array(repeating: [Float(0.99), 0.005, 0.005], count: frames)
+        rows[2] = [0.05, 0.93, 0.02]
+        rows[50] = [0.05, 0.02, 0.93]
+        let sustain = (0..<frames).flatMap { frame -> [Float] in
+            var row = [Float](repeating: 0.001, count: 8)
+            if (2...5).contains(frame) { row[1] = 0.993 }
+            else if (15...52).contains(frame) { row[0] = 0.30; row[2] = 0.695 }
+            else { row[0] = 0.993 }
+            return row.map(log)
+        }
+        let ev = LyricsAICTC.Evidence(frames: frames, width: 3, blank: 0,
+                                      logProbabilities: rows.flatMap { $0.map(log) },
+                                      sustain: sustain, silent: .init(repeating: false, count: frames),
+                                      duration: Double(frames) * 0.02)
+        let alignment = try LyricsAICTC.decode(ev, tokens: [
+            .init(label: 1, sustainClass: 1),
+            .init(label: 2, sustainClass: 2, endsLine: true, isStandaloneVowel: false)
+        ])
+        #expect(alignment.raw[1].start == 1.0)
+        #expect(abs(alignment.spans[1].start - (1.0 - 0.36)) <= 0.02 + 1e-9)
+    }
 }

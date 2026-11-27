@@ -152,10 +152,14 @@ enum LyricsAICTC {
                 if let left, j < cap { taken[j + 1] = taken[j] + owned(left, frame: frame, blank: b, evidence: evidence) }
             }
             if let right {
+                let lineStart = rightIndex == 0 || tokens[rightIndex - 1].endsLine
+                let continuation = right.isStandaloneVowel || right.isMoraContinuation || right.isLongMark
+                let sustainLeadCap = (!continuation || lineStart) ? max(1, Int((0.36 / evidence.frameSeconds).rounded())) : cap
                 for j in (max(0, count - cap)..<count).reversed() {
                     let frame = lo + j
                     let b = Double(evidence.logProbabilities[frame * evidence.width + evidence.blank])
-                    kept[j] = kept[j + 1] + owned(right, frame: frame, blank: b, evidence: evidence)
+                    let allowSustain = (count - j) <= sustainLeadCap
+                    kept[j] = kept[j + 1] + owned(right, frame: frame, blank: b, evidence: evidence, allowSustain: allowSustain)
                 }
             }
             let repeated = left != nil && right != nil && left!.label == right!.label
@@ -176,9 +180,9 @@ enum LyricsAICTC {
         }
     }
 
-    private static func owned(_ token: Token, frame: Int, blank: Double, evidence: Evidence) -> Double {
+    private static func owned(_ token: Token, frame: Int, blank: Double, evidence: Evidence, allowSustain: Bool = true) -> Double {
         let score = Double(evidence.logProbabilities[frame * evidence.width + token.label])
-        guard token.sustainClass >= 0 else { return score }
+        guard allowSustain, token.sustainClass >= 0 else { return score }
         let held = blank + Double(evidence.sustain[frame * 8 + token.sustainClass])
         let top = max(score, held)
         return top + log1p(exp(min(score, held) - top))
